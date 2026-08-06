@@ -39,10 +39,17 @@ function textColor(r, g, b) {
 }
 
 // 透明格（外侧边距与橡皮擦除的空位使用同一底色与斜线）
-function drawEmptyCell(ctx, x0, y0, cell) {
-  ctx.fillStyle = '#ECECEC';
+const EMPTY_STYLES = {
+  default: { bg: '#ECECEC', line: '#C8C8C8' },
+  black: { bg: '#000000', line: '#C8C8C8' },
+  white: { bg: '#FFFFFF', line: '#C8C8C8' },
+};
+
+function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
+  const s = EMPTY_STYLES[emptyStyle] || EMPTY_STYLES.default;
+  ctx.fillStyle = s.bg;
   ctx.fillRect(x0, y0, cell, cell);
-  ctx.strokeStyle = '#C8C8C8';
+  ctx.strokeStyle = s.line;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x0 + 0.5, y0 + 0.5);
@@ -145,6 +152,7 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
   const gridLines = opts.gridLines !== false;
   const outline = !!opts.outline;
   const hatch = opts.hatch !== false;
+  const emptyStyle = opts.emptyStyle || 'default';
   const legend = opts.legend || [];
   const metrics = canvasMetrics(width, height, cell, legend.length);
   ctx.canvas.width = metrics.w;
@@ -171,14 +179,14 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
           ctx.fillStyle = '#' + hex6(displayRgb[p]);
           ctx.fillRect(x0, y0, cell, cell);
         } else if (hatch) {
-          drawEmptyCell(ctx, x0, y0, cell);
+          drawEmptyCell(ctx, x0, y0, cell, emptyStyle);
         } else {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(x0, y0, cell, cell);
         }
       } else {
         // 外侧透明格与橡皮清空后的空位底色一致
-        drawEmptyCell(ctx, x0, y0, cell);
+        drawEmptyCell(ctx, x0, y0, cell, emptyStyle);
       }
     }
   }
@@ -215,8 +223,8 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
 
   drawSelection(ctx, opts.selected, ox, oy, cell);
 
-  // 颜色清单高亮：给指定色号的像素画反色框
-  if (opts.highlightColor != null) {
+  // 颜色清单高亮：给指定色号的像素画反色框；闪烁时按相位隐现
+  if (opts.highlightColor != null && opts.highlightBlink !== false) {
     const hlw = Math.max(2, Math.round(cell * 0.14));
     const inset = hlw / 2;
     for (let y = 0; y < height; y++) {

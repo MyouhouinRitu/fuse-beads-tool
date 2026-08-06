@@ -23,6 +23,7 @@ const els = {
   autosave: $('autosave-indicator'),
   colorSlider: $('color-slider'),
   sliderValue: $('slider-value'),
+  emptyStyle: $('empty-style'),
   usedColors: $('used-colors'),
   configSelect: $('config-select'),
   btnNewConfig: $('btn-new-config'),
@@ -89,10 +90,12 @@ const App = {
   lastCell: null,
   pan: { x: 0, y: 0 },
   tree: createEmptyTree(),
-  settings: { targetPixels: 40000, useLab: true, sharpen: true, outline: false, showCodes: true },
+  settings: { targetPixels: 40000, useLab: true, sharpen: true, outline: false, showCodes: true, emptyStyle: 'default' },
   dirty: false,
   zoom: 1,
   screenCell: CELL,
+  highlightBlink: true,
+  highlightTimer: null,
   merge: null,
   pickerCandidates: null,
   highlightColor: null,
@@ -323,6 +326,7 @@ function renderAll() {
     els.cellInfo.textContent = '';
     els.usedColors.textContent = '';
     els.sliderValue.textContent = '2';
+    syncHighlightBlink();
     return;
   }
   const counts = C.computeUsedCounts(project.grid, project.width, project.height);
@@ -335,6 +339,21 @@ function renderAll() {
   els.colorSlider.disabled = baseUsed <= 1;
   els.sliderValue.textContent = String(App.maxColors);
   els.usedColors.textContent = `当前使用 ${used} 种颜色`;
+  redrawCanvas();
+  els.emptyHint.style.display = 'none';
+
+  let empty = 0;
+  for (let p = 0; p < project.grid.length; p++) if (project.grid[p] < 0) empty++;
+  els.cellInfo.textContent = `${project.width} × ${project.height} · 总量 ${project.grid.length - empty} · 空位 ${empty}`;
+  renderColorList(counts);
+  renderHighlightColorList(counts);
+  syncHighlightBlink();
+}
+
+function redrawCanvas() {
+  const project = App.project;
+  if (!project) return;
+  const counts = C.computeUsedCounts(project.grid, project.width, project.height);
   const legend = buildLegend(counts);
   const display = buildDisplayData();
 
@@ -345,21 +364,30 @@ function renderAll() {
     outline: App.settings.outline,
     outlineWidth: Math.max(2, Math.round(App.screenCell * 0.15)),
     hatch: true,
+    emptyStyle: App.settings.emptyStyle,
     showCodes: App.settings.showCodes,
     codes: buildCodes(),
     selected: App.selectedCell,
     highlightColor: App.highlightColor,
+    highlightBlink: App.highlightBlink,
     legend,
     showLegend: true,
   });
-  els.emptyHint.style.display = 'none';
   applyTransform();
+}
 
-  let empty = 0;
-  for (let p = 0; p < project.grid.length; p++) if (project.grid[p] < 0) empty++;
-  els.cellInfo.textContent = `${project.width} × ${project.height} · 空位 ${empty}`;
-  renderColorList(counts);
-  renderHighlightColorList(counts);
+// 颜色清单高亮闪烁：高亮时按周期隐现，反色不明显也能看清选中色号
+function syncHighlightBlink() {
+  clearInterval(App.highlightTimer);
+  App.highlightTimer = null;
+  if (App.highlightColor == null || !App.project) {
+    App.highlightBlink = true;
+    return;
+  }
+  App.highlightTimer = setInterval(() => {
+    App.highlightBlink = !App.highlightBlink;
+    redrawCanvas();
+  }, 500);
 }
 
 function applyTransform() {
@@ -1112,6 +1140,7 @@ async function doExport() {
         legend: els.dlgLegend.checked,
         format: fmt,
         quality: 95,
+        emptyStyle: App.settings.emptyStyle,
       },
     });
     downloadDataUrl(res.dataUrl, `拼豆图案.${fmt === 'png' ? 'png' : 'jpg'}`);
@@ -1173,6 +1202,9 @@ async function restoreState() {
   els.chkOutline.checked = App.settings.outline;
   els.chkCodes.checked = App.settings.showCodes;
   els.selDistance.value = App.settings.useLab ? 'lab' : 'rgb';
+  els.emptyStyle.value = ['default', 'black', 'white'].includes(App.settings.emptyStyle)
+    ? App.settings.emptyStyle
+    : 'default';
 
   if (st.project) {
     App.project = {
@@ -1253,6 +1285,11 @@ function bindEvents() {
 
   els.colorSlider.addEventListener('input', () => {
     applySlider(parseInt(els.colorSlider.value, 10));
+  });
+  els.emptyStyle.addEventListener('change', () => {
+    App.settings.emptyStyle = els.emptyStyle.value;
+    redrawCanvas();
+    scheduleAutosave();
   });
 
   els.btnExport.addEventListener('click', openExportDialog);

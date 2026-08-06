@@ -268,6 +268,7 @@ def api_export():
         outline=bool(opts.get("outline", False)),
         outline_width=opts.get("outlineWidth"),
         hatch=bool(opts.get("hatch", True)),
+        empty_style=opts.get("emptyStyle") or "default",
         legend=data.get("legend", []),
         codes=data.get("codes", []),
         show_codes=bool(opts.get("showCodes", True)),

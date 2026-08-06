@@ -70,6 +70,7 @@ input[type="number"]:focus, input[type="text"]:focus, select:focus {
 .field input[type="number"] { width: 96px; }
 .slider-field input[type="range"] { width: 220px; accent-color: var(--primary); }
 .slider-field span { min-width: 24px; color: var(--text); font-weight: 600; }
+.empty-style-field select { width: 112px; padding: 3px 6px; }
 .chk { display: inline-flex; align-items: center; gap: 5px; color: var(--text); cursor: pointer; }
 .chk input { accent-color: var(--primary); }
 .spacer { flex: 1; }

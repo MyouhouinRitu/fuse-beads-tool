@@ -31,11 +31,19 @@ def _contrast_text(rgb):
     return "#111111" if (r * 299 + g * 587 + b * 114) / 1000 >= 150 else "#FFFFFF"
 
 
-def _draw_empty(draw, x0, y0, cell):
-    draw.rectangle([x0, y0, x0 + cell - 1, y0 + cell - 1], fill="#ECECEC")
+EMPTY_STYLES = {
+    "default": ("#ECECEC", "#C8C8C8"),
+    "black": ("#000000", "#C8C8C8"),
+    "white": ("#FFFFFF", "#C8C8C8"),
+}
+
+
+def _draw_empty(draw, x0, y0, cell, empty_style="default"):
+    bg, line = EMPTY_STYLES.get(empty_style, EMPTY_STYLES["default"])
+    draw.rectangle([x0, y0, x0 + cell - 1, y0 + cell - 1], fill=bg)
     lw = max(1, cell // 16)
-    draw.line([(x0, y0), (x0 + cell - 1, y0 + cell - 1)], fill="#C8C8C8", width=lw)
-    draw.line([(x0 + cell - 1, y0), (x0, y0 + cell - 1)], fill="#C8C8C8", width=lw)
+    draw.line([(x0, y0), (x0 + cell - 1, y0 + cell - 1)], fill=line, width=lw)
+    draw.line([(x0 + cell - 1, y0), (x0, y0 + cell - 1)], fill=line, width=lw)
 
 
 def render_pattern(
@@ -49,6 +57,7 @@ def render_pattern(
     outline=False,
     outline_width=None,
     hatch=True,
+    empty_style="default",
     legend=None,
     codes=None,
     show_codes=True,
@@ -76,11 +85,11 @@ def render_pattern(
                 if idx >= 0:
                     draw.rectangle([x0, y0, x0 + cell - 1, y0 + cell - 1], fill=palette_map.get(idx, "#FFFFFF"))
                 elif hatch:
-                    _draw_empty(draw, x0, y0, cell)
+                    _draw_empty(draw, x0, y0, cell, empty_style)
                 else:
                     draw.rectangle([x0, y0, x0 + cell - 1, y0 + cell - 1], fill="#FFFFFF")
             else:
-                _draw_empty(draw, x0, y0, cell)
+                _draw_empty(draw, x0, y0, cell, empty_style)
 
     # 网格线（含边距区，每 5 格加粗）
     if grid_lines:
