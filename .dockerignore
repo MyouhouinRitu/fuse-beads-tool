@@ -1,0 +1,8 @@
+.git
+__pycache__
+*.pyc
+.venv
+tests
+data/state.json
+data/state.json.tmp
+*.log

@@ -1,0 +1,19 @@
+services:
+  fuse-beads:
+    build: .
+    container_name: fuse-beads-tool
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # 必填：访问 Token，请改成你自己的（不要使用示例值）
+      - APP_TOKEN=请替换成你自己的Token
+      # 可选：会话签名密钥，建议也改成随机字符串
+      - APP_SECRET=请替换成随机字符串
+      # NAS 挂载目录的属主 UID/GID，用于以指定用户运行
+      - PUID=1000
+      - PGID=1000
+      - PORT=5000
+    volumes:
+      # 配置、状态与事务历史都保存在 ./data，升级容器不丢失
+      - ./data:/app/data

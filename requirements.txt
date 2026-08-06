@@ -1,0 +1,4 @@
+flask>=2.2
+pillow>=9.0
+numpy>=1.23
+waitress>=2.1

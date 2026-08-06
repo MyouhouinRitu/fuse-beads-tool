@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>拼豆工具</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">拼豆工具</div>
+    <div class="tb-row">
+      <button id="btn-import" class="primary">导入图片</button>
+      <input type="file" id="file-input" accept="image/*" hidden>
+      <label class="field">目标像素量
+        <input type="number" id="target-pixels" min="100" max="120000" step="100" value="40000" title="图片压缩后的总像素量">
+      </label>
+      <button id="btn-recompress" title="按当前设置重新压缩并重新生成图案">重新压缩</button>
+      <label class="chk"><input type="checkbox" id="chk-sharpen" checked>锐化</label>
+      <label class="chk"><input type="checkbox" id="chk-outline">描边</label>
+      <label class="chk"><input type="checkbox" id="chk-codes" checked>显示色号</label>
+      <label class="field">颜色距离
+        <select id="sel-distance">
+          <option value="lab" selected>Lab（人眼感知）</option>
+          <option value="rgb">RGB</option>
+        </select>
+      </label>
+      <span class="spacer"></span>
+      <button id="btn-export" class="primary">导出图片</button>
+      <button id="btn-save-state" title="Ctrl+S / Cmd+S">保存状态</button>
+      <button id="btn-clear-all" class="danger">清空当前状态</button>
+      <button id="btn-logout" class="hidden" title="退出登录">退出登录</button>
+      <span id="autosave-indicator" class="indicator"></span>
+    </div>
+    <div class="tb-row">
+      <label class="field slider-field">颜色数量
+        <input type="range" id="color-slider" min="2" max="2" value="2" disabled>
+        <span id="slider-value">2</span>
+      </label>
+      <span id="used-colors" class="muted"></span>
+      <span class="spacer"></span>
+      <span class="hint">拖拽平移 · 滚轮缩放 · 单击像素高亮 · D 键九宫格选色（仅拖拽模式）· ESC 返回拖拽 · Ctrl+S 保存状态</span>
+    </div>
+  </header>
+
+  <main>
+    <aside id="left-panel">
+      <nav class="tabs">
+        <button class="tab active" data-tab="palette">色板配置</button>
+        <button class="tab" data-tab="edit">编辑工具</button>
+      </nav>
+
+      <section id="tab-palette" class="tab-panel">
+        <div class="panel-block">
+          <div class="row">
+            <select id="config-select" title="当前色板配置"></select>
+          </div>
+          <div class="row">
+            <button id="btn-new-config" title="新建一个配置">新建</button>
+            <button id="btn-import-config" title="从 CSV 文件导入配置">导入</button>
+            <button id="btn-export-config" title="将当前配置导出为 CSV">导出CSV</button>
+          </div>
+          <div class="row">
+            <button id="btn-rename-config" title="重命名当前配置">重命名</button>
+            <button id="btn-delete-config" class="danger" title="删除当前配置">删除</button>
+          </div>
+          <input type="file" id="config-file-input" accept=".csv,text/csv" hidden>
+        </div>
+        <div class="panel-block grow">
+          <div class="panel-title">颜色表（可直接编辑）</div>
+          <div id="color-table" class="color-table"></div>
+          <button id="btn-add-color" class="add-btn">+ 添加颜色</button>
+        </div>
+      </section>
+
+      <section id="tab-edit" class="tab-panel hidden">
+        <div class="panel-block">
+          <div class="tool-row">
+            <button id="tool-brush" class="tool" title="用当前颜色涂色（ESC 返回拖拽）">画笔</button>
+            <button id="tool-picker" class="tool" title="点击像素取色（ESC 返回拖拽）">取色</button>
+            <button id="tool-eraser" class="tool" title="擦除格子（空位）">橡皮</button>
+          </div>
+          <div class="mode-line">当前模式：<span id="mode-label" class="mode-label">拖拽模式</span></div>
+          <div class="brush-info">
+            当前画笔：<span id="brush-swatch" class="swatch"></span><span id="brush-label"></span>
+          </div>
+        </div>
+        <div class="panel-block grow">
+          <div class="panel-title">全部颜色（点击选用）</div>
+          <div id="color-list" class="color-list"></div>
+        </div>
+      </section>
+    </aside>
+
+    <section id="canvas-area">
+      <div id="canvas-toolbar">
+        <button id="zoom-in" title="放大">＋</button>
+        <button id="zoom-out" title="缩小">－</button>
+        <button id="zoom-fit" title="缩放到适合窗口">适应窗口</button>
+        <span id="zoom-label">100%</span>
+        <span id="cell-info" class="muted"></span>
+      </div>
+      <div id="canvas-scroll">
+        <canvas id="canvas"></canvas>
+        <div id="empty-hint">请先导入一张图片<br>导入后会自动转换为拼豆图案</div>
+      </div>
+      <div id="quick-picker" class="hidden"></div>
+    </section>
+
+    <aside id="color-highlight-panel">
+      <div class="panel-block">
+        <div class="panel-title">颜色清单（点击高亮）</div>
+        <div id="highlight-color-list" class="highlight-color-list"></div>
+      </div>
+    </aside>
+
+    <aside id="right-panel">
+      <div class="panel-block">
+        <div class="panel-title">事务历史</div>
+        <div class="row">
+          <button id="btn-save-state-side" class="primary">保存当前状态</button>
+        </div>
+        <div id="tree-list"></div>
+        <div id="tree-empty" class="muted">暂无历史记录</div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="export-dialog" class="dialog-mask hidden">
+    <div class="dialog">
+      <h3>导出图片</h3>
+      <div class="dialog-body">
+        <label class="field">每格大小（像素）
+          <input type="number" id="dlg-cell-size" min="5" max="100" value="26">
+        </label>
+        <label class="chk"><input type="checkbox" id="dlg-grid-lines" checked>显示网格线</label>
+        <label class="field">外部白边（像素）
+          <input type="number" id="dlg-pad" min="0" max="200" value="20">
+        </label>
+        <label class="chk"><input type="checkbox" id="dlg-outline">黑色描边</label>
+        <label class="chk"><input type="checkbox" id="dlg-codes" checked>显示色号</label>
+        <label class="chk"><input type="checkbox" id="dlg-legend" checked>附带色号图例</label>
+        <label class="field">格式
+          <select id="dlg-format">
+            <option value="jpg" selected>JPG</option>
+            <option value="png">PNG</option>
+          </select>
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button id="dlg-export-cancel">取消</button>
+        <button id="dlg-export-ok" class="primary">导出</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="login-mask" class="dialog-mask hidden">
+    <div class="dialog">
+      <h3>需要 Token 验证</h3>
+      <div class="dialog-body">
+        <p class="muted">请输入访问 Token 后继续使用本工具。</p>
+        <input type="password" id="login-token" placeholder="Token" autocomplete="current-password">
+        <div id="login-error" class="login-error hidden"></div>
+      </div>
+      <div class="dialog-actions">
+        <button id="btn-login" class="primary">登录</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
