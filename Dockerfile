@@ -15,7 +15,7 @@ COPY . .
 COPY data/configs ./bundled-configs/
 
 # 数据目录与启动脚本权限（NAS 常见权限问题在此解决）
-RUN mkdir -p /app/data/configs && chmod +x /app/docker/entrypoint.sh
+RUN mkdir -p /app/data/configs && chmod -R a+rX /app
 
 EXPOSE 5000
 
