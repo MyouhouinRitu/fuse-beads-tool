@@ -1,5 +1,6 @@
 """冒烟测试：启动 Flask 服务并验证核心接口。"""
 
+import base64
 import io
 import json
 import os
@@ -72,6 +73,13 @@ def make_test_image(path):
     img.save(path, "PNG")
 
 
+def make_transparent_image(path):
+    img = Image.new("RGBA", (800, 600), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([100, 100, 700, 500], fill=(255, 0, 0, 255))
+    img.save(path, "PNG")
+
+
 def main():
     proc = subprocess.Popen(
         [sys.executable, "app.py", "--port", "5001"],
@@ -122,6 +130,16 @@ def main():
         s, j = upload(img_path, 40000, True)
         assert s == 200 and j["width"] * j["height"] <= 40000
         print(f"[OK] 图片压缩：{j['width']} × {j['height']}")
+
+        transp_path = os.path.join(tmp, "transparent.png")
+        make_transparent_image(transp_path)
+        s, j = upload(transp_path, 40000, False)
+        assert s == 200
+        timg = Image.open(io.BytesIO(base64.b64decode(j["pngBase64"])))
+        assert timg.mode == "RGBA", "透明 PNG 应保留 alpha 通道"
+        alpha = timg.getchannel("A")
+        assert alpha.getextrema() == (0, 255), "返回图像应同时包含透明与不透明像素"
+        print("[OK] 透明 PNG 保留 alpha")
 
         grid = [-1] * (j["width"] * j["height"])
         palette = [{"index": 0, "hex": "#FF0000"}, {"index": 1, "hex": "#0000FF"}]

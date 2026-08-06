@@ -29,6 +29,27 @@ import { createEmptyTree, createNode, deleteNode, compressNode } from '../static
   console.log('[OK] 最近色映射 + 平局规则');
 }
 
+// ---- 透明像素映射（alpha < 128 视为空位，半透明先合成白底）----
+{
+  const palette = [
+    { index: 1, hex: '#FF0000' },
+    { index: 2, hex: '#FFFFFF' },
+  ];
+  const rgba = new Uint8ClampedArray([
+    255, 0, 0, 255,
+    0, 0, 0, 0,
+    255, 0, 0, 128,
+    255, 0, 0, 64,
+  ]);
+  const { grid, counts } = C.computeInitialMapping(rgba, 2, 2, palette, false);
+  assert.equal(grid[0], 0, '不透明红色像素应映射到红色豆');
+  assert.equal(grid[1], -1, '完全透明像素应为空位');
+  assert.equal(grid[2], 0, 'alpha=128 的半透明像素应合成白底后映射到红色豆');
+  assert.equal(grid[3], -1, 'alpha<128 的半透明像素应为空位');
+  assert.deepEqual(counts, [2, 0]);
+  console.log('[OK] 透明像素映射为空位');
+}
+
 // ---- 贪心合并（滑动条）----
 {
   const palette = [

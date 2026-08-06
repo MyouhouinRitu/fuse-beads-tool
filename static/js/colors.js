@@ -68,6 +68,9 @@ function nearestIndices(r, g, b, palRgb, palLab, useLab) {
   return list;
 }
 
+// 透明判定阈值：alpha 低于该值的像素视为透明，映射为空位（浅灰 X）
+const TRANSPARENT_ALPHA = 128;
+
 // 功能三第 1~4 步：计算最相近色并处理平局
 export function computeInitialMapping(rgba, width, height, palette, useLab) {
   const palRgb = palette.map((p) => hexToRgb(p.hex));
@@ -82,7 +85,17 @@ export function computeInitialMapping(rgba, width, height, palette, useLab) {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
-      const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      let r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      const a = rgba[i + 3];
+      if (a < TRANSPARENT_ALPHA) continue; // 透明像素：保留空位，不参与取色
+      if (a < 255) {
+        // 半透明像素先合成到白底，再参与最近色映射，避免边缘偏色
+        const f = a / 255;
+        const bg = 255;
+        r = Math.round(r * f + bg * (1 - f));
+        g = Math.round(g * f + bg * (1 - f));
+        b = Math.round(b * f + bg * (1 - f));
+      }
       const key = (r << 16) | (g << 8) | b;
       let list = cache.get(key);
       if (!list) {
