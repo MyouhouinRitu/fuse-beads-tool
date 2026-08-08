@@ -38,6 +38,21 @@ docker compose up -d --build
 - 未设置 `APP_TOKEN` 时（本地开发）直接访问，无需登录。
 - 生产模式使用 Waitress WSGI 服务（容器内默认开启）；公网访问请搭配 HTTPS 反向代理。
 
+## 打包为 Windows EXE
+
+在 Windows 上双击运行 `build_exe.bat`（或手动执行下方命令）即可打包：
+
+```bash
+pip install -r requirements.txt pyinstaller
+pyinstaller packaging\fuse_beads.spec --noconfirm --clean --distpath dist --workpath build
+```
+
+- 产物：`dist\fuse-beads-tool.exe`（单文件，无需安装 Python，双击即用）。
+- 启动后自动打开浏览器访问工具，不显示控制台窗口。
+- 数据（色板配置、当前状态、事务历史）保存在 **exe 同级的 `data` 目录**，首次启动会自动补齐内置色板。
+- 端口 5000 被占用时自动改用空闲端口。
+- 如需 Token 认证：启动前在系统环境变量中设置 `APP_TOKEN`；设置 `NO_BROWSER=1` 可关闭自动打开浏览器。
+
 ## 功能说明
 
 ### 1. 导入并压缩图片

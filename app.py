@@ -7,8 +7,11 @@ import json
 import os
 import re
 import secrets
+import shutil
+import socket
 import sys
 import threading
+import webbrowser
 
 from flask import Flask, jsonify, render_template, request, send_file, session
 
@@ -16,7 +19,14 @@ from bead import compress as comp
 from bead import export as ex
 from bead import palette as pal
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 打包（PyInstaller）后：资源在 _MEIPASS，数据放在 exe 同级 data 目录
+if getattr(sys, "frozen", False):
+    RESOURCE_DIR = sys._MEIPASS
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = RESOURCE_DIR
+
 DATA_DIR = os.path.join(BASE_DIR, "data")
 CONFIG_DIR = os.path.join(DATA_DIR, "configs")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
@@ -24,7 +34,11 @@ DEFAULT_CONFIG_NAME = "mard-221-alfonse-doudou"
 
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=os.path.join(RESOURCE_DIR, "templates"),
+    static_folder=os.path.join(RESOURCE_DIR, "static"),
+)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 _state_lock = threading.Lock()
@@ -105,7 +119,13 @@ def list_configs():
 
 def ensure_default_config():
     if not list_configs():
-        pal.write_csv(config_path("default_48"), pal.DEFAULT_PALETTE)
+        bundled = os.path.join(RESOURCE_DIR, "data", "configs")
+        if os.path.isdir(bundled) and any(f.endswith(".csv") for f in os.listdir(bundled)):
+            for fn in os.listdir(bundled):
+                if fn.lower().endswith(".csv"):
+                    shutil.copy2(os.path.join(bundled, fn), os.path.join(CONFIG_DIR, fn))
+        else:
+            pal.write_csv(config_path("default_48"), pal.DEFAULT_PALETTE)
 
 
 def err(msg, status=400):
@@ -319,9 +339,35 @@ if __name__ == "__main__":
         if idx + 1 < len(sys.argv):
             port = int(sys.argv[idx + 1])
     host = os.environ.get("HOST", "127.0.0.1")
-    if os.environ.get("USE_WAITRESS") == "1":
+
+    # 默认端口被占用时自动换一个空闲端口（便于双击直接使用）
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((host, port))
+    except OSError:
+        probe.bind((host, 0))
+        port = probe.getsockname()[1]
+    finally:
+        probe.close()
+
+    # 打包版 / 生产模式使用 Waitress，并提供日志文件便于排查
+    use_waitress = os.environ.get("USE_WAITRESS") == "1" or getattr(sys, "frozen", False)
+    # 打包版或显式开启时，启动后自动打开浏览器
+    auto_open = getattr(sys, "frozen", False) or os.environ.get("APP_AUTO_OPEN") == "1"
+    if auto_open and os.environ.get("NO_BROWSER") != "1":
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+
+    if use_waitress:
         from waitress import serve
 
+        if getattr(sys, "frozen", False):
+            log_file = os.path.join(BASE_DIR, "data", "app.log")
+            try:
+                os.makedirs(os.path.dirname(log_file), exist_ok=True)
+                sys.stdout = open(log_file, "a", encoding="utf-8")
+                sys.stderr = sys.stdout
+            except Exception:
+                pass  # 数据目录不可写时仅跳过日志，服务照常启动
         serve(app, host=host, port=port, threads=8)
     else:
         app.run(host=host, port=port, debug=False)

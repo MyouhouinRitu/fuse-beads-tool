@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 data/state.json
 data/state.json.tmp
+build/
+dist/
