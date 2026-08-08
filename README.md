@@ -9,11 +9,11 @@ pip install -r requirements.txt
 python app.py
 ```
 
-打开 http://127.0.0.1:5000 即可（固定 5000 端口，可用环境变量 `PORT` 覆盖；需 Python 3.9+）。
+打开 http://127.0.0.1:5000 即可（固定 5000 端口，可用环境变量 `PORT` 覆盖；需 Python 3.9+）。本地直开与打包版都会在后端就绪时自动打开浏览器，设置 `NO_BROWSER=1` 可关闭；Docker 容器内不会自动打开。
 
 ## 部署方式
 
-- **Docker / NAS**：项目放到 NAS 后编辑 `docker-compose.yml`，设置 `APP_TOKEN`（必填）、`APP_SECRET`（建议随机）、`PUID/PGID`（按挂载目录属主），执行 `docker compose up -d --build`，访问 `http://NAS地址:5000` 并输入 Token。数据保存在 `./data`，升级不丢；首次启动自动补齐内置色板；容器内按 `PUID/PGID` 降权并以 Waitress 运行，公网请搭配 HTTPS 反向代理。
+- **Docker / NAS**：项目放到 NAS 后编辑 `docker-compose.yml`，设置 `APP_TOKEN`（必填）、`APP_SECRET`（建议随机）、`PUID/PGID`（按挂载目录属主），执行 `docker compose up -d --build`，访问 `http://NAS地址:5000` 并输入 Token。数据保存在 `./data`，升级不丢；首次启动自动补齐内置色板；容器内按 `PUID/PGID` 降权并以 Waitress 运行，不自动打开浏览器，公网请搭配 HTTPS 反向代理。
 - **Windows EXE**：双击 `build_exe.bat` 打包（内部调用 pyinstaller），产物 `dist\fuse-beads-tool.exe` 单文件双击即用，启动自动打开浏览器；数据保存在 **exe 同级的 `data` 目录**。需要 Token 认证时提前设置环境变量 `APP_TOKEN`，`NO_BROWSER=1` 可关闭自动打开浏览器。
 
 > Token 验证：设置 `APP_TOKEN` 后所有 API 均需登录（状态存于会话 Cookie）；未设置时本地直接访问。
@@ -64,6 +64,8 @@ python app.py
 | --- | --- |
 | 色板配置 | `data/configs/*.csv` |
 | 当前状态与事务历史 | `data/state.json`（自动生成） |
+
+> 「对比原图」使用的原图会缓存在浏览器 IndexedDB 中，刷新页面后对比功能仍可用；导入新图片时缓存会被新原图替换。
 
 ## 快捷键
 

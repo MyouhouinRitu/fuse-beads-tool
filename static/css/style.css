@@ -91,6 +91,8 @@ aside {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
+  transition: width 0.18s ease;
 }
 #left-panel { width: 320px; flex-shrink: 0; }
 #color-highlight-panel {
@@ -101,6 +103,27 @@ aside {
 }
 #color-highlight-panel .panel-block { flex: 1; min-height: 0; }
 #right-panel { width: 280px; border-right: none; border-left: 1px solid var(--border); flex-shrink: 0; }
+
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.panel-head:hover { background: #f7f9fc; }
+.panel-head .panel-title { flex-shrink: 0; }
+.panel-chevron { color: var(--muted); font-size: 14px; line-height: 1; }
 
 .tabs { display: flex; border-bottom: 1px solid var(--border); }
 .tabs .tab {
@@ -115,13 +138,61 @@ aside {
 .tabs .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
 .tabs .tab:hover { background: #f0f4ff; }
 
+.panel-toggle {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.panel-toggle:hover { background: #f0f4ff; color: var(--primary); }
+.tabs .panel-toggle { margin-left: auto; align-self: center; }
+
+.panel-expand {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 0;
+}
+.panel-expand:hover { background: #f0f4ff; color: var(--primary); }
+.panel-expand .pe-label {
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.panel-expand .pe-icon { font-size: 15px; line-height: 1; }
+
+#left-panel.collapsed,
+#color-highlight-panel.collapsed,
+#right-panel.collapsed {
+  width: 32px;
+  min-width: 32px;
+}
+#left-panel.collapsed .panel-body,
+#color-highlight-panel.collapsed .panel-body,
+#right-panel.collapsed .panel-body { display: none; }
+#left-panel.collapsed .panel-expand,
+#color-highlight-panel.collapsed .panel-expand,
+#right-panel.collapsed .panel-expand { display: flex; }
+
 .tab-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .tab-panel.hidden { display: none; }
 .hidden { display: none; }
 .panel-block { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .panel-block.grow { flex: 1; min-height: 0; }
 .panel-title { font-weight: 600; color: var(--muted); font-size: 13px; }
-.panel-title-row { display: flex; align-items: center; gap: 8px; }
 .dirty-indicator { color: var(--danger); font-size: 12px; font-weight: 600; }
 .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .row select { flex: 1; min-width: 0; }
@@ -220,8 +291,24 @@ aside {
 #canvas-scroll {
   flex: 1;
   overflow: hidden;
-  padding: 12px;
   position: relative;
+}
+#compare-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.compare-pane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 12px;
+}
+#compare-original { display: none; }
+#canvas-scroll.compare-on #compare-original {
+  display: block;
+  border-right: 1px solid var(--border);
 }
 #canvas {
   display: block;
@@ -235,7 +322,16 @@ aside {
 #canvas.mode-brush, #canvas.mode-eraser, #canvas.mode-picker { cursor: crosshair; }
 #canvas:active { cursor: grabbing; }
 #canvas.mode-brush:active, #canvas.mode-eraser:active, #canvas.mode-picker:active { cursor: crosshair; }
+#canvas-original {
+  display: block;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  transform-origin: 0 0;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
+#canvas-original:active { cursor: grabbing; }
 #empty-hint {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #a8afb9; font-size: 18px; text-align: center; pointer-events: none; line-height: 1.8;

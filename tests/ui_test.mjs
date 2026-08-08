@@ -158,6 +158,137 @@ async function main() {
   assert.ok(!(await page.textContent('#toast')).includes('重新压缩'), '首次打开网站不应弹出色板配置提示');
   console.log('[OK] 工具栏 / 画布工具栏 / 右侧面板布局');
 
+  // 1.5 侧边栏折叠 / 展开：收起后宽度收缩、工作区变宽，展开后恢复
+  {
+    const panelSpec = [
+      { id: 'left-panel', trigger: '#left-panel-toggle' },
+      { id: 'color-highlight-panel', trigger: '#color-highlight-panel-head' },
+      { id: 'right-panel', trigger: '#right-panel-head' },
+    ];
+    const canvasBefore = await page.evaluate(() => document.querySelector('#canvas-area').getBoundingClientRect().width);
+    const panBefore = await page.evaluate(() => window.__app.pan.x);
+    for (const { id, trigger } of panelSpec) {
+      await page.click(trigger);
+      await page.waitForTimeout(300);
+      assert.ok(await page.evaluate((pid) => document.getElementById(pid).classList.contains('collapsed'), id),
+        `${id} 点击折叠按钮后应收起`);
+      const w = await page.evaluate((pid) => Math.round(document.getElementById(pid).getBoundingClientRect().width), id);
+      assert.equal(w, 32, `${id} 折叠后宽度应为 32px，实际 ${w}`);
+      if (id === 'left-panel') {
+        const panX = await page.evaluate(() => window.__app.pan.x);
+        assert.ok(Math.abs(panX - (panBefore + 288)) < 2, `折叠左侧栏后画布应补偿位移保持绝对位置：${panBefore} -> ${panX}`);
+      }
+    }
+    const canvasAfter = await page.evaluate(() => document.querySelector('#canvas-area').getBoundingClientRect().width);
+    assert.ok(canvasAfter > canvasBefore, `折叠全部面板后工作区应变宽：${canvasBefore} -> ${canvasAfter}`);
+    for (const { id } of panelSpec) {
+      await page.click(`#${id}-expand`);
+      await page.waitForTimeout(300);
+      assert.ok(!(await page.evaluate((pid) => document.getElementById(pid).classList.contains('collapsed'), id)),
+        `${id} 点击展开按钮后应恢复展开`);
+    }
+    const panAfter = await page.evaluate(() => window.__app.pan.x);
+    assert.ok(Math.abs(panAfter - panBefore) < 2, `全部展开后画布位置应复原：${panBefore} -> ${panAfter}`);
+    await page.evaluate(() => localStorage.removeItem('fuse-beads.panel-collapsed'));
+    console.log('[OK] 侧边栏折叠 / 展开');
+  }
+
+  // 1.7 颜色距离延迟生效：修改后需「重新压缩」才重新生成图案
+  {
+    const gridBefore = await page.evaluate(() => Array.from(window.__app.project.grid));
+    await page.selectOption('#sel-distance', 'rgb');
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => window.__app.settings.useLab), false, '修改颜色距离后应保存设置');
+    const gridAfter = await page.evaluate(() => Array.from(window.__app.project.grid));
+    assert.deepEqual(gridAfter, gridBefore, '修改颜色距离后不应立即重新生成图案');
+    assert.ok((await page.textContent('#toast')).includes('重新压缩'), '修改颜色距离后应提示需重新压缩');
+    await page.selectOption('#sel-distance', 'lab');
+    await page.waitForTimeout(200);
+    console.log('[OK] 颜色距离延迟生效');
+  }
+
+  // 1.6 对比原图 / 同步拖拽
+  {
+    await page.check('#chk-compare');
+    await page.waitForTimeout(350);
+    assert.ok(await page.evaluate(() => document.querySelector('#canvas-scroll').classList.contains('compare-on')),
+      '勾选对比后工作区应分为左右两块');
+    assert.ok(await page.evaluate(() => document.querySelector('#canvas-original').width > 0), '左侧原图画布应有内容');
+
+    // 画笔模式下点击左侧原图不应修改拼豆图
+    const gridBefore = await page.evaluate(() => Array.from(window.__app.project.grid));
+    await page.click('.tab[data-tab="edit"]');
+    await page.click('#color-list .color-item:first-child');
+    const origBox = await page.locator('#compare-original').boundingBox();
+    await page.mouse.click(origBox.x + 60, origBox.y + 60);
+    await page.waitForTimeout(200);
+    const gridAfter = await page.evaluate(() => Array.from(window.__app.project.grid));
+    assert.deepEqual(gridAfter, gridBefore, '点击原图不应修改拼豆图');
+    await page.keyboard.press('Escape'); // 回拖拽模式
+
+    // 取消对比原图时同步拖拽应一并取消；未勾选对比时勾选同步 → 自动勾选对比
+    await page.check('#chk-sync-pan'); // 对比已开启，直接启用同步
+    await page.waitForTimeout(250);
+    assert.ok(await page.evaluate(() => document.querySelector('#chk-sync-pan').checked), '对比开启时可直接勾选同步');
+    await page.uncheck('#chk-compare');
+    await page.waitForTimeout(250);
+    assert.ok(!(await page.evaluate(() => document.querySelector('#chk-sync-pan').checked)),
+      '取消对比原图时同步拖拽应一并取消');
+    await page.check('#chk-sync-pan');
+    await page.waitForTimeout(350);
+    assert.ok(await page.evaluate(() => document.querySelector('#chk-compare').checked),
+      '未勾选对比时勾选同步应自动勾选对比');
+
+    // 同步换算：原图 zoom = 拼豆 zoom × CELL；原图 pan = 拼豆 pan + 5 格边距 × CELL × zoom
+    const MARGIN = 5;
+    const CELL = 26;
+    const initConsistent = await page.evaluate(() => {
+      const a = window.__app;
+      return Math.abs(a.origPan.x - (a.pan.x + 5 * 26 * a.zoom)) < 1
+        && Math.abs(a.origZoom - a.zoom * 26) < 1e-6;
+    });
+    assert.ok(initConsistent, '开启同步后原图坐标应包含 5 格边距与像素格放大换算');
+
+    // 同步拖拽：拖动原图 → 两侧按同一屏幕位移平移
+    const beforePan = await page.evaluate(() => {
+      const a = window.__app;
+      return { px: a.pan.x, ox: a.origPan.x, z: a.zoom, oz: a.origZoom };
+    });
+    const paneBox = await page.locator('#compare-original').boundingBox();
+    await page.mouse.move(paneBox.x + 40, paneBox.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(paneBox.x + 100, paneBox.y + 120, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const afterPan = await page.evaluate(() => {
+      const a = window.__app;
+      return { px: a.pan.x, ox: a.origPan.x, z: a.zoom, oz: a.origZoom };
+    });
+    assert.ok(Math.abs(afterPan.px - beforePan.px) > 20, '拖动原图应产生平移');
+    const expectOx = afterPan.px + MARGIN * CELL * afterPan.z;
+    assert.ok(Math.abs(afterPan.ox - expectOx) < 1,
+      `同步拖拽下原图 pan 应含边距换算：${afterPan.ox.toFixed(1)} vs ${expectOx.toFixed(1)}`);
+    assert.ok(Math.abs(afterPan.oz - afterPan.z * CELL) < 1e-6,
+      `同步拖拽下原图 zoom 应按像素格放大：${afterPan.oz} vs ${afterPan.z * CELL}`);
+
+    // 同步缩放：在原图上滚轮 → 两侧 zoom 按 CELL 关系同步
+    const zBefore = await page.evaluate(() => window.__app.zoom);
+    const oPaneBox = await page.locator('#compare-original').boundingBox();
+    await page.mouse.move(oPaneBox.x + oPaneBox.width / 2, oPaneBox.y + oPaneBox.height / 2);
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(250);
+    const zAfter = await page.evaluate(() => window.__app.zoom);
+    const ozAfter = await page.evaluate(() => window.__app.origZoom);
+    assert.ok(zAfter > zBefore, '原图滚轮应放大拼豆图');
+    assert.ok(Math.abs(ozAfter - zAfter * CELL) < 1e-6, '同步缩放后原图 zoom 应保持 CELL 放大关系');
+
+    // 恢复默认，避免影响后续用例
+    await page.uncheck('#chk-sync-pan');
+    await page.uncheck('#chk-compare');
+    await page.waitForTimeout(250);
+    console.log('[OK] 对比原图 / 同步拖拽');
+  }
+
   // 2. 颜色简化滑块
   assert.equal(await page.inputValue('#color-slider'), '3', '使用 3 种颜色，滑块最大应为 3');
   await page.evaluate(() => {
@@ -319,7 +450,7 @@ async function main() {
   assert.ok(Math.abs(afterPan - beforePan) > 20, `工作区拖拽应平移图片：${beforePan} -> ${afterPan}`);
   console.log('[OK] 工作区拖拽平移');
 
-  // 5.8 颜色清单高亮：点击色号 → 图中对应像素出现反色框，再点/切换模式取消
+  // 5.8 颜色清单高亮：点击色号 → 图中对应像素出现覆盖层+亮度自适应描边，再点/切换模式取消
   assert.ok(await page.locator('#highlight-color-list .hc-item').count() >= 2, '颜色清单应显示已用颜色');
   const hcCounts = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#highlight-color-list .hc-count'))
@@ -333,6 +464,8 @@ async function main() {
   });
   await page.mouse.click(clearPt.x, clearPt.y); // 清除像素高亮，避免与颜色高亮混叠
   await page.waitForTimeout(120);
+  const baseRed = await px(page, OP + MARGIN + 5 * CELL + 2, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
+  assert.ok(baseRed[0] > 150 && baseRed[1] < 130 && baseRed[2] < 130, `前置：样本点应为红色，实际 ${baseRed}`);
   // 在清单中定位红色（#E53935），红色块位于 (5,5)
   const redIdx = await page.evaluate(() => {
     const items = Array.from(document.querySelectorAll('#highlight-color-list .hc-item'));
@@ -348,15 +481,15 @@ async function main() {
   await hcItem.click();
   await page.waitForTimeout(150);
   const frame = await px(page, OP + MARGIN + 5 * CELL + 2, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
-  // 红色 (229,57,53) 的反色为青色 (26,198,202)
-  assert.ok(frame[0] < 100 && frame[1] > 150 && frame[2] > 150,
-    `颜色高亮框应为反色（青），实际 ${frame}`);
+  // 红色偏暗 → 白色覆盖层提亮 + 浅色描边：样本点应明显变亮
+  assert.ok(frame[0] >= baseRed[0] - 2 && frame[1] >= baseRed[1] + 25 && frame[2] >= baseRed[2] + 25,
+    `颜色高亮后暗色格子应被提亮，实际 ${frame} vs 基线 ${baseRed}`);
   assert.ok(await hcItem.evaluate((el) => el.classList.contains('active')), '清单项应显示高亮态');
   await hcItem.click(); // 再次点击取消
   await page.waitForTimeout(150);
   const frame2 = await px(page, OP + MARGIN + 5 * CELL + 2, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
-  assert.ok(!(frame2[0] < 100 && frame2[1] > 150 && frame2[2] > 150),
-    `再次点击应取消高亮，实际 ${frame2}`);
+  assert.ok(Math.abs(frame2[0] - baseRed[0]) <= 12 && Math.abs(frame2[1] - baseRed[1]) <= 12 && Math.abs(frame2[2] - baseRed[2]) <= 12,
+    `再次点击应取消高亮并恢复原色，实际 ${frame2} vs ${baseRed}`);
   await hcItem.click(); // 重新高亮
   await page.waitForTimeout(120);
   // 单选：选择另一种色号会替换（清除）前一种高亮
@@ -373,15 +506,15 @@ async function main() {
   await page.locator('#highlight-color-list .hc-item').nth(blueIdx).click();
   await page.waitForTimeout(150);
   const frameReplace = await px(page, OP + MARGIN + 5 * CELL + 2, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
-  assert.ok(!(frameReplace[0] < 100 && frameReplace[1] > 150 && frameReplace[2] > 150),
-    `选择另一种色号应清除前一种高亮，实际 ${frameReplace}`);
+  assert.ok(Math.abs(frameReplace[0] - baseRed[0]) <= 12 && Math.abs(frameReplace[1] - baseRed[1]) <= 12 && Math.abs(frameReplace[2] - baseRed[2]) <= 12,
+    `选择另一种色号应清除前一种高亮，实际 ${frameReplace} vs ${baseRed}`);
   assert.ok(await page.locator('#highlight-color-list .hc-item').nth(blueIdx)
     .evaluate((el) => el.classList.contains('active')), '新选择的色号应处于高亮态');
   await page.click('#tool-brush'); // 切换模式应清除颜色高亮
   await page.waitForTimeout(150);
   const frame3 = await px(page, OP + MARGIN + 5 * CELL + 2, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
-  assert.ok(!(frame3[0] < 100 && frame3[1] > 150 && frame3[2] > 150),
-    `切换画笔模式应清除颜色高亮，实际 ${frame3}`);
+  assert.ok(Math.abs(frame3[0] - baseRed[0]) <= 12 && Math.abs(frame3[1] - baseRed[1]) <= 12 && Math.abs(frame3[2] - baseRed[2]) <= 12,
+    `切换画笔模式应清除颜色高亮，实际 ${frame3} vs ${baseRed}`);
   await page.keyboard.press('Escape'); // 回拖拽，继续后续测试
   console.log('[OK] 颜色清单高亮 / 取消 / 模式切换清除');
 
@@ -471,6 +604,19 @@ async function main() {
   assert.equal(await page.locator('#tree-list .tree-node').count(), 1, '刷新后历史应保留');
   console.log('[OK] 自动保存与刷新恢复');
 
+  // 8.5 刷新后原图缓存恢复：对比功能仍可用
+  {
+    await page.check('#chk-compare');
+    await page.waitForTimeout(350);
+    assert.ok(await page.evaluate(() => document.querySelector('#canvas-scroll').classList.contains('compare-on')),
+      '刷新后原图应从缓存恢复，对比可正常开启');
+    assert.ok(await page.evaluate(() => document.querySelector('#canvas-original').width > 0),
+      '刷新后原图画布应有内容');
+    await page.uncheck('#chk-compare');
+    await page.waitForTimeout(250);
+    console.log('[OK] 刷新后原图缓存恢复');
+  }
+
   // 9. 新建 / 删除配置
   await page.click('.tab[data-tab="palette"]');
   page.once('dialog', (d) => d.accept('UI测试配置'));
@@ -544,6 +690,46 @@ async function main() {
   await page.click('#btn-delete-config');
   await page.waitForFunction((n) => document.querySelector('#config-select')?.value !== n, paletteCfgName, { timeout: 5000 });
   console.log('[OK] 色板配置修改不即时生效，重新压缩后应用');
+
+  // 12. 大图：同步换算应包含「网格宽 / 原图显示宽」比例
+  {
+    const LARGE_IMG = path.join(TMP, 'ui_test_large.png');
+    const largeCode = `
+from PIL import Image, ImageDraw
+img = Image.new('RGB', (4000, 3000), (229, 57, 53))
+d = ImageDraw.Draw(img)
+d.rectangle([1333, 0, 2665, 2999], fill=(67, 160, 71))
+d.rectangle([2666, 0, 3999, 2999], fill=(30, 136, 229))
+img.save(${JSON.stringify(LARGE_IMG)})
+`;
+    execFileSync(process.env.PYTHON || 'python', ['-c', largeCode]);
+    await page.setInputFiles('#file-input', LARGE_IMG);
+    await page.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, { timeout: 20000 });
+    await page.waitForTimeout(500);
+    await page.check('#chk-compare');
+    await page.waitForTimeout(400);
+    await page.check('#chk-sync-pan');
+    await page.waitForTimeout(400);
+    const kCheck = await page.evaluate(() => {
+      const a = window.__app;
+      return {
+        gridW: a.project.width,
+        dispW: document.querySelector('#canvas-original').width,
+        zoom: a.zoom,
+        origZoom: a.origZoom,
+        origPanX: a.origPan.x,
+        panX: a.pan.x,
+      };
+    });
+    assert.ok(Math.abs(kCheck.origZoom - kCheck.zoom * 26 * (kCheck.gridW / kCheck.dispW)) < 1e-6,
+      `原图 zoom 应 = 拼豆 zoom × 26 × (网格宽/原图显示宽)，实际 ${kCheck.origZoom} vs ${kCheck.zoom * 26 * (kCheck.gridW / kCheck.dispW)}`);
+    assert.ok(Math.abs(kCheck.origPanX - (kCheck.panX + 5 * 26 * kCheck.zoom)) < 1,
+      '原图 pan 应含 5 格边距偏移');
+    await page.uncheck('#chk-sync-pan');
+    await page.uncheck('#chk-compare');
+    await page.waitForTimeout(250);
+    console.log('[OK] 大图网格/原图比例同步换算');
+  }
 
   // 截图留档
   const shot = 'C:/Users/myouh/.codex/visualizations/2026/08/06/019fd4fd-4c9a-7042-9fe1-6e52067cbf05/ui_screenshot.png';

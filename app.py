@@ -8,8 +8,10 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import sys
 import threading
+import time
 import webbrowser
 
 from flask import Flask, jsonify, render_template, request, send_file, session
@@ -330,6 +332,31 @@ def api_state_put():
 ensure_default_config()
 
 
+def in_container():
+    """判断是否运行在 Docker 等容器内（容器内不自动打开浏览器）。"""
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup", "r", encoding="utf-8", errors="ignore") as fh:
+            return any(k in fh.read() for k in ("docker", "containerd", "kubepods"))
+    except OSError:
+        return False
+
+
+def open_browser_when_ready(host, port, url, timeout=30):
+    """轮询端口直到后端可连接，然后立即在浏览器中打开前端页面。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        return
+    webbrowser.open(url)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     if "--port" in sys.argv:
@@ -340,10 +367,13 @@ if __name__ == "__main__":
 
     # 打包版 / 生产模式使用 Waitress，并提供日志文件便于排查
     use_waitress = os.environ.get("USE_WAITRESS") == "1" or getattr(sys, "frozen", False)
-    # 打包版或显式开启时，启动后自动打开浏览器
-    auto_open = getattr(sys, "frozen", False) or os.environ.get("APP_AUTO_OPEN") == "1"
-    if auto_open and os.environ.get("NO_BROWSER") != "1":
-        threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+    # 本地直开 / 打包版均自动打开浏览器；容器（Docker）内不打开
+    if not in_container() and os.environ.get("NO_BROWSER") != "1":
+        threading.Thread(
+            target=open_browser_when_ready,
+            args=("127.0.0.1", port, f"http://127.0.0.1:{port}"),
+            daemon=True,
+        ).start()
 
     if use_waitress:
         from waitress import serve

@@ -52,11 +52,16 @@ const els = {
   colorList: $('color-list'),
   canvas: $('canvas'),
   canvasScroll: $('canvas-scroll'),
+  canvasOriginal: $('canvas-original'),
+  compareOriginal: $('compare-original'),
+  beadPane: $('bead-pane'),
   emptyHint: $('empty-hint'),
   zoomIn: $('zoom-in'),
   zoomOut: $('zoom-out'),
   zoomFit: $('zoom-fit'),
   zoomLabel: $('zoom-label'),
+  chkCompare: $('chk-compare'),
+  chkSyncPan: $('chk-sync-pan'),
   cellInfo: $('cell-info'),
   quickPicker: $('quick-picker'),
   highlightColorList: $('highlight-color-list'),
@@ -93,6 +98,12 @@ const App = {
   project: null,       // { width, height, grid: Int16Array }
   compressed: null,    // { rgba, width, height }
   originalFile: null,
+  originalImage: null, // 用于「对比原图」的原图 HTMLImageElement
+  originalUrl: null,   // 原图 object URL
+  origPan: { x: 0, y: 0 },
+  origZoom: 1,
+  compareEnabled: false,
+  syncPan: false,
   maxColors: 2,
   baseGrid: null,
   sliderN: null,
@@ -107,7 +118,15 @@ const App = {
   undoStack: [],
   redoStack: [],
   strokeBuffer: null,  // 一次画笔/橡皮按下到放开过程中累积的像素修改
-  settings: { targetPixels: 40000, useLab: true, sharpen: true, showCodes: true, emptyStyle: 'default' },
+  settings: {
+    targetPixels: 40000,
+    useLab: true,
+    sharpen: true,
+    showCodes: true,
+    emptyStyle: 'default',
+    compare: false,
+    syncPan: false,
+  },
   dirty: false,
   zoom: 1,
   screenCell: CELL,
@@ -124,11 +143,13 @@ let toastTimer = null;
 let authResolve = null;
 const dragState = {
   active: false,
+  orig: false,
   moved: false,
   panning: false,
   startX: 0,
   startY: 0,
   panStart: null,
+  origPanStart: null,
   downCell: null,
 };
 
@@ -151,6 +172,16 @@ function hintPaletteDeferred() {
   toast('色板配置修改后需单击「重新压缩」才会应用到画布');
 }
 
+let distanceHintShownAt = 0;
+
+// 颜色距离修改后不即时生效：弹出一次性提示，3 秒内不重复打扰
+function hintDistanceDeferred() {
+  const now = Date.now();
+  if (now - distanceHintShownAt < 3000) return;
+  distanceHintShownAt = now;
+  toast('颜色距离修改后需单击「重新压缩」才会重新生成图案');
+}
+
 function setBusy(b) {
   document.body.classList.toggle('busy', b);
 }
@@ -162,6 +193,373 @@ function downloadDataUrl(dataUrl, filename) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+// ---------------- 侧边栏折叠 / 展开 ----------------
+
+const PANEL_STORAGE_KEY = 'fuse-beads.panel-collapsed';
+const PANEL_IDS = ['left-panel', 'color-highlight-panel', 'right-panel'];
+const PANEL_FULL_WIDTH = {
+  'left-panel': 320,
+  'color-highlight-panel': 168,
+  'right-panel': 280,
+};
+
+function readPanelPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(PANEL_STORAGE_KEY) || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+
+function writePanelPrefs(prefs) {
+  try {
+    localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify(prefs));
+  } catch (e) {
+    // localStorage 不可用时（如隐私模式）忽略，仅本次会话生效
+  }
+}
+
+function setPanelCollapsed(id, collapsed) {
+  const panel = document.getElementById(id);
+  if (!panel) return;
+  let panDelta = 0;
+  if (id === 'left-panel' && App.project) {
+    // 左侧栏收起/展开会平移整个工作区视口；
+    // 反向补偿画布位移，让图案保持在屏幕上的绝对位置不变
+    const current = panel.classList.contains('collapsed') ? 32 : PANEL_FULL_WIDTH[id];
+    const target = collapsed ? 32 : PANEL_FULL_WIDTH[id];
+    panDelta = current - target;
+  }
+  panel.classList.toggle('collapsed', collapsed);
+  if (panDelta) animatePanCompensation(panDelta);
+  const prefs = readPanelPrefs();
+  prefs[id] = collapsed;
+  writePanelPrefs(prefs);
+}
+
+let rAFAsync = null;
+
+// 检测 requestAnimationFrame 是否为异步（浏览器）还是同步（测试桩）
+function rafIsAsync() {
+  if (rAFAsync == null) {
+    let pending = true;
+    requestAnimationFrame(() => { pending = false; });
+    rAFAsync = pending;
+  }
+  return rAFAsync;
+}
+
+// 与侧边栏宽度过渡同步地平移画布，保证画面在屏幕上保持绝对位置
+function animatePanCompensation(delta) {
+  const panTo = App.pan.x + delta;
+  const origTo = App.originalImage ? App.origPan.x + delta : null;
+  if (!rafIsAsync()) {
+    App.pan.x = panTo;
+    if (origTo != null) App.origPan.x = origTo;
+    applyTransform();
+    applyOriginalTransform();
+    return;
+  }
+  const panFrom = App.pan.x;
+  const origFrom = App.originalImage ? App.origPan.x : null;
+  const start = performance.now();
+  const dur = 180; // 与 CSS 宽度过渡时长一致
+  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    const k = ease(t);
+    App.pan.x = panFrom + (panTo - panFrom) * k;
+    if (origFrom != null) App.origPan.x = origFrom + (origTo - origFrom) * k;
+    applyTransform();
+    applyOriginalTransform();
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function togglePanel(id) {
+  const panel = document.getElementById(id);
+  if (!panel) return;
+  setPanelCollapsed(id, !panel.classList.contains('collapsed'));
+}
+
+function applyPanelPrefs() {
+  const prefs = readPanelPrefs();
+  for (const id of PANEL_IDS) {
+    const panel = document.getElementById(id);
+    if (panel && prefs[id]) panel.classList.add('collapsed');
+  }
+}
+
+function bindPanelToggles() {
+  for (const id of PANEL_IDS) {
+    const toggle = $(id + '-toggle');
+    if (toggle) toggle.addEventListener('click', () => togglePanel(id));
+    // 颜色清单 / 事务历史：点击整个标题栏即可收起/展开
+    const head = $(id + '-head');
+    if (head) head.addEventListener('click', () => togglePanel(id));
+    const expand = $(id + '-expand');
+    if (expand) expand.addEventListener('click', () => togglePanel(id));
+  }
+}
+
+// ---------------- 对比原图 / 同步拖拽 ----------------
+
+const ORIG_MAX_DIM = 2000; // 原图画布最大边长，避免超大图片占用过多内存
+const GRID_MARGIN_CELLS = 5; // 与 render.js MARGIN_CELLS 一致：图案外侧灰色边距格数
+
+// ---------- 原图缓存（IndexedDB，刷新后对比功能仍可用） ----------
+
+const ORIGINAL_DB = 'fuse-beads-tool';
+const ORIGINAL_STORE = 'originals';
+const ORIGINAL_KEY = 'current';
+
+function openOriginalDB() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB 不可用'));
+      return;
+    }
+    const req = indexedDB.open(ORIGINAL_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(ORIGINAL_STORE)) {
+        req.result.createObjectStore(ORIGINAL_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveOriginalCache(blob) {
+  try {
+    const db = await openOriginalDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ORIGINAL_STORE, 'readwrite');
+      tx.objectStore(ORIGINAL_STORE).put(blob, ORIGINAL_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    // 缓存不可用时（隐私模式等）忽略，对比功能仅在本次会话生效
+  }
+}
+
+async function readOriginalCache() {
+  try {
+    const db = await openOriginalDB();
+    const blob = await new Promise((resolve, reject) => {
+      const tx = db.transaction(ORIGINAL_STORE, 'readonly');
+      const req = tx.objectStore(ORIGINAL_STORE).get(ORIGINAL_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return blob;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 从浏览器缓存恢复原图（刷新后对比功能仍可用）
+async function restoreOriginalFromCache() {
+  const blob = await readOriginalCache();
+  if (!blob) return false;
+  return loadOriginalImage(blob);
+}
+
+function loadOriginalImage(file) {
+  return new Promise((resolve) => {
+    if (!file) { resolve(false); return; }
+    App.originalFile = file; // 缓存恢复时也保留原图句柄，刷新后「重新压缩」仍可用
+    if (App.originalUrl) {
+      try { URL.revokeObjectURL(App.originalUrl); } catch (e) { /* ignore */ }
+    }
+    App.originalUrl = null;
+    App.originalImage = null;
+    if (typeof URL.createObjectURL !== 'function') { resolve(false); return; }
+    saveOriginalCache(file); // 缓存原图，刷新后仍可对比
+    const url = URL.createObjectURL(file);
+    App.originalUrl = url;
+    const img = new Image();
+    img.onload = () => {
+      App.originalImage = img;
+      drawOriginalImage();
+      if (App.compareEnabled) {
+        if (App.syncPan) mirrorBeadToOrig();
+        else fitOriginal();
+        applyOriginalTransform();
+      }
+      resolve(true);
+    };
+    img.onerror = () => {
+      App.originalImage = null;
+      toast('原图加载失败，无法使用对比功能');
+      resolve(false);
+    };
+    img.src = url;
+  });
+}
+
+function drawOriginalImage() {
+  const cv = els.canvasOriginal;
+  const img = App.originalImage;
+  if (!img) return;
+  const scale = Math.min(1, ORIG_MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * scale));
+  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  if (cv.width !== w) cv.width = w;
+  if (cv.height !== h) cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+}
+
+function applyOriginalTransform() {
+  const cv = els.canvasOriginal;
+  if (!cv) return;
+  cv.style.transform = `translate(${App.origPan.x}px, ${App.origPan.y}px) scale(${App.origZoom})`;
+}
+
+// ---------- 同步拖拽的坐标换算 ----------
+// 拼豆图每个像素格在画布上占 screenCell 像素，且图案外侧有 GRID_MARGIN_CELLS 格边距；
+// 拼豆网格是原图压缩后的结果，因此整张网格 ↔ 整张原图：
+//   拼豆格 (x,y) 对应原图中被压缩为该格的原图像素块 (x*sw, y*sh)
+// 原图 zoom = 拼豆 zoom × screenCell × (网格宽 / 原图显示宽)
+//   原图 pan  = 拼豆 pan + 5 格边距 × screenCell × 拼豆 zoom
+function beadCellPx() {
+  return App.screenCell || CELL;
+}
+
+// 网格宽与原图显示宽的比值（与降采样系数相互抵消，与原图显示分辨率无关）
+function origZoomRatio() {
+  const gridW = App.project ? App.project.width : 0;
+  const dispW = els.canvasOriginal ? els.canvasOriginal.width : 0;
+  if (!gridW || !dispW) return 1;
+  return gridW / dispW;
+}
+
+function origFromBead() {
+  const cell = beadCellPx();
+  const marginPx = GRID_MARGIN_CELLS * cell * App.zoom;
+  return {
+    pan: { x: App.pan.x + marginPx, y: App.pan.y + marginPx },
+    zoom: App.zoom * cell * origZoomRatio(),
+  };
+}
+
+function beadFromOrig(pan, zoom) {
+  const cell = beadCellPx();
+  const beadZoom = zoom / (cell * origZoomRatio());
+  const marginPx = GRID_MARGIN_CELLS * cell * beadZoom;
+  return {
+    pan: { x: pan.x - marginPx, y: pan.y - marginPx },
+    zoom: beadZoom,
+  };
+}
+
+function mirrorBeadToOrig() {
+  const o = origFromBead();
+  App.origPan = o.pan;
+  App.origZoom = o.zoom;
+}
+
+function mirrorOrigToBead() {
+  const b = beadFromOrig(App.origPan, App.origZoom);
+  App.pan = b.pan;
+  App.zoom = b.zoom;
+}
+
+function fitOriginal() {
+  const cv = els.canvasOriginal;
+  const pane = els.compareOriginal;
+  if (!cv || !pane || !cv.width || !cv.height) return;
+  const vw = pane.clientWidth;
+  const vh = pane.clientHeight;
+  if (!vw || !vh) return;
+  App.origZoom = Math.max(0.05, Math.min((vw - 24) / cv.width, (vh - 24) / cv.height, 1.5));
+  App.origPan = { x: (vw - cv.width * App.origZoom) / 2, y: (vh - cv.height * App.origZoom) / 2 };
+  applyOriginalTransform();
+}
+
+function zoomAtOriginal(clientX, clientY, factor) {
+  const cv = els.canvasOriginal;
+  const rect = cv.getBoundingClientRect();
+  if (rect.width === 0 || !App.originalImage) return;
+  const stageLeft = rect.left - App.origPan.x;
+  const stageTop = rect.top - App.origPan.y;
+  const oldZ = App.origZoom;
+  const minZ = App.syncPan ? beadCellPx() * origZoomRatio() * 0.05 : 0.05;
+  const maxZ = App.syncPan ? beadCellPx() * origZoomRatio() * 8 : 8;
+  const newZ = Math.min(maxZ, Math.max(minZ, oldZ * factor));
+  const ix = (clientX - rect.left) / oldZ;
+  const iy = (clientY - rect.top) / oldZ;
+  App.origPan = { x: clientX - stageLeft - ix * newZ, y: clientY - stageTop - iy * newZ };
+  App.origZoom = newZ;
+  if (App.syncPan) {
+    mirrorOrigToBead();
+  }
+  applyTransform();
+  applyOriginalTransform();
+}
+
+function setCompareEnabled(on, { silent = false } = {}) {
+  if (on && !App.project) {
+    App.compareEnabled = false;
+    App.settings.compare = false;
+    els.chkCompare.checked = false;
+    if (!silent) toast('请先导入图片');
+    return false;
+  }
+  if (on && !App.originalImage) {
+    App.compareEnabled = false;
+    App.settings.compare = false;
+    els.chkCompare.checked = false;
+    if (!silent) toast('原图尚未加载，请先导入图片再使用对比');
+    return false;
+  }
+  App.compareEnabled = on;
+  App.settings.compare = on;
+  els.chkCompare.checked = on;
+  if (!on && App.syncPan) {
+    // 取消对比原图时，同步拖拽一并取消
+    App.syncPan = false;
+    App.settings.syncPan = false;
+    els.chkSyncPan.checked = false;
+  }
+  els.canvasScroll.classList.toggle('compare-on', on);
+  if (on) {
+    drawOriginalImage();
+    if (App.syncPan) mirrorBeadToOrig();
+    else fitOriginal();
+    applyOriginalTransform();
+  }
+  scheduleAutosave();
+  return true;
+}
+
+function setSyncPan(on) {
+  if (on && !App.compareEnabled) {
+    const ok = setCompareEnabled(true);
+    if (!ok) {
+      els.chkSyncPan.checked = false;
+      App.syncPan = false;
+      App.settings.syncPan = false;
+      return;
+    }
+  }
+  App.syncPan = on;
+  App.settings.syncPan = on;
+  els.chkSyncPan.checked = on;
+  if (on && App.originalImage) {
+    // 同步拖拽：以拼豆图当前坐标/缩放为准，换算成原图的坐标与缩放
+    mirrorBeadToOrig();
+    applyOriginalTransform();
+  }
+  scheduleAutosave();
 }
 
 // ---------------- Token 认证 ----------------
@@ -326,6 +724,13 @@ function renderAll() {
     els.usedColors.textContent = '';
     els.sliderValue.textContent = '2';
     syncHighlightBlink();
+    if (App.compareEnabled || App.syncPan) {
+      App.compareEnabled = false;
+      App.syncPan = false;
+      els.chkCompare.checked = false;
+      els.chkSyncPan.checked = false;
+      els.canvasScroll.classList.remove('compare-on');
+    }
     return;
   }
   const counts = C.computeUsedCounts(project.grid, project.width, project.height);
@@ -363,6 +768,7 @@ function redrawCanvas() {
     emptyStyle: App.settings.emptyStyle,
     showCodes: App.settings.showCodes,
     codes: buildCodes(),
+    zoom: App.zoom,
     selected: App.selectedCell,
     highlightColor: App.highlightColor,
     highlightBlink: App.highlightBlink,
@@ -391,8 +797,9 @@ function applyTransform() {
 
 function zoomFit() {
   if (!App.project) return;
-  const vw = els.canvasScroll.clientWidth;
-  const vh = els.canvasScroll.clientHeight;
+  const vp = App.compareEnabled ? els.beadPane : els.canvasScroll;
+  const vw = vp.clientWidth;
+  const vh = vp.clientHeight;
   const cw = els.canvas.width;
   const ch = els.canvas.height;
   if (!cw || !ch) return;
@@ -400,6 +807,10 @@ function zoomFit() {
   App.zoom = Math.max(0.05, z);
   App.pan = { x: (vw - cw * App.zoom) / 2, y: (vh - ch * App.zoom) / 2 };
   applyTransform();
+  if (App.syncPan && App.originalImage) {
+    mirrorBeadToOrig();
+    applyOriginalTransform();
+  }
 }
 
 function zoomAt(clientX, clientY, factor) {
@@ -415,6 +826,10 @@ function zoomAt(clientX, clientY, factor) {
   App.zoom = newZ;
   App.pan = { x: clientX - stageLeft - bx * newZ, y: clientY - stageTop - by * newZ };
   applyTransform();
+  if (App.syncPan && App.originalImage) {
+    mirrorBeadToOrig();
+    applyOriginalTransform();
+  }
 }
 
 // ---------------- 颜色配置 ----------------
@@ -1248,6 +1663,12 @@ async function restoreState() {
   els.emptyStyle.value = ['default', 'black', 'white'].includes(App.settings.emptyStyle)
     ? App.settings.emptyStyle
     : 'default';
+  // 对比/同步状态随设置持久化；原图从缓存恢复后再真正开启对比
+  App.compareEnabled = !!App.settings.compare;
+  App.syncPan = !!App.settings.syncPan;
+  els.chkCompare.checked = App.compareEnabled;
+  els.chkSyncPan.checked = App.syncPan;
+  els.canvasScroll.classList.remove('compare-on');
 
   if (st.project) {
     App.project = {
@@ -1287,11 +1708,27 @@ async function restoreState() {
   renderHistoryUI();
   renderAll();
   if (App.project) zoomFit();
+  // 从浏览器缓存恢复原图：刷新后对比功能仍可用
+  const originalRestored = await restoreOriginalFromCache();
+  if (App.compareEnabled) {
+    if (App.project && originalRestored) {
+      setCompareEnabled(true, { silent: true });
+    } else {
+      App.compareEnabled = false;
+      App.settings.compare = false;
+      App.syncPan = false;
+      App.settings.syncPan = false;
+      els.chkCompare.checked = false;
+      els.chkSyncPan.checked = false;
+    }
+  }
 }
 
 // ---------------- 事件绑定 ----------------
 
 function bindEvents() {
+  bindPanelToggles();
+
   els.btnLogin.addEventListener('click', tryLogin);
   els.loginToken.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') tryLogin();
@@ -1308,11 +1745,18 @@ function bindEvents() {
     const f = els.fileInput.files[0];
     if (f) {
       App.originalFile = f;
+      loadOriginalImage(f);
       processUpload();
     }
     els.fileInput.value = '';
   });
   els.btnRecompress.addEventListener('click', recompress);
+  els.chkCompare.addEventListener('change', () => {
+    setCompareEnabled(els.chkCompare.checked);
+  });
+  els.chkSyncPan.addEventListener('change', () => {
+    setSyncPan(els.chkSyncPan.checked);
+  });
   els.chkCodes.addEventListener('change', () => {
     App.settings.showCodes = els.chkCodes.checked;
     renderAll();
@@ -1321,16 +1765,10 @@ function bindEvents() {
   els.selDistance.addEventListener('change', () => {
     const useLab = els.selDistance.value === 'lab';
     if (App.settings.useLab === useLab) return;
-    if (App.project && App.dirty) {
-      if (!confirm('更改颜色距离将按新算法重新生成颜色映射，并丢弃画布上的手动修改。是否继续？')) {
-        els.selDistance.value = App.settings.useLab ? 'lab' : 'rgb';
-        return;
-      }
-    }
+    // 颜色距离只保存设置，不立即重算；单击「重新压缩」后才按新算法生成图案
     App.settings.useLab = useLab;
-    if (App.project && App.compressed) applyMapping();
-    else renderAll();
     scheduleAutosave();
+    hintDistanceDeferred();
   });
 
   els.colorSlider.addEventListener('input', () => {
@@ -1450,6 +1888,7 @@ function bindEvents() {
 
   els.canvasScroll.addEventListener('mousedown', (e) => {
     if (!App.project) return;
+    if (e.target && e.target.closest && e.target.closest('#compare-original')) return;
     if (e.button !== 0) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
       document.activeElement.blur();
@@ -1479,6 +1918,23 @@ function bindEvents() {
     // 拖拽 / 取色模式：单击与拖动在 mouseup 时区分
   });
   window.addEventListener('mousemove', (e) => {
+    if (dragState.orig) {
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      if (!dragState.moved && Math.hypot(dx, dy) > 4) dragState.moved = true;
+      if (dragState.moved) {
+        if (App.syncPan) {
+          App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
+          App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
+        } else {
+          App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
+        }
+        applyOriginalTransform();
+        if (App.syncPan) applyTransform();
+        els.canvasOriginal.style.cursor = 'grabbing';
+      }
+      return;
+    }
     if (!dragState.active || !App.project) return;
     const dx = e.clientX - dragState.startX;
     const dy = e.clientY - dragState.startY;
@@ -1488,6 +1944,10 @@ function bindEvents() {
     }
     if (dragState.moved && dragState.panning) {
       App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
+      if (App.syncPan && App.originalImage) {
+        mirrorBeadToOrig();
+        applyOriginalTransform();
+      }
       els.canvas.style.cursor = 'grabbing';
       applyTransform();
       return;
@@ -1514,11 +1974,13 @@ function bindEvents() {
       renderHistoryUI();
     }
     dragState.active = false;
+    dragState.orig = false;
     dragState.moved = false;
     dragState.panning = false;
     App.painting = false;
     App.lastCell = null;
     els.canvas.style.cursor = '';
+    els.canvasOriginal.style.cursor = '';
   });
   els.canvas.addEventListener('contextmenu', (e) => {
     if (!App.project || App.tool !== 'drag') return;
@@ -1532,9 +1994,33 @@ function bindEvents() {
 
   els.canvasScroll.addEventListener('wheel', (e) => {
     if (!App.project) return;
+    if (e.target && e.target.closest && e.target.closest('#compare-original')) return;
     if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
     e.preventDefault();
     zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }, { passive: false });
+
+  els.compareOriginal.addEventListener('mousedown', (e) => {
+    if (!App.project || !App.originalImage || !App.compareEnabled) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    dragState.active = true;
+    dragState.orig = true;
+    dragState.moved = false;
+    dragState.panning = false;
+    dragState.startX = e.clientX;
+    dragState.startY = e.clientY;
+    dragState.panStart = { ...App.pan };
+    dragState.origPanStart = { ...App.origPan };
+  });
+  els.compareOriginal.addEventListener('wheel', (e) => {
+    if (!App.project || !App.originalImage || !App.compareEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    zoomAtOriginal(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
   }, { passive: false });
 
   document.querySelectorAll('.tabs .tab').forEach((btn) => {
@@ -1610,6 +2096,7 @@ function setTool(t) {
 // ---------------- 启动 ----------------
 
 async function init() {
+  applyPanelPrefs();
   bindEvents();
   await ensureAuth();
   try {
@@ -1651,4 +2138,6 @@ window.__testHooks = {
   renderHistoryUI,
   openExportDialog,
   renderExportPreview,
+  mirrorBeadToOrig,
+  mirrorOrigToBead,
 };

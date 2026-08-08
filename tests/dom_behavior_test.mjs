@@ -372,5 +372,89 @@ function mouseAt(cellX, cellY) {
   console.log('[OK] 导出预览与「有未保存的修改」提示');
 }
 
+// ---------------- 8. 侧边栏折叠 / 展开 ----------------
+{
+  seedProject();
+  const panBefore = App.pan.x;
+  for (const id of ['left-panel', 'color-highlight-panel', 'right-panel']) {
+    const panel = elsMap[id];
+    assert.ok(panel && !panel.classList.contains('collapsed'), `${id} 初始应处于展开状态`);
+    // 左侧栏通过小按钮收起；颜色清单 / 事务历史通过点击标题栏收起
+    const trigger = elsMap[id + '-toggle'] || elsMap[id + '-head'];
+    const expand = elsMap[id + '-expand'];
+    assert.ok(trigger && expand, `${id} 应包含可点击的收起触发与展开按钮`);
+
+    trigger.emit('click');
+    assert.ok(panel.classList.contains('collapsed'), `${id} 点击折叠按钮后应收起`);
+    if (id === 'left-panel') {
+      assert.equal(App.pan.x, panBefore + 288, '折叠左侧栏后应补偿画布位移，保持画面绝对位置');
+    } else {
+      assert.equal(App.pan.x, panBefore, '折叠右侧栏不应改变画布位置');
+    }
+
+    expand.emit('click');
+    assert.ok(!panel.classList.contains('collapsed'), `${id} 点击展开按钮后应恢复展开`);
+    assert.equal(App.pan.x, panBefore, `${id} 展开后画布位置应复原`);
+  }
+  console.log('[OK] 侧边栏折叠 / 展开');
+}
+
+// ---------------- 9. 对比原图 / 同步拖拽守卫 ----------------
+{
+  seedProject();
+  App.originalImage = null;
+  elsMap['chk-compare'].checked = true;
+  elsMap['chk-compare'].emit('change');
+  assert.equal(App.compareEnabled, false, '无原图时不应开启对比');
+  assert.equal(elsMap['chk-compare'].checked, false, '无原图时勾选对比应被回退');
+
+  elsMap['chk-sync-pan'].checked = true;
+  elsMap['chk-sync-pan'].emit('change');
+  assert.equal(App.compareEnabled, false, '无原图时同步拖拽不应自动开启对比');
+  assert.equal(App.syncPan, false, '无原图时同步拖拽不应生效');
+  assert.equal(elsMap['chk-sync-pan'].checked, false, '无原图时勾选同步应被回退');
+  console.log('[OK] 对比原图 / 同步拖拽守卫');
+}
+
+// ---------------- 10. 同步换算：格放大 × 降采样系数，取消对比联动取消同步 ----------------
+{
+  seedProject();
+  App.screenCell = 26;
+  // 拼豆网格 48 格，原图显示宽 96px：整张网格 ↔ 整张原图，1 格对应 2 个显示像素
+  App.project.width = 48;
+  App.project.height = 48;
+  elsMap['canvas-original'].width = 96;
+  elsMap['canvas-original'].height = 96;
+  App.pan = { x: 100, y: 50 };
+  App.zoom = 1;
+
+  hooks.mirrorBeadToOrig();
+  assert.equal(App.origZoom, 13, '原图 zoom 应为 拼豆 zoom × 26 × (网格宽48/原图显示宽96)');
+  assert.equal(App.origPan.x, 230, '原图 pan.x 应包含 5 格边距偏移（100 + 5×26×1）');
+  assert.equal(App.origPan.y, 180, '原图 pan.y 应包含 5 格边距偏移（50 + 5×26×1）');
+
+  App.origPan = { x: 230, y: 180 };
+  App.origZoom = 13;
+  hooks.mirrorOrigToBead();
+  assert.equal(App.zoom, 1, '反向换算应还原拼豆 zoom');
+  assert.equal(App.pan.x, 100, '反向换算应还原拼豆 pan.x');
+  assert.equal(App.pan.y, 50, '反向换算应还原拼豆 pan.y');
+
+  // 取消对比原图 → 同步拖拽应一并取消
+  App.originalImage = { naturalWidth: 48, naturalHeight: 48 };
+  App.compareEnabled = true;
+  App.settings.compare = true;
+  App.syncPan = true;
+  App.settings.syncPan = true;
+  elsMap['chk-compare'].checked = true;
+  elsMap['chk-sync-pan'].checked = true;
+  elsMap['chk-compare'].checked = false;
+  elsMap['chk-compare'].emit('change');
+  assert.equal(App.syncPan, false, '取消对比后同步拖拽应一并取消');
+  assert.equal(elsMap['chk-sync-pan'].checked, false, '取消对比后同步勾选框应被取消');
+  assert.equal(App.compareEnabled, false, '取消对比后对比状态应关闭');
+  console.log('[OK] 同步换算含网格/原图比例 / 取消对比联动取消同步');
+}
+
 console.log('\nDOM 行为测试全部通过');
 process.exit(0);

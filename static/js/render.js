@@ -202,9 +202,16 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
 
   drawSelection(ctx, opts.selected, ox, oy, cell);
 
-  // 颜色清单高亮：给指定色号的像素画反色框；闪烁时按相位隐现
+  // 颜色清单高亮：半透明覆盖层 + 亮度自适应描边（描边带屏幕像素下限）
   if (opts.highlightColor != null && opts.highlightBlink !== false) {
-    const hlw = Math.max(2, Math.round(cell * 0.14));
+    const zoom = opts.zoom || 1;
+    const MIN_SCREEN_STROKE = 2.5; // 描边至少约 2.5 个屏幕像素
+    // 屏幕线宽 = 画布线宽 × zoom；取「按格子的常规宽度」与「屏幕像素下限」的较大者，
+    // 并限制不超过半格，避免格子太小时描边几何失效
+    const hlw = Math.max(
+      Math.round(cell * 0.14),
+      Math.min(Math.ceil(MIN_SCREEN_STROKE / zoom), Math.max(1, Math.floor(cell / 2)))
+    );
     const inset = hlw / 2;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -212,13 +219,18 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
         const v = displayIdx[p];
         if (v < 0 || v !== opts.highlightColor) continue;
         const c = displayRgb[p];
-        const inv = c
-          ? [255 - ((c >> 16) & 255), 255 - ((c >> 8) & 255), 255 - (c & 255)]
-          : [255, 255, 255];
-        ctx.strokeStyle = `rgb(${inv[0]}, ${inv[1]}, ${inv[2]})`;
-        ctx.lineWidth = hlw;
+        const r = (c >>> 16) & 255;
+        const g = (c >>> 8) & 255;
+        const b = c & 255;
+        const light = (r * 299 + g * 587 + b * 114) / 1000 >= 150;
         const x0 = ox + (x + MARGIN_CELLS) * cell;
         const y0 = oy + (y + MARGIN_CELLS) * cell;
+        // 半透明覆盖层：暗色格子提亮、亮色格子压暗，任何颜色（含灰色）都有反差
+        ctx.fillStyle = light ? 'rgba(0, 0, 0, 0.30)' : 'rgba(255, 255, 255, 0.36)';
+        ctx.fillRect(x0, y0, cell, cell);
+        // 亮度自适应描边：亮格子用深框、暗格子用浅框
+        ctx.strokeStyle = light ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.95)';
+        ctx.lineWidth = hlw;
         ctx.strokeRect(x0 + inset, y0 + inset, cell - inset * 2, cell - inset * 2);
       }
     }
