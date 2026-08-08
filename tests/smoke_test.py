@@ -148,12 +148,12 @@ def main():
             "height": j["height"],
             "grid": grid,
             "palette": palette,
-            "options": {"cellSize": 8, "gridLines": True, "margins": True, "outline": True, "format": "jpg"},
+            "options": {"cellSize": 8, "gridLines": True, "margins": True, "format": "jpg"},
         })
         assert j["dataUrl"].startswith("data:image/jpeg;base64,")
         print("[OK] 导出 JPG")
 
-        state = {"settings": {"targetPixels": 40000}, "project": None, "tree": {"nodes": {}, "rootId": None, "currentId": None, "nextId": 1}}
+        state = {"settings": {"targetPixels": 40000}, "project": None, "history": {"items": [], "currentId": None, "nextId": 1}}
         s, j = req("PUT", "/api/state", state)
         assert j["ok"]
         s, j = req("GET", "/api/state")

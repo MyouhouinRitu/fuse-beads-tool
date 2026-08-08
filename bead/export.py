@@ -54,18 +54,17 @@ def render_pattern(
     cell=20,
     grid_lines=True,
     outer_pad=0,
-    outline=False,
-    outline_width=None,
     hatch=True,
     empty_style="default",
     legend=None,
     codes=None,
     show_codes=True,
+    show_legend=True,
 ):
     legend = sorted(legend or [], key=lambda e: (-e.get("count", 0), e.get("code", "")))
     grid_w = (width + 2 * MARGIN_CELLS) * cell
     grid_h = (height + 2 * MARGIN_CELLS) * cell
-    rows = _legend_rows(len(legend), grid_w, cell)
+    rows = _legend_rows(len(legend), grid_w, cell) if show_legend else 0
     legend_h = rows * int(cell * 2.0 + 8) + int(cell * 1.2) if rows else 0
     total_w = grid_w + 2 * outer_pad
     total_h = grid_h + 2 * outer_pad + legend_h
@@ -104,30 +103,6 @@ def render_pattern(
             y = outer_pad + k * cell
             draw.line([(outer_pad, y), (outer_pad + grid_w, y)], fill="#9A9A9A", width=lw)
 
-    # 描边：仅围绕图案区内的实色格子
-    if outline:
-        ow = outline_width or max(2, round(cell * 0.15))
-        ox = outer_pad + MARGIN_CELLS * cell
-        oy = outer_pad + MARGIN_CELLS * cell
-        for y in range(height):
-            for x in range(width):
-                idx = grid[y * width + x]
-                if idx < 0:
-                    continue
-                x0, y0 = ox + x * cell, oy + y * cell
-                left = x == 0 or grid[y * width + x - 1] < 0
-                right = x == width - 1 or grid[y * width + x + 1] < 0
-                top = y == 0 or grid[(y - 1) * width + x] < 0
-                bottom = y == height - 1 or grid[(y + 1) * width + x] < 0
-                if left:
-                    draw.rectangle([x0, y0, x0 + ow - 1, y0 + cell - 1], fill="#111111")
-                if right:
-                    draw.rectangle([x0 + cell - ow, y0, x0 + cell - 1, y0 + cell - 1], fill="#111111")
-                if top:
-                    draw.rectangle([x0, y0, x0 + cell - 1, y0 + ow - 1], fill="#111111")
-                if bottom:
-                    draw.rectangle([x0, y0 + cell - ow, x0 + cell - 1, y0 + cell - 1], fill="#111111")
-
     # 格子内色号
     if show_codes and codes and cell >= 8:
         font = _font(cell, 0.5)
@@ -148,7 +123,7 @@ def render_pattern(
                 draw.text((x0 - tw / 2, y0 - th / 2), code, fill=text, font=font)
 
     # 色号图例（按豆数量从多到少排序，约 2 倍字号）
-    if legend:
+    if legend and show_legend:
         font = _font(cell, 0.9)
         pad = int(cell * 0.9)
         entry_w = cell * LEGEND_ENTRY_W

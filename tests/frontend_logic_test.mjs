@@ -1,7 +1,18 @@
-// 前端纯算法逻辑测试：颜色映射、贪心合并、事务树
+// 前端纯算法逻辑测试：颜色映射、贪心合并、扁平事务历史、单步撤销/重做
 import assert from 'node:assert/strict';
 import * as C from '../static/js/colors.js';
-import { createEmptyTree, createNode, deleteNode, compressNode } from '../static/js/tree.js';
+import {
+  createEmptyHistory,
+  createTransaction,
+  deleteTransaction,
+  findTransaction,
+  sanitizeHistory,
+  recordStep,
+  undoStep,
+  redoStep,
+  applyStepToGrid,
+  MAX_UNDO_STEPS,
+} from '../static/js/history.js';
 
 // ---- 最近色映射（功能三第 1~4 步）----
 {
@@ -70,36 +81,91 @@ import { createEmptyTree, createNode, deleteNode, compressNode } from '../static
   console.log('[OK] 贪心合并（滑动条）');
 }
 
-// ---- 事务树 ----
+// ---- 扁平事务历史（独立结构，无子树）----
 {
-  const tree = createEmptyTree();
-  const n1 = createNode(tree, null, { label: 'a' });
-  assert.equal(tree.rootId, n1.id);
-  const n2 = createNode(tree, n1.id, { label: 'b' });
-  assert.equal(n2.parentId, n1.id);
-  assert.deepEqual(tree.nodes[n1.id].children, [n2.id]);
+  const h = createEmptyHistory();
+  const t1 = createTransaction(h, { grid: [1, 2, 3], width: 3, height: 1 });
+  const t2 = createTransaction(h, { grid: [4, 5, 6], width: 3, height: 1 });
+  assert.equal(h.items.length, 2, '扁平历史按保存顺序存放');
+  assert.equal(t2.id, t1.id + 1, '节点编号递增');
+  assert.equal(h.currentId, t2.id, '新保存的节点成为当前节点');
+  assert.ok(!('parentId' in t1) && !('children' in t2), '节点之间没有父子关系');
+  assert.equal(findTransaction(h, t1.id).id, t1.id);
+  assert.equal(findTransaction(h, 999), null);
 
-  // 删除 n1 -> 全部删除
-  const r = deleteNode(tree, n1.id);
-  assert.equal(r.newCurrent, null);
-  assert.equal(Object.keys(tree.nodes).length, 0);
-  console.log('[OK] 事务树删除');
+  // 删除非当前节点：只删除该节点，其它节点与当前节点不受影响
+  const delOther = deleteTransaction(h, t1.id);
+  assert.equal(delOther.ok, true);
+  assert.equal(delOther.newCurrent, t2.id, '删除非当前节点后当前节点不变');
+  assert.equal(h.items.length, 1);
+  assert.equal(h.currentId, t2.id);
 
-  // 压缩：根 -> a，a -> b、c，再 b -> d
-  const t2 = createEmptyTree();
-  const a = createNode(t2, null, {});
-  const b = createNode(t2, a.id, {});
-  const c = createNode(t2, a.id, {});
-  const d = createNode(t2, b.id, {});
-  t2.currentId = b.id;
-  const cr = compressNode(t2, b.id);
-  assert.equal(cr.ok, true);
-  assert.equal(cr.newCurrent, a.id);
-  assert.equal(t2.nodes[a.id].children.length, 2, 'b 的子节点应挂到 a');
-  assert.equal(t2.nodes[d.id].parentId, a.id);
-  assert.ok(!t2.nodes[b.id]);
-  assert.equal(t2.currentId, a.id, '当前节点 b 被压缩后应切到父节点 a');
-  console.log('[OK] 事务树压缩');
+  // 删除当前节点：切到前一个节点
+  const t3 = createTransaction(h, { grid: [7, 8, 9], width: 3, height: 1 });
+  const delCurrent = deleteTransaction(h, t3.id);
+  assert.equal(delCurrent.newCurrent, t2.id, '删除当前节点后应切到相邻节点');
+  assert.equal(h.currentId, t2.id);
+
+  // 删除最后一个节点：currentId 置空
+  deleteTransaction(h, t2.id);
+  assert.equal(h.items.length, 0);
+  assert.equal(h.currentId, null);
+  console.log('[OK] 扁平事务历史：保存 / 只删单节点 / 切换当前节点');
+}
+
+// ---- 旧版树形结构数据兼容：直接清空，不崩溃 ----
+{
+  const legacy = { nodes: { 1: { id: 1, children: [2] }, 2: { id: 2, children: [] } }, rootId: 1, currentId: 2, nextId: 3 };
+  const h = sanitizeHistory(legacy);
+  assert.equal(h.items.length, 0);
+  assert.equal(h.currentId, null);
+
+  const h2 = sanitizeHistory({
+    items: [
+      { id: 1, label: 'A', snapshot: { grid: [0, -1], width: 2, height: 1 } },
+      { id: 2, label: 'B', snapshot: { grid: [1, 0], width: 2, height: 1 } },
+      { id: 'x', snapshot: { grid: [] } },
+      { id: 3, snapshot: { grid: 'bad' } },
+    ],
+    currentId: 2,
+    nextId: 10,
+  });
+  assert.equal(h2.items.length, 2, '应过滤掉非法节点');
+  assert.equal(h2.currentId, 2);
+  assert.equal(h2.nextId, 3, 'nextId 应根据现有节点推导');
+  console.log('[OK] 历史数据清洗与旧树兼容');
+}
+
+// ---- 单步撤销/重做：增量记录 + 20 步上限 ----
+{
+  const undo = [], redo = [];
+  const step1 = recordStep(undo, redo, [{ x: 0, y: 0, from: 0, to: 1 }]);
+  assert.ok(step1, '应记录第一步');
+  const step2 = recordStep(undo, redo, [{ x: 1, y: 0, from: 1, to: 2 }]);
+  assert.equal(redo.length, 0, '新记录应清空重做栈');
+  assert.equal(undo.length, 2);
+
+  const grid = new Int16Array([0, 1, 0]);
+  applyStepToGrid(grid, 3, step1.changes, 'redo');
+  assert.equal(grid[0], 1);
+
+  const u = undoStep(undo, redo);
+  assert.equal(u, step2, '撤销应取最后一步');
+  applyStepToGrid(grid, 3, u.changes, 'undo');
+  assert.equal(grid[1], 1);
+  assert.equal(redo.length, 1);
+
+  const r = redoStep(undo, redo);
+  assert.equal(r, step2, '重做应恢复最后一步');
+  applyStepToGrid(grid, 3, r.changes, 'redo');
+  assert.equal(grid[1], 2);
+
+  // 20 步上限：记录 25 步后只保留最近 20 步
+  const u2 = [], r2 = [];
+  for (let i = 0; i < 25; i++) recordStep(u2, r2, [{ x: 0, y: 0, from: i, to: i + 1 }]);
+  assert.equal(u2.length, MAX_UNDO_STEPS, '撤销栈不应超过 20 步');
+  assert.equal(u2[0].changes[0].from, 5, '应丢弃最旧的 5 步');
+  console.log('[OK] 单步撤销/重做：增量记录、重做清空、20 步上限');
 }
 
 console.log('\n前端逻辑测试全部通过');

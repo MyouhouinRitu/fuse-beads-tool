@@ -1,7 +1,18 @@
 import * as api from './api.js';
 import * as C from './colors.js';
-import { drawPattern, clearCanvas, CELL, OUTER_PAD, canvasMetrics } from './render.js';
-import { createEmptyTree, createNode, deleteNode, compressNode } from './tree.js';
+import { drawPattern, clearCanvas, CELL, canvasMetrics } from './render.js';
+import {
+  createEmptyHistory,
+  createTransaction,
+  deleteTransaction,
+  findTransaction,
+  sanitizeHistory,
+  recordStep,
+  undoStep,
+  redoStep,
+  applyStepToGrid,
+  MAX_UNDO_STEPS,
+} from './history.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -12,11 +23,9 @@ const els = {
   targetPixels: $('target-pixels'),
   btnRecompress: $('btn-recompress'),
   chkSharpen: $('chk-sharpen'),
-  chkOutline: $('chk-outline'),
   chkCodes: $('chk-codes'),
   selDistance: $('sel-distance'),
   btnExport: $('btn-export'),
-  btnSaveState: $('btn-save-state'),
   btnSaveStateSide: $('btn-save-state-side'),
   btnClearAll: $('btn-clear-all'),
   btnLogout: $('btn-logout'),
@@ -53,16 +62,21 @@ const els = {
   highlightColorList: $('highlight-color-list'),
   treeList: $('tree-list'),
   treeEmpty: $('tree-empty'),
+  btnUndo: $('btn-undo'),
+  btnRedo: $('btn-redo'),
+  undoInfo: $('undo-info'),
   exportDialog: $('export-dialog'),
   dlgCell: $('dlg-cell-size'),
   dlgGrid: $('dlg-grid-lines'),
   dlgPad: $('dlg-pad'),
-  dlgOutline: $('dlg-outline'),
   dlgCodes: $('dlg-codes'),
   dlgLegend: $('dlg-legend'),
+  dlgEmptyStyle: $('dlg-empty-style'),
   dlgFormat: $('dlg-format'),
   dlgOk: $('dlg-export-ok'),
   dlgCancel: $('dlg-export-cancel'),
+  dlgPreview: $('dlg-preview'),
+  dirtyIndicator: $('dirty-indicator'),
   loginMask: $('login-mask'),
   loginToken: $('login-token'),
   btnLogin: $('btn-login'),
@@ -74,7 +88,8 @@ const ctx = els.canvas.getContext('2d');
 const App = {
   configs: [],
   configName: null,
-  palette: [],
+  palette: [],          // 色板配置（可编辑，重新压缩时才应用到画布）
+  appliedPalette: [],   // 已应用色板：当前画布与编辑工具显示所用，重新压缩/导入时更新
   project: null,       // { width, height, grid: Int16Array }
   compressed: null,    // { rgba, width, height }
   originalFile: null,
@@ -82,21 +97,22 @@ const App = {
   baseGrid: null,
   sliderN: null,
   editedSinceSlider: false,
-  sliderSnap: null,
   brushColor: null,    // 未选择颜色
   tool: 'drag',        // drag（拖拽）/ brush（画笔）/ eraser（橡皮）
   selectedCell: null,
   painting: false,
   lastCell: null,
   pan: { x: 0, y: 0 },
-  tree: createEmptyTree(),
-  settings: { targetPixels: 40000, useLab: true, sharpen: true, outline: false, showCodes: true, emptyStyle: 'default' },
+  history: createEmptyHistory(),
+  undoStack: [],
+  redoStack: [],
+  strokeBuffer: null,  // 一次画笔/橡皮按下到放开过程中累积的像素修改
+  settings: { targetPixels: 40000, useLab: true, sharpen: true, showCodes: true, emptyStyle: 'default' },
   dirty: false,
   zoom: 1,
   screenCell: CELL,
   highlightBlink: true,
   highlightTimer: null,
-  merge: null,
   pickerCandidates: null,
   highlightColor: null,
   saveTimer: null,
@@ -125,6 +141,16 @@ function toast(msg) {
   toastTimer = setTimeout(() => els.toast.classList.remove('show'), 2600);
 }
 
+let paletteHintShownAt = 0;
+
+// 色板配置修改后不即时生效：弹出一次性提示，3 秒内不重复打扰
+function hintPaletteDeferred() {
+  const now = Date.now();
+  if (now - paletteHintShownAt < 3000) return;
+  paletteHintShownAt = now;
+  toast('色板配置修改后需单击「重新压缩」才会应用到画布');
+}
+
 function setBusy(b) {
   document.body.classList.toggle('busy', b);
 }
@@ -136,15 +162,6 @@ function downloadDataUrl(dataUrl, filename) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-}
-
-function nearestPaletteIndex(rgb, palette, useLab) {
-  let best = 0, bestD = Infinity;
-  for (let i = 0; i < palette.length; i++) {
-    const d = C.colorDist2(rgb, C.hexToRgb(palette[i].hex), useLab);
-    if (d < bestD) { bestD = d; best = i; }
-  }
-  return best;
 }
 
 // ---------------- Token 认证 ----------------
@@ -215,7 +232,7 @@ function buildDisplayData() {
     const v = grid[p];
     if (v < 0) { idx[p] = -1; continue; }
     idx[p] = v;
-    const c = App.palette[v] ? C.hexToRgb(App.palette[v].hex) : [255, 255, 255];
+    const c = App.appliedPalette[v] ? C.hexToRgb(App.appliedPalette[v].hex) : [255, 255, 255];
     rgb[p] = (c[0] << 16) | (c[1] << 8) | c[2];
   }
   return { idx, rgb };
@@ -223,7 +240,7 @@ function buildDisplayData() {
 
 function buildLegend(counts) {
   const legend = [];
-  App.palette.forEach((c, i) => {
+  App.appliedPalette.forEach((c, i) => {
     if (counts[i]) {
       legend.push({ hex: c.hex, code: c.code || String(c.index), count: counts[i] });
     }
@@ -254,55 +271,37 @@ function mergeGrid(source, palette, useLab, n) {
   return out;
 }
 
-function snapshotTreeIds(tree) {
-  return {
-    nodeIds: Object.keys(tree.nodes).map(Number),
-    rootId: tree.rootId,
-    currentId: tree.currentId,
-    nextId: tree.nextId,
-  };
-}
-
-// 将事务树裁剪回某次快照（删除该快照之后创建的所有节点）
-function pruneTreeToSnapshot(tree, snap) {
-  if (!snap) return;
-  const keep = new Set(snap.nodeIds);
-  for (const key of Object.keys(tree.nodes)) {
-    const id = Number(key);
-    if (keep.has(id)) continue;
-    const node = tree.nodes[id];
-    if (node.parentId != null && tree.nodes[node.parentId]) {
-      tree.nodes[node.parentId].children = tree.nodes[node.parentId].children.filter((c) => c !== id);
-    }
-    delete tree.nodes[id];
-  }
-  if (tree.rootId != null && !tree.nodes[tree.rootId]) {
-    tree.rootId = snap.rootId != null && tree.nodes[snap.rootId] ? snap.rootId : null;
-  }
-  if (tree.currentId != null && !tree.nodes[tree.currentId]) {
-    tree.currentId = snap.currentId != null && tree.nodes[snap.currentId] ? snap.currentId : tree.rootId;
-  }
-  tree.nextId = Math.max(tree.nextId || 1, snap.nextId || 1);
-}
-
 function applySlider(n) {
   if (!App.project) return;
   const baseUsed = App.baseGrid ? distinctCount(App.baseGrid, App.project.width, App.project.height) : 0;
-  if (App.editedSinceSlider) {
-    if (!confirm('调整滑块将丢弃滑块调整后的编辑，并清除上次使用滑块之后的事务历史。是否继续？')) {
+  const hasHistory = App.history.items.length > 0 || App.undoStack.length > 0 || App.redoStack.length > 0;
+  if (hasHistory || App.editedSinceSlider) {
+    const msg = hasHistory
+      ? '调整滑块将清空全部事务历史与撤销记录，并丢弃滑块调整后的编辑，从基副本重新生成图案。是否继续？'
+      : '调整滑块将丢弃滑块调整后的编辑，并从基副本重新生成图案。是否继续？';
+    if (!confirm(msg)) {
       els.colorSlider.value = String(App.sliderN ?? Math.max(2, baseUsed));
       els.sliderValue.textContent = String(App.sliderN ?? Math.max(2, baseUsed));
       return;
     }
-    pruneTreeToSnapshot(App.tree, App.sliderSnap);
-    renderHistoryUI();
+    if (hasHistory) {
+      clearHistoryRecords();
+      renderHistoryUI();
+    }
   }
-  App.project.grid = mergeGrid(App.baseGrid, App.palette, App.settings.useLab, n);
+  App.project.grid = mergeGrid(App.baseGrid, App.appliedPalette, App.settings.useLab, n);
   App.sliderN = n;
   App.editedSinceSlider = false;
-  App.sliderSnap = snapshotTreeIds(App.tree);
   renderAll();
   scheduleAutosave();
+}
+
+// 清空全部事务历史与单步撤销/重做记录（导入/重压缩/滑块等重新生成图案时使用）
+function clearHistoryRecords() {
+  App.history = createEmptyHistory();
+  App.undoStack = [];
+  App.redoStack = [];
+  App.strokeBuffer = null;
 }
 
 function buildCodes() {
@@ -310,8 +309,8 @@ function buildCodes() {
   const codes = new Array(width * height).fill('');
   for (let p = 0; p < grid.length; p++) {
     const v = grid[p];
-    if (v >= 0 && App.palette[v]) {
-      codes[p] = App.palette[v].code || String(App.palette[v].index);
+    if (v >= 0 && App.appliedPalette[v]) {
+      codes[p] = App.appliedPalette[v].code || String(App.appliedPalette[v].index);
     }
   }
   return codes;
@@ -353,16 +352,13 @@ function renderAll() {
 function redrawCanvas() {
   const project = App.project;
   if (!project) return;
-  const counts = C.computeUsedCounts(project.grid, project.width, project.height);
-  const legend = buildLegend(counts);
   const display = buildDisplayData();
 
   App.screenCell = chooseScreenCell(project.width, project.height);
   drawPattern(ctx, project.width, project.height, display.idx, display.rgb, {
     cell: App.screenCell,
+    outerPad: 0, // 工作区不再保留纯白边距，图例只在导出时显示
     gridLines: true,
-    outline: App.settings.outline,
-    outlineWidth: Math.max(2, Math.round(App.screenCell * 0.15)),
     hatch: true,
     emptyStyle: App.settings.emptyStyle,
     showCodes: App.settings.showCodes,
@@ -370,8 +366,6 @@ function redrawCanvas() {
     selected: App.selectedCell,
     highlightColor: App.highlightColor,
     highlightBlink: App.highlightBlink,
-    legend,
-    showLegend: true,
   });
   applyTransform();
 }
@@ -441,46 +435,27 @@ async function loadConfigs(selectName) {
   App.configName = name;
   els.configSelect.value = name || '';
   if (name && !App.palette.length) {
-    await loadConfigDetail(name, { remap: false });
+    await loadConfigDetail(name);
   }
 }
 
-async function loadConfigDetail(name, { remap } = {}) {
+async function loadConfigDetail(name) {
   const res = await api.getConfig(name);
-  const oldPalette = App.palette;
+  const hadPalette = App.palette.length > 0;
+  // 色板配置修改（含切换配置）只更新配置本身，画布与编辑工具保持不变，
+  // 单击「重新压缩」后才会按新配置重新生成图案
   App.palette = res.colors;
   App.configName = res.name;
   els.configSelect.value = res.name;
-  if (remap && App.project) remapGrid(oldPalette);
   renderColorTable();
-  renderColorList();
-  updateBrush();
-  renderAll();
   scheduleAutosave();
+  // 首次打开加载默认配置不算“更改”，不弹提示
+  if (hadPalette) hintPaletteDeferred();
 }
 
 async function selectAndLoad(name) {
   await loadConfigs(name);
-  if (name) await loadConfigDetail(name, { remap: false });
-}
-
-function remapGrid(oldPalette) {
-  const remap = (grid) => {
-    const map = new Map();
-    for (let p = 0; p < grid.length; p++) {
-      const v = grid[p];
-      if (v < 0) continue;
-      let ni = map.get(v);
-      if (ni == null) {
-        const rgb = C.hexToRgb(oldPalette[v] ? oldPalette[v].hex : '#FFFFFF');
-        ni = nearestPaletteIndex(rgb, App.palette, App.settings.useLab);
-        map.set(v, ni);
-      }
-      grid[p] = ni;
-    }
-  };
-  remap(App.project.grid);
-  if (App.baseGrid) remap(App.baseGrid);
+  if (name) await loadConfigDetail(name);
 }
 
 function scheduleConfigSave() {
@@ -544,8 +519,9 @@ function renderColorTable() {
     color.addEventListener('input', () => {
       App.palette[i].hex = color.value.toUpperCase();
       hex.value = App.palette[i].hex;
-      renderAll();
+      // 色板配置修改不即时应用到画布/画笔，单击「重新压缩」后才生效
       scheduleConfigSave();
+      hintPaletteDeferred();
     });
     hex.addEventListener('change', () => {
       const h = /^#?[0-9a-fA-F]{6}$/.test(hex.value.trim())
@@ -554,8 +530,8 @@ function renderColorTable() {
       App.palette[i].hex = h;
       color.value = h;
       hex.value = h;
-      renderAll();
       scheduleConfigSave();
+      hintPaletteDeferred();
     });
     const onText = () => {
       App.palette[i].code = code.value.trim();
@@ -572,7 +548,7 @@ function renderColorTable() {
 
 function removeColor(i) {
   const used = App.project && App.project.grid.some((v) => v === i);
-  if (used && !confirm('该颜色正在被使用，删除后已使用的格子会自动替换为最相近的颜色。是否继续？')) return;
+  if (used && !confirm('该颜色正在被使用，删除后重新压缩时已使用的格子会自动替换为最相近的颜色。是否继续？')) return;
   const oldPalette = App.palette;
   App.palette = App.palette.filter((_, k) => k !== i);
   if (!App.palette.length) {
@@ -581,33 +557,31 @@ function removeColor(i) {
     return;
   }
   renumberPalette();
-  if (App.project) remapGrid(oldPalette);
+  // 只修改色板配置本身，画布保持不变，重新压缩后才会按新配置生成
   renderColorTable();
-  renderColorList();
-  updateBrush();
-  renderAll();
   scheduleConfigSave();
+  hintPaletteDeferred();
 }
 
 function addColor() {
   const n = App.palette.length + 1;
   App.palette.push({ index: n, code: String(n).padStart(3, '0'), name: '', hex: '#FFFFFF' });
   renderColorTable();
-  renderColorList();
   scheduleConfigSave();
+  hintPaletteDeferred();
 }
 
 function updateBrush() {
-  if (App.brushColor != null && App.brushColor >= App.palette.length) {
-    App.brushColor = Math.max(0, App.palette.length - 1);
+  if (App.brushColor != null && App.brushColor >= App.appliedPalette.length) {
+    App.brushColor = Math.max(0, App.appliedPalette.length - 1);
   }
-  if (App.brushColor == null || !App.palette.length) {
+  if (App.brushColor == null || !App.appliedPalette.length) {
     els.brushSwatch.style.background = '#ffffff';
     els.brushSwatch.style.border = '2px dashed #b9bec7';
     els.brushLabel.textContent = '未选择颜色（点击左侧颜色进入画笔模式）';
     return;
   }
-  const c = App.palette[App.brushColor];
+  const c = App.appliedPalette[App.brushColor];
   if (!c) {
     els.brushSwatch.style.background = '#cccccc';
     els.brushSwatch.style.border = '';
@@ -625,7 +599,7 @@ function renderColorList(counts) {
   }
   const list = els.colorList;
   list.innerHTML = '';
-  App.palette.forEach((c, i) => {
+  App.appliedPalette.forEach((c, i) => {
     const item = document.createElement('div');
     item.className = 'color-item' + (App.brushColor === i ? ' selected' : '');
     item.title = `${c.name || ''} ${c.code || ''} ${c.hex}`;
@@ -661,7 +635,7 @@ function renderHighlightColorList(counts) {
     counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   }
   const entries = [];
-  App.palette.forEach((c, i) => {
+  App.appliedPalette.forEach((c, i) => {
     if (counts && counts[i]) entries.push({ c, i, count: counts[i] });
   });
   // 按数量正序（数量少的优先，值得修改），数量相同按色号
@@ -691,8 +665,13 @@ function renderHighlightColorList(counts) {
 
 // ---------------- 图片导入与映射 ----------------
 
-async function processUpload() {
+async function processUpload({ confirmHistory = true } = {}) {
   if (!App.originalFile) return;
+  if (confirmHistory && (App.history.items.length || App.undoStack.length || App.redoStack.length)) {
+    if (!confirm('导入图片将清空全部事务历史与撤销记录。是否继续？')) return;
+    clearHistoryRecords();
+    renderHistoryUI();
+  }
   setBusy(true);
   try {
     const target = parseInt(els.targetPixels.value, 10) || 40000;
@@ -726,6 +705,8 @@ function applyMapping() {
   const { grid, counts } = C.computeInitialMapping(rgba, width, height, App.palette, App.settings.useLab);
   App.project = { width, height, grid };
   App.baseGrid = grid.slice();
+  // 重新压缩/导入后，当前色板配置成为已应用色板（画布与编辑工具随之更新）
+  App.appliedPalette = App.palette.map((c) => ({ ...c }));
   App.selectedCell = null;
   App.highlightColor = null;
   let used = 0;
@@ -733,8 +714,10 @@ function applyMapping() {
   App.maxColors = Math.max(2, used);
   App.sliderN = null;
   App.editedSinceSlider = false;
-  App.sliderSnap = snapshotTreeIds(App.tree);
-  App.dirty = false;
+  App.undoStack = [];
+  App.redoStack = [];
+  App.strokeBuffer = null;
+  setDirty(false);
   renderAll();
   if (isNew) zoomFit();
   scheduleAutosave();
@@ -743,9 +726,14 @@ function applyMapping() {
 async function recompress() {
   if (!App.originalFile) { toast('请先导入图片'); return; }
   if (App.project && App.dirty) {
-    if (!confirm('重新压缩将按新设置重新生成图案，并丢弃画布上的手动修改（事务历史仍然保留）。是否继续？')) return;
+    if (!confirm('重新压缩将按新设置重新生成图案，并丢弃画布上的手动修改。是否继续？')) return;
   }
-  await processUpload();
+  if (App.history.items.length || App.undoStack.length || App.redoStack.length) {
+    if (!confirm('重新压缩将清空全部事务历史与撤销记录。是否继续？')) return;
+    clearHistoryRecords();
+    renderHistoryUI();
+  }
+  await processUpload({ confirmHistory: false });
   zoomFit(); // 重新压缩后默认适应窗口
 }
 
@@ -758,8 +746,8 @@ function cellFromEvent(e) {
   const cell = App.screenCell;
   const px = (e.clientX - rect.left) / scale;
   const py = (e.clientY - rect.top) / scale;
-  const gx = Math.floor((px - OUTER_PAD) / cell);
-  const gy = Math.floor((py - OUTER_PAD) / cell);
+  const gx = Math.floor(px / cell);
+  const gy = Math.floor(py / cell);
   const x = gx - 5;
   const y = gy - 5;
   // 四周 5 格为灰色 X 边距，属于图片但不可改色
@@ -772,12 +760,55 @@ function paintCell(x, y) {
   const p = y * width + x;
   const v = App.tool === 'eraser' ? -1 : (App.brushColor != null ? App.brushColor : -2);
   if (v === -2) return; // 未选择颜色
-  if (grid[p] === v) return;
+  if (grid[p] === v) return null;
+  const from = grid[p];
   grid[p] = v;
-  App.dirty = true;
+  setDirty(true);
   App.editedSinceSlider = true;
+  if (App.strokeBuffer) App.strokeBuffer.push({ x, y, from, to: v });
   scheduleRender();
   scheduleAutosave();
+  return { x, y, from, to: v };
+}
+
+// ---------------- 单步撤销 / 重做 ----------------
+
+function doUndo() {
+  if (!App.project) return;
+  const step = undoStep(App.undoStack, App.redoStack);
+  if (!step) return;
+  applyStepToGrid(App.project.grid, App.project.width, step.changes, 'undo');
+  setDirty(true);
+  App.editedSinceSlider = true;
+  renderHistoryUI();
+  scheduleRender();
+  scheduleAutosave();
+  toast(`已撤销（剩余 ${App.undoStack.length} 步）`);
+}
+
+function doRedo() {
+  if (!App.project) return;
+  const step = redoStep(App.undoStack, App.redoStack);
+  if (!step) return;
+  applyStepToGrid(App.project.grid, App.project.width, step.changes, 'redo');
+  setDirty(true);
+  App.editedSinceSlider = true;
+  renderHistoryUI();
+  scheduleRender();
+  scheduleAutosave();
+  toast(`已重做（剩余 ${App.redoStack.length} 步）`);
+}
+
+function updateUndoUI() {
+  els.btnUndo.disabled = App.undoStack.length === 0;
+  els.btnRedo.disabled = App.redoStack.length === 0;
+  els.undoInfo.textContent = `单步记录：${App.undoStack.length}/${MAX_UNDO_STEPS}`;
+}
+
+// 同步「有未保存的修改」提示：画布有改动但尚未保存为事务时显示
+function setDirty(d) {
+  App.dirty = d;
+  els.dirtyIndicator.classList.toggle('hidden', !d);
 }
 
 function pickColorFromCell(cell) {
@@ -815,7 +846,7 @@ function scheduleRender() {
 // ---------------- D 键快速选色 ----------------
 
 function openQuickPicker(cell) {
-  if (!App.palette.length) return;
+  if (!App.appliedPalette.length) return;
   const { grid, width, height } = App.project;
   const p = cell.y * width + cell.x;
   const own = grid[p];
@@ -832,11 +863,11 @@ function openQuickPicker(cell) {
   const list = [...candSet];
   // 2) 不足 9 个时，用与当前颜色最相近的颜色补齐
   if (list.length < 9) {
-    const baseHex = own >= 0 && App.palette[own]
-      ? App.palette[own].hex
-      : (App.brushColor != null && App.palette[App.brushColor] ? App.palette[App.brushColor].hex : '#FFFFFF');
+    const baseHex = own >= 0 && App.appliedPalette[own]
+      ? App.appliedPalette[own].hex
+      : (App.brushColor != null && App.appliedPalette[App.brushColor] ? App.appliedPalette[App.brushColor].hex : '#FFFFFF');
     const baseRgb = C.hexToRgb(baseHex);
-    const scored = App.palette
+    const scored = App.appliedPalette
       .map((c, i) => ({ i, d: C.colorDist2(baseRgb, C.hexToRgb(c.hex), App.settings.useLab) }))
       .filter((s) => !list.includes(s.i) && !exclude.has(s.i))
       .sort((a, b) => a.d - b.d);
@@ -856,7 +887,7 @@ function openQuickPicker(cell) {
   title.textContent = '相近颜色（按 1-9 选择）';
   box.appendChild(title);
   for (let k = 0; k < scored.length; k++) {
-    const c = App.palette[scored[k].i];
+    const c = App.appliedPalette[scored[k].i];
     const btn = document.createElement('button');
     btn.style.background = c.hex;
     const num = document.createElement('span');
@@ -888,8 +919,8 @@ function openQuickPicker(cell) {
   const rect = els.canvas.getBoundingClientRect();
   const scale = rect.width / els.canvas.width;
   const sc = App.screenCell;
-  const cx = rect.left + (OUTER_PAD + (cell.x + 5.5) * sc) * scale;
-  const cy = rect.top + (OUTER_PAD + (cell.y + 5.5) * sc) * scale;
+  const cx = rect.left + ((cell.x + 5.5) * sc) * scale;
+  const cy = rect.top + ((cell.y + 5.5) * sc) * scale;
   const gap = sc * scale;
   const bw = 54 * 3 + 22, bh = 250;
   const left = Math.max(8, Math.min(cx - bw / 2, window.innerWidth - bw - 8));
@@ -906,7 +937,14 @@ function pickQuickColor(k) {
   App.brushColor = cand.i;
   setTool('drag'); // 改完颜色后回到拖拽模式
   updateBrush();
-  if (App.selectedCell) paintCell(App.selectedCell.x, App.selectedCell.y);
+  if (App.selectedCell) {
+    // D 键九宫格对单个像素的修改记为一步
+    App.strokeBuffer = [];
+    paintCell(App.selectedCell.x, App.selectedCell.y);
+    if (App.strokeBuffer.length) recordStep(App.undoStack, App.redoStack, App.strokeBuffer);
+    App.strokeBuffer = null;
+    renderHistoryUI();
+  }
   closeQuickPicker();
   renderColorList();
 }
@@ -925,18 +963,18 @@ function saveTransaction() {
     width: App.project.width,
     height: App.project.height,
     paletteName: App.configName,
-    palette: App.palette.map((c) => ({ ...c })),
+    palette: App.appliedPalette.map((c) => ({ ...c })),
     maxColors: App.maxColors,
   };
-  const node = createNode(App.tree, App.tree.currentId, snapshot);
-  App.dirty = false;
+  const item = createTransaction(App.history, snapshot);
+  setDirty(false);
   renderHistoryUI();
-  toast(`已保存状态 #${node.id}（Ctrl+S）`);
+  toast(`已保存状态 #${item.id}（Ctrl+S）`);
   scheduleAutosave();
 }
 
 async function switchNode(id) {
-  const node = App.tree.nodes[id];
+  const node = findTransaction(App.history, id);
   if (!node) return;
   const snap = node.snapshot;
   App.project = { width: snap.width, height: snap.height, grid: Int16Array.from(snap.grid) };
@@ -946,8 +984,14 @@ async function switchNode(id) {
   App.maxColors = snap.maxColors || distinctCount(App.project.grid, snap.width, snap.height) || 2;
   App.sliderN = null;
   App.editedSinceSlider = false;
-  App.tree.currentId = id;
-  App.dirty = false;
+  App.history.currentId = id;
+  // 切换到其它事务后，以该事务快照中的色板作为已应用色板渲染画布
+  App.appliedPalette = (snap.palette || []).map((c) => ({ ...c }));
+  // 切换到其它事务后，工作网格整体被替换，旧的单步记录不再有效
+  App.undoStack = [];
+  App.redoStack = [];
+  App.strokeBuffer = null;
+  setDirty(false);
   closeQuickPicker();
 
   const exists = snap.paletteName && App.configs.some((c) => c.name === snap.paletteName);
@@ -973,88 +1017,68 @@ async function switchNode(id) {
 }
 
 function doDeleteNode(id) {
-  const node = App.tree.nodes[id];
+  const node = findTransaction(App.history, id);
   if (!node) return;
-  if (!confirm(`确定删除「${node.label}」及其之后的所有状态吗？此操作不可恢复。`)) return;
-  const prev = App.tree.currentId;
-  const { newCurrent } = deleteNode(App.tree, id);
+  if (!confirm(`确定删除事务「${node.label}」吗？此操作不可恢复。`)) return;
+  const prev = App.history.currentId;
+  const { newCurrent } = deleteTransaction(App.history, id);
   if (newCurrent != null && newCurrent !== prev) {
     switchNode(newCurrent);
   } else {
-    renderHistoryUI();
-  }
-  scheduleAutosave();
-}
-
-function doCompressNode(id) {
-  const node = App.tree.nodes[id];
-  if (!node) return;
-  if (node.parentId == null) { toast('根状态不能压缩'); return; }
-  if (!confirm(`确定压缩「${node.label}」吗？该状态将被移除，其后的所有状态将挂到上一个状态。`)) return;
-  const prev = App.tree.currentId;
-  const { newCurrent } = compressNode(App.tree, id);
-  if (newCurrent != null && newCurrent !== prev) {
-    switchNode(newCurrent);
-  } else {
+    if (prev === id) {
+      // 删除了当前事务：工作网格失去锚点，单步记录一并清空
+      App.undoStack = [];
+      App.redoStack = [];
+      App.strokeBuffer = null;
+    }
     renderHistoryUI();
   }
   scheduleAutosave();
 }
 
 function clearAll() {
-  if (!App.project && Object.keys(App.tree.nodes).length === 0) { toast('当前没有可清空的内容'); return; }
-  if (!confirm('确定要清空当前状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。')) return;
+  if (!App.project && App.history.items.length === 0) { toast('当前没有可清空的内容'); return; }
+  if (!confirm('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。')) return;
   App.project = null;
   App.baseGrid = null;
   App.compressed = null;
   App.originalFile = null;
-  App.tree = createEmptyTree();
+  clearHistoryRecords();
   App.maxColors = 2;
   App.sliderN = null;
   App.editedSinceSlider = false;
-  App.sliderSnap = null;
-  App.dirty = false;
+  setDirty(false);
   App.selectedCell = null;
   App.highlightColor = null;
   closeQuickPicker();
   renderHistoryUI();
   renderAll();
   scheduleAutosave();
-  toast('已清空当前状态');
-}
-
-function sanitizeTree(tree) {
-  if (!tree || typeof tree !== 'object' || !tree.nodes || typeof tree.nodes !== 'object') {
-    return createEmptyTree();
-  }
-  if (tree.rootId != null && !tree.nodes[tree.rootId]) tree.rootId = null;
-  if (tree.currentId != null && !tree.nodes[tree.currentId]) tree.currentId = null;
-  tree.nextId = tree.nextId || 1;
-  return tree;
+  toast('已清空所有状态');
 }
 
 function renderHistoryUI() {
   const list = els.treeList;
   list.innerHTML = '';
-  const root = App.tree.rootId;
-  els.treeEmpty.style.display = root == null ? '' : 'none';
-  if (root == null) return;
-  list.appendChild(renderTreeNode(root));
+  els.treeEmpty.style.display = App.history.items.length ? 'none' : '';
+  // 扁平展示：没有子树，所有事务节点按保存顺序排列在同一层
+  for (const item of App.history.items) list.appendChild(renderHistoryItem(item));
+  updateUndoUI();
 }
 
-function renderTreeNode(id) {
-  const node = App.tree.nodes[id];
+function renderHistoryItem(item) {
+  const { id } = item;
   const div = document.createElement('div');
-  div.className = 'tree-node' + (App.tree.currentId === id ? ' current' : '');
+  div.className = 'tree-node' + (App.history.currentId === id ? ' current' : '');
 
   const head = document.createElement('div');
   head.className = 'tn-head';
   const label = document.createElement('span');
   label.className = 'tn-label';
-  label.textContent = node.label;
+  label.textContent = item.label;
   const time = document.createElement('span');
   time.className = 'tn-time';
-  time.textContent = new Date(node.createdAt).toLocaleString('zh-CN', {
+  time.textContent = new Date(item.createdAt).toLocaleString('zh-CN', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   });
   head.append(label, time);
@@ -1063,26 +1087,14 @@ function renderTreeNode(id) {
   actions.className = 'tn-actions';
   const del = document.createElement('button');
   del.textContent = '删除';
-  del.title = '删除该状态及其后的所有状态';
-  const comp = document.createElement('button');
-  comp.textContent = '压缩';
-  comp.disabled = node.parentId == null;
-  comp.title = node.parentId == null ? '根状态不能压缩' : '移除该状态，其后状态挂到上一个状态';
+  del.title = '只删除该事务节点';
   del.addEventListener('click', (e) => { e.stopPropagation(); doDeleteNode(id); });
-  comp.addEventListener('click', (e) => { e.stopPropagation(); doCompressNode(id); });
-  actions.append(del, comp);
+  actions.append(del);
   div.append(head, actions);
 
   div.addEventListener('click', () => {
-    if (App.tree.currentId !== id) switchNode(id);
+    if (App.history.currentId !== id) switchNode(id);
   });
-
-  if (node.children.length) {
-    const ch = document.createElement('div');
-    ch.className = 'tn-children';
-    for (const cid of node.children) ch.appendChild(renderTreeNode(cid));
-    div.appendChild(ch);
-  }
   return div;
 }
 
@@ -1098,8 +1110,8 @@ function buildExportData() {
   for (let p = 0; p < n; p++) {
     const v = App.project.grid[p];
     if (v < 0) { gridOut[p] = -1; continue; }
-    if (App.palette[v]) codesOut[p] = App.palette[v].code || String(App.palette[v].index);
-    const hex = App.palette[v] ? App.palette[v].hex : '#FFFFFF';
+    if (App.appliedPalette[v]) codesOut[p] = App.appliedPalette[v].code || String(App.appliedPalette[v].index);
+    const hex = App.appliedPalette[v] ? App.appliedPalette[v].hex : '#FFFFFF';
     let i = hexMap.get(hex);
     if (i == null) {
       i = paletteOut.length;
@@ -1114,9 +1126,42 @@ function buildExportData() {
 
 function openExportDialog() {
   if (!App.project) { toast('请先导入图片'); return; }
-  els.dlgOutline.checked = App.settings.outline;
   els.dlgCodes.checked = App.settings.showCodes;
   els.exportDialog.classList.remove('hidden');
+  renderExportPreview();
+}
+
+// 导出预览：用前端渲染器即时绘制一张小图（不经过后端，秒级响应）
+function renderExportPreview() {
+  if (!App.project) return;
+  const counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
+  const legend = buildLegend(counts);
+  const display = buildDisplayData();
+  const cellSize = Math.max(5, Math.min(100, parseInt(els.dlgCell.value, 10) || 20));
+  const pad = Math.max(0, Math.min(200, parseInt(els.dlgPad.value, 10) || 0));
+  const showLegend = els.dlgLegend.checked;
+  const previewCell = 8;
+  const previewPad = Math.round(pad * previewCell / cellSize);
+  const off = document.createElement('canvas');
+  const octx = off.getContext('2d');
+  drawPattern(octx, App.project.width, App.project.height, display.idx, display.rgb, {
+    cell: previewCell,
+    outerPad: previewPad,
+    gridLines: els.dlgGrid.checked,
+    hatch: true,
+    emptyStyle: els.dlgEmptyStyle.value,
+    showCodes: els.dlgCodes.checked,
+    codes: buildCodes(),
+    legend: showLegend ? legend : [],
+    showLegend,
+  });
+  const pv = els.dlgPreview;
+  const scale = Math.min(290 / off.width, 250 / off.height, 1);
+  pv.width = Math.max(1, Math.round(off.width * scale));
+  pv.height = Math.max(1, Math.round(off.height * scale));
+  const pctx = pv.getContext('2d');
+  pctx.clearRect(0, 0, pv.width, pv.height);
+  pctx.drawImage(off, 0, 0, pv.width, pv.height);
 }
 
 async function doExport() {
@@ -1135,12 +1180,11 @@ async function doExport() {
         cellSize: Math.max(5, Math.min(100, parseInt(els.dlgCell.value, 10) || 20)),
         gridLines: els.dlgGrid.checked,
         outerPad: Math.max(0, Math.min(200, parseInt(els.dlgPad.value, 10) || 0)),
-        outline: els.dlgOutline.checked,
         showCodes: els.dlgCodes.checked,
         legend: els.dlgLegend.checked,
         format: fmt,
         quality: 95,
-        emptyStyle: App.settings.emptyStyle,
+        emptyStyle: els.dlgEmptyStyle.value,
       },
     });
     downloadDataUrl(res.dataUrl, `拼豆图案.${fmt === 'png' ? 'png' : 'jpg'}`);
@@ -1166,12 +1210,11 @@ function buildStatePayload() {
       baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
       sliderN: App.sliderN,
       editedSinceSlider: App.editedSinceSlider,
-      sliderSnap: App.sliderSnap,
       paletteName: App.configName,
-      palette: App.palette.map((c) => ({ ...c })),
+      palette: App.appliedPalette.map((c) => ({ ...c })),
       maxColors: App.maxColors,
     } : null,
-    tree: App.tree,
+    history: App.history,
   };
 }
 
@@ -1197,9 +1240,9 @@ async function restoreState() {
     st = {};
   }
   if (st.settings) Object.assign(App.settings, st.settings);
+  delete App.settings.outline; // 描边功能已移除
   els.targetPixels.value = App.settings.targetPixels;
   els.chkSharpen.checked = App.settings.sharpen;
-  els.chkOutline.checked = App.settings.outline;
   els.chkCodes.checked = App.settings.showCodes;
   els.selDistance.value = App.settings.useLab ? 'lab' : 'rgb';
   els.emptyStyle.value = ['default', 'black', 'white'].includes(App.settings.emptyStyle)
@@ -1218,9 +1261,21 @@ async function restoreState() {
     App.maxColors = st.project.maxColors || distinctCount(App.project.grid, st.project.width, st.project.height) || 2;
     App.sliderN = st.project.sliderN ?? null;
     App.editedSinceSlider = !!st.project.editedSinceSlider;
-    App.sliderSnap = st.project.sliderSnap || null;
     App.configName = st.project.paletteName || App.configName;
-    if (st.project.palette && st.project.palette.length) {
+    // 已应用色板 = 上次保存/导入时画布所用的色板，画布与编辑工具按其显示
+    App.appliedPalette = (st.project.palette && st.project.palette.length)
+      ? st.project.palette.map((c) => ({ ...c }))
+      : App.appliedPalette.map((c) => ({ ...c }));
+    // 色板配置（可编辑）以磁盘上的配置为准；仅当配置不存在时回退到快照色板
+    const configExists = App.configName && App.configs.some((c) => c.name === App.configName);
+    if (configExists) {
+      try {
+        const res = await api.getConfig(App.configName);
+        App.palette = res.colors;
+      } catch (e) {
+        // 保留已加载的配置色板
+      }
+    } else if (st.project.palette && st.project.palette.length) {
       App.palette = st.project.palette.map((c) => ({ ...c }));
     }
     els.configSelect.value = App.configName || '';
@@ -1228,7 +1283,7 @@ async function restoreState() {
     renderColorList();
     updateBrush();
   }
-  if (st.tree) App.tree = sanitizeTree(st.tree);
+  App.history = sanitizeHistory(st.history || st.tree);
   renderHistoryUI();
   renderAll();
   if (App.project) zoomFit();
@@ -1258,11 +1313,6 @@ function bindEvents() {
     els.fileInput.value = '';
   });
   els.btnRecompress.addEventListener('click', recompress);
-  els.chkOutline.addEventListener('change', () => {
-    App.settings.outline = els.chkOutline.checked;
-    renderAll();
-    scheduleAutosave();
-  });
   els.chkCodes.addEventListener('change', () => {
     App.settings.showCodes = els.chkCodes.checked;
     renderAll();
@@ -1295,14 +1345,22 @@ function bindEvents() {
   els.btnExport.addEventListener('click', openExportDialog);
   els.dlgCancel.addEventListener('click', () => els.exportDialog.classList.add('hidden'));
   els.dlgOk.addEventListener('click', doExport);
+  for (const [key, evt] of [
+    ['dlgCell', 'input'], ['dlgPad', 'input'],
+    ['dlgGrid', 'change'], ['dlgCodes', 'change'], ['dlgLegend', 'change'],
+    ['dlgEmptyStyle', 'change'], ['dlgFormat', 'change'],
+  ]) {
+    els[key].addEventListener(evt, renderExportPreview);
+  }
 
-  els.btnSaveState.addEventListener('click', saveTransaction);
   els.btnSaveStateSide.addEventListener('click', saveTransaction);
   els.btnClearAll.addEventListener('click', clearAll);
+  els.btnUndo.addEventListener('click', doUndo);
+  els.btnRedo.addEventListener('click', doRedo);
 
   els.configSelect.addEventListener('change', () => {
     const name = els.configSelect.value;
-    if (name) loadConfigDetail(name, { remap: true });
+    if (name) loadConfigDetail(name);
   });
   els.btnNewConfig.addEventListener('click', async () => {
     const name = prompt('新配置名称：');
@@ -1411,6 +1469,8 @@ function bindEvents() {
       if (cell) {
         App.painting = true;
         App.lastCell = cell;
+        // 一次按下到放开的全部像素修改记为一步
+        App.strokeBuffer = [];
         paintCell(cell.x, cell.y);
       } else {
         dragState.panning = true;
@@ -1447,6 +1507,11 @@ function bindEvents() {
       } else if (App.tool === 'picker' && dragState.downCell) {
         pickColorFromCell(dragState.downCell);
       }
+    }
+    if (App.strokeBuffer) {
+      if (App.strokeBuffer.length) recordStep(App.undoStack, App.redoStack, App.strokeBuffer);
+      App.strokeBuffer = null;
+      renderHistoryUI();
     }
     dragState.active = false;
     dragState.moved = false;
@@ -1490,6 +1555,16 @@ function bindEvents() {
     }
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      doUndo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      doRedo();
+      return;
+    }
     const pickerOpen = !els.quickPicker.classList.contains('hidden');
     if (pickerOpen) {
       const n = parseInt(e.key, 10);
@@ -1557,3 +1632,23 @@ init();
 
 // 调试句柄（便于自动化测试读取内部状态）
 window.__app = App;
+
+// 自动化测试用：暴露需要直接驱动的内部函数
+window.__testHooks = {
+  renderAll,
+  redrawCanvas,
+  updateBrush,
+  paintCell,
+  pickQuickColor,
+  doUndo,
+  doRedo,
+  applySlider,
+  saveTransaction,
+  switchNode,
+  doDeleteNode,
+  clearAll,
+  restoreState,
+  renderHistoryUI,
+  openExportDialog,
+  renderExportPreview,
+};

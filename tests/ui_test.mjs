@@ -18,7 +18,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fuse_ui_'));
 const IMG = path.join(TMP, 'ui_test.png');
 const STATE = path.join(ROOT, 'data', 'state.json');
-const OP = 20; // 外部白边（与 render.js OUTER_PAD 一致）
+const OP = 0; // 工作区不再保留外部白边（导出时才使用外部白边）
 const CELL = 26; // 默认格子大小（与 render.js CELL 一致）
 const MARGIN = 5 * CELL;
 const ccx = (x) => OP + MARGIN + x * CELL + Math.floor(CELL / 2);
@@ -86,8 +86,8 @@ async function canvasPoint(page, cellX, cellY) {
     const scale = rect.width / canvas.width;
     const cell = 26;
     return {
-      x: rect.left + (20 + (cx + 5.5) * cell) * scale,
-      y: rect.top + (20 + (cy + 5.5) * cell) * scale,
+      x: rect.left + ((cx + 5.5) * cell) * scale,
+      y: rect.top + ((cy + 5.5) * cell) * scale,
     };
   }, [cellX, cellY]);
 }
@@ -119,10 +119,44 @@ async function main() {
   await page.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, { timeout: 20000 });
   await page.waitForFunction(() => document.querySelector('#used-colors')?.textContent.includes('3 种颜色'), null, { timeout: 5000 });
   await page.uncheck('#chk-codes'); // 关闭格内色号文字，避免干扰像素断言
-  assert.equal(await page.evaluate(() => document.querySelector('#canvas').width), 1548, '画布宽应为 (48+10)*26+2*20');
+  assert.equal(await page.evaluate(() => document.querySelector('#canvas').width), 1508, '画布宽应为 (48+10)*26（无外部白边）');
+  assert.equal(await page.evaluate(() => document.querySelector('#canvas').height), 1508, '画布高应为 (48+10)*26（无图例区）');
   await near(await px(page, ccx(5), ccy(5)), [229, 57, 53], 14);   // 红色块
   await near(await px(page, ccx(40), ccy(5)), [30, 136, 229], 14);  // 蓝色块
   console.log('[OK] 导入并显示像素网格');
+
+  // 1.2 工具栏与右侧面板布局：无描边；显示色号/透明色在画布工具栏；记录+自动保存位于导出左侧；事务历史带未保存提示
+  const layout = await page.evaluate(() => {
+    const firstRow = document.querySelectorAll('header .tb-row')[0];
+    const headerOrder = ['btn-undo', 'btn-redo', 'undo-info', 'autosave-indicator', 'btn-export'].map((id) => {
+      const el = document.getElementById(id);
+      return el ? Array.from(firstRow.children).indexOf(el) : -1;
+    });
+    const canvasOrder = ['zoom-fit', 'chk-codes', 'empty-style'].map((id) => {
+      const el = document.getElementById(id);
+      return el ? Array.from(document.querySelectorAll('#canvas-toolbar *')).indexOf(el) : -1;
+    });
+    return {
+      outlineRemoved: !document.getElementById('chk-outline') && !document.getElementById('dlg-outline'),
+      recordsBeforeAutosave: headerOrder[0] >= 0 && headerOrder[2] >= 0 && headerOrder[0] < headerOrder[2] && headerOrder[2] < headerOrder[3],
+      autosaveBeforeExport: headerOrder[3] >= 0 && headerOrder[4] >= 0 && headerOrder[3] < headerOrder[4],
+      codesAfterZoom: canvasOrder[0] >= 0 && canvasOrder[1] >= 0 && canvasOrder[0] < canvasOrder[1],
+      emptyAfterCodes: canvasOrder[1] >= 0 && canvasOrder[2] >= 0 && canvasOrder[1] < canvasOrder[2],
+      noRecordsTitle: ![...document.querySelectorAll('#right-panel .panel-title')].some((t) => t.textContent.trim() === '记录'),
+      hasHistoryTitle: [...document.querySelectorAll('#right-panel .panel-title')].some((t) => t.textContent.trim() === '事务历史'),
+      hasDirtyIndicator: !!document.querySelector('#right-panel #dirty-indicator'),
+      hasTreeList: !!document.querySelector('#right-panel #tree-list'),
+      hasExportEmptyStyle: !!document.getElementById('dlg-empty-style'),
+      hasExportPreview: !!document.getElementById('dlg-preview'),
+    };
+  });
+  assert.ok(layout.outlineRemoved, '描边控件应已整体移除');
+  assert.ok(layout.recordsBeforeAutosave && layout.autosaveBeforeExport, '记录应在自动保存左侧、自动保存应在导出左侧');
+  assert.ok(layout.codesAfterZoom && layout.emptyAfterCodes, '显示色号/透明色应在画布工具栏缩放按钮右侧且顺序正确');
+  assert.ok(layout.noRecordsTitle && layout.hasHistoryTitle && layout.hasDirtyIndicator && layout.hasTreeList, '右侧面板应为单一事务历史块并带未保存提示');
+  assert.ok(layout.hasExportEmptyStyle && layout.hasExportPreview, '导出对话框应包含独立透明色选项与预览');
+  assert.ok(!(await page.textContent('#toast')).includes('重新压缩'), '首次打开网站不应弹出色板配置提示');
+  console.log('[OK] 工具栏 / 画布工具栏 / 右侧面板布局');
 
   // 2. 颜色简化滑块
   assert.equal(await page.inputValue('#color-slider'), '3', '使用 3 种颜色，滑块最大应为 3');
@@ -187,6 +221,19 @@ async function main() {
   const edge = await px(page, OP + MARGIN + 10 * CELL + 3, OP + MARGIN + 10 * CELL + Math.floor(CELL / 2));
   assert.ok(!(edge[2] > 140 && edge[0] < 120), `画笔涂色不应产生高亮，实际 ${edge}`);
   console.log('[OK] 画笔涂色');
+
+  // 3.5 单步撤销 / 重做：Ctrl+Z 撤销涂色、Ctrl+Y 重做
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(250);
+  await near(await px(page, ccx(10), ccy(10)), [229, 57, 53], 10, '撤销后应恢复原红色');
+  await page.keyboard.press('Control+y');
+  await page.waitForTimeout(250);
+  await near(await px(page, ccx(10), ccy(10)), [255, 255, 255], 10, '重做后应恢复白色');
+  assert.equal(await page.locator('#tree-list .tree-node').count(), 0, '撤销/重做不应产生事务');
+  assert.ok((await page.textContent('#undo-info')).includes('1/20'), '撤销/重做后应保留这一步记录');
+  assert.notEqual(await page.evaluate(() => getComputedStyle(document.querySelector('#dirty-indicator')).display), 'none',
+    '编辑后应显示「有未保存的修改」提示');
+  console.log('[OK] 单步撤销 / 重做');
 
   // 4. 橡皮拖拽（空位显示浅灰斜线）
   await page.click('#tool-eraser');
@@ -282,7 +329,7 @@ async function main() {
     const canvas = document.querySelector('#canvas');
     const rect = canvas.getBoundingClientRect();
     const scale = rect.width / canvas.width;
-    return { x: rect.left + (20 + 1.5 * 26) * scale, y: rect.top + (20 + 1.5 * 26) * scale };
+    return { x: rect.left + (1.5 * 26) * scale, y: rect.top + (1.5 * 26) * scale };
   });
   await page.mouse.click(clearPt.x, clearPt.y); // 清除像素高亮，避免与颜色高亮混叠
   await page.waitForTimeout(120);
@@ -344,6 +391,8 @@ async function main() {
   await page.keyboard.press('Control+s');
   await page.waitForTimeout(250);
   assert.equal(await page.locator('#tree-list .tree-node').count(), 2, '保存两次应有 2 个状态');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dirty-indicator')).display), 'none',
+    '保存事务后应隐藏「有未保存的修改」提示');
   page.once('dialog', (d) => d.accept());
   await page.click('#tree-list .tree-node.current .tn-actions button:first-child');
   await page.waitForTimeout(400);
@@ -351,9 +400,12 @@ async function main() {
   assert.match(await page.textContent('#tree-list .tn-label'), /状态 #1/, '当前应切回状态 #1');
   console.log('[OK] 事务历史保存 / 删除 / 切换');
 
-  // 7. 导出 JPG
+  // 7. 导出 JPG：实时预览 + 图例开关生效
   await page.click('#btn-export');
   await page.fill('#dlg-cell-size', '10');
+  await page.waitForFunction(() => document.querySelector('#dlg-preview')?.width > 0, null, { timeout: 5000 });
+  const previewW = await page.evaluate(() => document.querySelector('#dlg-preview').width);
+  assert.ok(previewW > 0, '导出对话框应显示实时预览');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.click('#dlg-export-ok'),
@@ -364,7 +416,20 @@ async function main() {
   const outJpg = path.join(TMP, 'exported.jpg');
   fs.copyFileSync(dlPath, outJpg);
   assert.ok(fs.statSync(outJpg).size > 1000, '导出文件过小');
-  console.log('[OK] 导出 JPG');
+  // 取消「附带色号图例」后再次导出，输出应与带图例时不同
+  await page.click('#btn-export');
+  await page.fill('#dlg-cell-size', '10');
+  await page.uncheck('#dlg-legend');
+  const [download2] = await Promise.all([
+    page.waitForEvent('download'),
+    page.click('#dlg-export-ok'),
+  ]);
+  const dlPath2 = await download2.path();
+  if (!dlPath2) throw new Error('导出下载未返回文件路径');
+  const outJpgNoLegend = path.join(TMP, 'exported_nolegend.jpg');
+  fs.copyFileSync(dlPath2, outJpgNoLegend);
+  assert.notEqual(fs.statSync(outJpgNoLegend).size, fs.statSync(outJpg).size, '图例开关应改变导出图片');
+  console.log('[OK] 导出 JPG（预览 + 图例开关生效）');
 
   // 8. 自动保存 + 刷新恢复
   // 等待最新状态（删除后的单节点树 + 擦除的空位）真正落盘，再刷新
@@ -373,7 +438,7 @@ async function main() {
       const r = await fetch('/api/state');
       if (!r.ok) return false;
       const s = await r.json();
-      if (!s.tree || Object.keys(s.tree.nodes).length !== 1) return false;
+      if (!s.history || !Array.isArray(s.history.items) || s.history.items.length !== 1) return false;
       const g = s.project && s.project.grid;
       return !!g && g[10 * 48 + 11] === -1;
     } catch (e) {
@@ -385,7 +450,7 @@ async function main() {
   console.log('落盘状态:', stateNow.project ? '有 project' : '无 project',
     'project.grid:', stateNow.project && Array.isArray(stateNow.project.grid)
       ? '数组长度 ' + stateNow.project.grid.length : (stateNow.project ? '缺失/非数组(' + typeof (stateNow.project.grid) + ')' : 'n/a'),
-    '树节点数:', stateNow.tree ? Object.keys(stateNow.tree.nodes).length : 'n/a');
+    '事务数:', stateNow.history && Array.isArray(stateNow.history.items) ? stateNow.history.items.length : 'n/a');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('#config-select')?.options.length > 0, null, { timeout: 8000 });
   await page.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, { timeout: 10000 });
@@ -440,6 +505,46 @@ async function main() {
     '滑块重建后应基于基副本显示合并色数');
   console.log('[OK] 双副本滑块语义（警告/清事务/基副本重建）');
 
+  // 11. 色板配置修改：不即时更新图片/画笔，重新压缩后才应用
+  await page.click('.tab[data-tab="palette"]');
+  // 刷新后 originalFile 已丢失，先重新导入图片（当前 staging 为 mard-221）
+  await page.setInputFiles('#file-input', IMG);
+  await page.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, { timeout: 20000 });
+  await page.waitForTimeout(400);
+  const paletteCfgName = `UI调色板${Date.now()}`;
+  // 等待新配置详情真正加载完成（下拉框会先切名字，但色板是异步加载的）
+  const detailResp = page.waitForResponse(
+    (r) => r.url().includes('/api/configs/' + encodeURIComponent(paletteCfgName)) && r.request().method() === 'GET',
+    { timeout: 5000 },
+  );
+  page.once('dialog', (d) => d.accept(paletteCfgName));
+  await page.click('#btn-new-config');
+  await detailResp;
+  // 等「色板配置修改后需重新压缩」提示的 3 秒节流过期，让后续改色能再次弹出提示
+  await page.waitForTimeout(3200);
+  const pixelBeforeEdit = await px(page, ccx(5), ccy(5));
+  await page.evaluate(() => {
+    const inp = document.querySelector('#color-table input[type="color"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(inp, '#00FF00');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForTimeout(300);
+  const pixelAfterEdit = await px(page, ccx(5), ccy(5));
+  assert.deepEqual(pixelAfterEdit, pixelBeforeEdit, '修改色板后画布不应立即变化');
+  assert.equal(await page.evaluate(() => window.__app.palette[0].hex), '#00FF00', '色板配置本身应已更新');
+  assert.ok((await page.textContent('#toast')).includes('重新压缩'), '修改色板后应弹出「重新压缩后生效」提示');
+  page.on('dialog', onDlg);
+  await page.click('#btn-recompress');
+  await page.waitForTimeout(1500);
+  page.off('dialog', onDlg);
+  assert.equal(await page.evaluate(() => window.__app.appliedPalette[0].hex), '#00FF00', '重新压缩后应应用新的色板配置');
+  assert.ok((await page.textContent('#brush-label')).includes('#00FF00'), '重新压缩后画笔颜色应同步更新');
+  page.once('dialog', (d) => d.accept());
+  await page.click('#btn-delete-config');
+  await page.waitForFunction((n) => document.querySelector('#config-select')?.value !== n, paletteCfgName, { timeout: 5000 });
+  console.log('[OK] 色板配置修改不即时生效，重新压缩后应用');
+
   // 截图留档
   const shot = 'C:/Users/myouh/.codex/visualizations/2026/08/06/019fd4fd-4c9a-7042-9fe1-6e52067cbf05/ui_screenshot.png';
   fs.mkdirSync(path.dirname(shot), { recursive: true });
@@ -467,4 +572,12 @@ main()
     server.kill();
     try { fs.closeSync(logFd); } catch (e) { /* ignore */ }
     try { if (fs.existsSync(STATE)) fs.unlinkSync(STATE); } catch (e) { /* ignore */ }
+    try {
+      // 清理测试过程中创建的临时配置，避免失败运行留下残留 CSV
+      for (const fn of fs.readdirSync(path.join(ROOT, 'data', 'configs'))) {
+        if (/^(UI测试配置|UI调色板)/.test(fn)) {
+          fs.unlinkSync(path.join(ROOT, 'data', 'configs', fn));
+        }
+      }
+    } catch (e) { /* ignore */ }
   });

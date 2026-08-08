@@ -1,29 +1,29 @@
 export const CELL = 26;
-export const OUTER_PAD = 20; // 图片外侧纯白边距（像素）
+const OUTER_PAD = 20; // 图片外侧纯白边距（像素）
 const MARGIN_CELLS = 5;      // 四周灰色 X 边距格数
 
 // 图例每项预估宽度（以格为单位），用于分行的保守估算
 const LEGEND_ENTRY_W = 7.0;
 
-export function legendRows(count, gridW, cell) {
+function legendRows(count, gridW, cell) {
   if (!count) return 0;
   const pad = cell * 0.9;
   const perRow = Math.max(1, Math.floor((gridW - 2 * pad) / (cell * LEGEND_ENTRY_W)));
   return Math.max(1, Math.ceil(count / perRow));
 }
 
-export function canvasMetrics(width, height, cell = CELL, legendCount = 0) {
+export function canvasMetrics(width, height, cell = CELL, legendCount = 0, outerPad = OUTER_PAD) {
   const gridW = (width + 2 * MARGIN_CELLS) * cell;
   const gridH = (height + 2 * MARGIN_CELLS) * cell;
   const rows = legendRows(legendCount, gridW, cell);
   const legendH = rows ? rows * (cell * 2.0 + 8) + cell * 1.2 : 0;
   return {
-    w: gridW + 2 * OUTER_PAD,
-    h: gridH + 2 * OUTER_PAD + legendH,
+    w: gridW + 2 * outerPad,
+    h: gridH + 2 * outerPad + legendH,
     gridW,
     gridH,
-    originX: OUTER_PAD,
-    originY: OUTER_PAD,
+    originX: outerPad,
+    originY: outerPad,
     legendRows: rows,
   };
 }
@@ -108,7 +108,7 @@ function drawCodes(ctx, width, height, displayIdx, displayRgb, codes, originX, o
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawLegend(ctx, legend, cell, gridW, baseY) {
+function drawLegend(ctx, legend, cell, gridW, baseY, outerPad = OUTER_PAD) {
   if (!legend || !legend.length) return;
   const pad = cell * 0.9;
   const font = Math.max(12, Math.round(cell * 0.9)); // 约 2 倍字号
@@ -117,13 +117,13 @@ function drawLegend(ctx, legend, cell, gridW, baseY) {
   const entryW = cell * LEGEND_ENTRY_W;
   const perRow = Math.max(1, Math.floor((gridW - 2 * pad) / entryW));
   const rowH = Math.max(sw + 10, font + 20);
-  const maxX = OUTER_PAD + gridW - pad;
+  const maxX = outerPad + gridW - pad;
   ctx.font = `${font}px Consolas, "Microsoft YaHei", monospace`;
-  let x = OUTER_PAD + pad;
+  let x = outerPad + pad;
   let y = baseY + cell * 0.6;
   for (const e of legend) {
-    if (x + entryW > maxX && x > OUTER_PAD + pad) {
-      x = OUTER_PAD + pad;
+    if (x + entryW > maxX && x > outerPad + pad) {
+      x = outerPad + pad;
       y += rowH;
     }
     ctx.fillStyle = e.hex;
@@ -149,12 +149,12 @@ function drawSelection(ctx, sel, originX, originY, cell) {
 
 export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
   const cell = opts.cell || CELL;
+  const outerPad = opts.outerPad ?? OUTER_PAD;
   const gridLines = opts.gridLines !== false;
-  const outline = !!opts.outline;
   const hatch = opts.hatch !== false;
   const emptyStyle = opts.emptyStyle || 'default';
   const legend = opts.legend || [];
-  const metrics = canvasMetrics(width, height, cell, legend.length);
+  const metrics = canvasMetrics(width, height, cell, legend.length, outerPad);
   ctx.canvas.width = metrics.w;
   ctx.canvas.height = metrics.h;
   ctx.fillStyle = '#ffffff';
@@ -196,27 +196,6 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
     drawGridLines(ctx, ox, oy, metrics.gridW, metrics.gridH, cell);
   }
 
-  if (outline) {
-    const ow = opts.outlineWidth || Math.max(2, Math.round(cell * 0.15));
-    ctx.fillStyle = '#111111';
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const p = y * width + x;
-        if (displayIdx[p] < 0) continue;
-        const x0 = ox + (x + MARGIN_CELLS) * cell;
-        const y0 = oy + (y + MARGIN_CELLS) * cell;
-        const left = x === 0 || displayIdx[p - 1] < 0;
-        const right = x === width - 1 || displayIdx[p + 1] < 0;
-        const top = y === 0 || displayIdx[p - width] < 0;
-        const bottom = y === height - 1 || displayIdx[p + width] < 0;
-        if (left) ctx.fillRect(x0, y0, ow, cell);
-        if (right) ctx.fillRect(x0 + cell - ow, y0, ow, cell);
-        if (top) ctx.fillRect(x0, y0, cell, ow);
-        if (bottom) ctx.fillRect(x0, y0 + cell - ow, cell, ow);
-      }
-    }
-  }
-
   if (opts.showCodes && opts.codes) {
     drawCodes(ctx, width, height, displayIdx, displayRgb, opts.codes, ox, oy, cell);
   }
@@ -246,7 +225,7 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
   }
 
   if (legend.length && opts.showLegend !== false) {
-    drawLegend(ctx, legend, cell, metrics.gridW, oy + metrics.gridH);
+    drawLegend(ctx, legend, cell, metrics.gridW, oy + metrics.gridH, outerPad);
   }
 }
 

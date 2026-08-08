@@ -18,8 +18,6 @@
       </label>
       <button id="btn-recompress" title="按当前设置重新压缩并重新生成图案">重新压缩</button>
       <label class="chk"><input type="checkbox" id="chk-sharpen" checked>锐化</label>
-      <label class="chk"><input type="checkbox" id="chk-outline">描边</label>
-      <label class="chk"><input type="checkbox" id="chk-codes" checked>显示色号</label>
       <label class="field">颜色距离
         <select id="sel-distance">
           <option value="lab" selected>Lab（人眼感知）</option>
@@ -27,27 +25,22 @@
         </select>
       </label>
       <span class="spacer"></span>
-      <button id="btn-export" class="primary">导出图片</button>
-      <button id="btn-save-state" title="Ctrl+S / Cmd+S">保存状态</button>
-      <button id="btn-clear-all" class="danger">清空当前状态</button>
-      <button id="btn-logout" class="hidden" title="退出登录">退出登录</button>
+      <button id="btn-undo" disabled title="撤销上一步修改（Ctrl+Z）">撤销</button>
+      <button id="btn-redo" disabled title="重做已撤销的修改（Ctrl+Y）">重做</button>
+      <span id="undo-info" class="muted" title="当前单步记录数量（最多 20 步）">单步记录：0/20</span>
       <span id="autosave-indicator" class="indicator"></span>
+      <span class="tb-divider"></span>
+      <button id="btn-export" class="primary">导出图片</button>
+      <button id="btn-logout" class="hidden" title="退出登录">退出登录</button>
     </div>
     <div class="tb-row">
       <label class="field slider-field">颜色数量
         <input type="range" id="color-slider" min="2" max="2" value="2" disabled>
         <span id="slider-value">2</span>
       </label>
-      <label class="field empty-style-field">透明色
-        <select id="empty-style">
-          <option value="default">默认（浅灰）</option>
-          <option value="black">纯黑</option>
-          <option value="white">纯白</option>
-        </select>
-      </label>
       <span id="used-colors" class="muted"></span>
       <span class="spacer"></span>
-      <span class="hint">拖拽平移 · 滚轮缩放 · 单击像素高亮 · D 键九宫格选色（仅拖拽模式）· ESC 返回拖拽 · Ctrl+S 保存状态</span>
+      <span class="hint">拖拽平移 · 滚轮缩放 · 单击像素高亮 · D 键九宫格选色（仅拖拽模式）· ESC 返回拖拽 · Ctrl+S 保存状态 · Ctrl+Z 撤销 · Ctrl+Y 重做</span>
     </div>
   </header>
 
@@ -104,10 +97,18 @@
       <div id="canvas-toolbar">
         <button id="zoom-in" title="放大">＋</button>
         <button id="zoom-out" title="缩小">－</button>
-        <button id="zoom-fit" title="缩放到适合窗口">适应窗口</button>
-        <span id="zoom-label">100%</span>
-        <span id="cell-info" class="muted"></span>
-      </div>
+      <button id="zoom-fit" title="缩放到适合窗口">适应窗口</button>
+      <span id="zoom-label">100%</span>
+      <label class="chk"><input type="checkbox" id="chk-codes" checked title="仅影响工作区显示，不影响导出">显示色号</label>
+      <label class="field empty-style-field" title="仅影响工作区显示，不影响导出">透明色
+        <select id="empty-style">
+          <option value="default">默认（浅灰）</option>
+          <option value="black">纯黑</option>
+          <option value="white">纯白</option>
+        </select>
+      </label>
+      <span id="cell-info" class="muted"></span>
+    </div>
       <div id="canvas-scroll">
         <canvas id="canvas"></canvas>
         <div id="empty-hint">请先导入一张图片<br>导入后会自动转换为拼豆图案</div>
@@ -124,9 +125,13 @@
 
     <aside id="right-panel">
       <div class="panel-block">
-        <div class="panel-title">事务历史</div>
+        <div class="panel-title-row">
+          <span class="panel-title">事务历史</span>
+          <span id="dirty-indicator" class="dirty-indicator hidden" title="当前画布有尚未保存为事务的修改">有未保存的修改</span>
+        </div>
         <div class="row">
-          <button id="btn-save-state-side" class="primary">保存当前状态</button>
+          <button id="btn-save-state-side" class="primary" title="Ctrl+S / Cmd+S">保存当前状态</button>
+          <button id="btn-clear-all" class="danger" title="清空画布并删除全部事务历史">清空所有状态</button>
         </div>
         <div id="tree-list"></div>
         <div id="tree-empty" class="muted">暂无历史记录</div>
@@ -135,25 +140,36 @@
   </main>
 
   <div id="export-dialog" class="dialog-mask hidden">
-    <div class="dialog">
+    <div class="dialog dialog-wide">
       <h3>导出图片</h3>
       <div class="dialog-body">
-        <label class="field">每格大小（像素）
-          <input type="number" id="dlg-cell-size" min="5" max="100" value="26">
-        </label>
-        <label class="chk"><input type="checkbox" id="dlg-grid-lines" checked>显示网格线</label>
-        <label class="field">外部白边（像素）
-          <input type="number" id="dlg-pad" min="0" max="200" value="20">
-        </label>
-        <label class="chk"><input type="checkbox" id="dlg-outline">黑色描边</label>
-        <label class="chk"><input type="checkbox" id="dlg-codes" checked>显示色号</label>
-        <label class="chk"><input type="checkbox" id="dlg-legend" checked>附带色号图例</label>
-        <label class="field">格式
-          <select id="dlg-format">
-            <option value="jpg" selected>JPG</option>
-            <option value="png">PNG</option>
-          </select>
-        </label>
+        <div class="dlg-preview-wrap">
+          <canvas id="dlg-preview" class="dlg-preview"></canvas>
+        </div>
+        <div class="dlg-options">
+          <label class="field">每格大小（像素）
+            <input type="number" id="dlg-cell-size" min="5" max="100" value="26">
+          </label>
+          <label class="chk"><input type="checkbox" id="dlg-grid-lines" checked>显示网格线</label>
+          <label class="field">外部白边（像素）
+            <input type="number" id="dlg-pad" min="0" max="200" value="20">
+          </label>
+          <label class="chk"><input type="checkbox" id="dlg-codes" checked>显示色号</label>
+          <label class="chk"><input type="checkbox" id="dlg-legend" checked>附带色号图例</label>
+          <label class="field">透明色
+            <select id="dlg-empty-style">
+              <option value="default">默认（浅灰）</option>
+              <option value="black">纯黑</option>
+              <option value="white">纯白</option>
+            </select>
+          </label>
+          <label class="field">格式
+            <select id="dlg-format">
+              <option value="jpg" selected>JPG</option>
+              <option value="png">PNG</option>
+            </select>
+          </label>
+        </div>
       </div>
       <div class="dialog-actions">
         <button id="dlg-export-cancel">取消</button>

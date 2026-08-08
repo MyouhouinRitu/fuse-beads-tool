@@ -8,7 +8,6 @@ import os
 import re
 import secrets
 import shutil
-import socket
 import sys
 import threading
 import webbrowser
@@ -285,13 +284,12 @@ def api_export():
         cell=int(opts.get("cellSize", 20)),
         grid_lines=bool(opts.get("gridLines", True)),
         outer_pad=int(opts.get("outerPad", 0)),
-        outline=bool(opts.get("outline", False)),
-        outline_width=opts.get("outlineWidth"),
         hatch=bool(opts.get("hatch", True)),
         empty_style=opts.get("emptyStyle") or "default",
         legend=data.get("legend", []),
         codes=data.get("codes", []),
         show_codes=bool(opts.get("showCodes", True)),
+        show_legend=bool(opts.get("legend", True)),
     )
     fmt = (opts.get("format") or "jpg").lower()
     buf = io.BytesIO()
@@ -339,16 +337,6 @@ if __name__ == "__main__":
         if idx + 1 < len(sys.argv):
             port = int(sys.argv[idx + 1])
     host = os.environ.get("HOST", "127.0.0.1")
-
-    # 默认端口被占用时自动换一个空闲端口（便于双击直接使用）
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        probe.bind((host, port))
-    except OSError:
-        probe.bind((host, 0))
-        port = probe.getsockname()[1]
-    finally:
-        probe.close()
 
     # 打包版 / 生产模式使用 Waitress，并提供日志文件便于排查
     use_waitress = os.environ.get("USE_WAITRESS") == "1" or getattr(sys, "frozen", False)
