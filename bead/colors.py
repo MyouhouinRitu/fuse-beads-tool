@@ -1,14 +1,27 @@
 """Color conversion and distance helpers (sRGB <-> CIELAB, D65)."""
 
+from __future__ import annotations
+
 import numpy as np
+import numpy.typing as npt
+
+# 感知亮度阈值：≥ 该值视为亮色（用于文字、描边等对比色选择）
+# 与 static/js/constants.js LUMINANCE_THRESHOLD 保持一致
+LUMINANCE_THRESHOLD = 150
 
 
-def srgb_to_linear(c):
+def is_light_color(rgb: tuple[int, int, int]) -> bool:
+    """判断 RGB 颜色是否为亮色（感知亮度 ≥ 阈值）。"""
+    r, g, b = rgb
+    return (r * 299 + g * 587 + b * 114) / 1000 >= LUMINANCE_THRESHOLD
+
+
+def srgb_to_linear(c: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     c = np.clip(c / 255.0, 0.0, 1.0)
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 
 
-def rgb_to_lab(rgb):
+def rgb_to_lab(rgb: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     """Convert Nx3 or 3-length RGB array to CIELAB (D65)."""
     rgb = np.asarray(rgb, dtype=np.float64)
     single = rgb.ndim == 1
@@ -29,14 +42,18 @@ def rgb_to_lab(rgb):
     return out[0] if single else out
 
 
-def lab_distance(a, b):
+def lab_distance(
+    a: npt.NDArray[np.float64], b: npt.NDArray[np.float64]
+) -> npt.NDArray[np.float64] | float:
     """Squared CIE76 distance between two Lab vectors (Nx3 or 3-length)."""
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
     return np.sum((a - b) ** 2, axis=-1)
 
 
-def rgb_distance(a, b):
+def rgb_distance(
+    a: npt.NDArray[np.float64], b: npt.NDArray[np.float64]
+) -> npt.NDArray[np.float64] | float:
     """Perceptually weighted RGB distance (squared)."""
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)

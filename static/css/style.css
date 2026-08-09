@@ -10,6 +10,12 @@
   --danger-bg: #fee2e2;
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  /* 布局尺寸：与 static/js/constants.js 中对应常量保持一致 */
+  --toolbar-height: 108px;
+  --panel-left-width: 320px;
+  --panel-highlight-width: 168px;
+  --panel-right-width: 280px;
+  --panel-collapsed-width: 32px;
 }
 
 * { box-sizing: border-box; }
@@ -81,7 +87,7 @@ input[type="number"]:focus, input[type="text"]:focus, select:focus {
 
 main {
   display: flex;
-  height: calc(100vh - 108px);
+  height: calc(100vh - var(--toolbar-height));
   min-height: 420px;
 }
 
@@ -94,15 +100,15 @@ aside {
   overflow: hidden;
   transition: width 0.18s ease;
 }
-#left-panel { width: 320px; flex-shrink: 0; }
+#left-panel { width: var(--panel-left-width); flex-shrink: 0; }
 #color-highlight-panel {
-  width: 168px; flex-shrink: 0;
+  width: var(--panel-highlight-width); flex-shrink: 0;
   background: var(--panel);
   border-left: 1px solid var(--border);
   display: flex; flex-direction: column;
 }
 #color-highlight-panel .panel-block { flex: 1; min-height: 0; }
-#right-panel { width: 280px; border-right: none; border-left: 1px solid var(--border); flex-shrink: 0; }
+#right-panel { width: var(--panel-right-width); border-right: none; border-left: 1px solid var(--border); flex-shrink: 0; }
 
 .panel-body {
   display: flex;
@@ -177,8 +183,8 @@ aside {
 #left-panel.collapsed,
 #color-highlight-panel.collapsed,
 #right-panel.collapsed {
-  width: 32px;
-  min-width: 32px;
+  width: var(--panel-collapsed-width);
+  min-width: var(--panel-collapsed-width);
 }
 #left-panel.collapsed .panel-body,
 #color-highlight-panel.collapsed .panel-body,

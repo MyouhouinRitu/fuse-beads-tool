@@ -1,11 +1,18 @@
 // 颜色工具：sRGB <-> Lab、距离计算、最近色映射、贪心合并
 
+import { LUMINANCE_THRESHOLD } from './constants.js';
+
 export function hexToRgb(hex) {
   let h = String(hex || '').replace('#', '');
   if (h.length === 3) h = h.split('').map((c) => c + c).join('');
   const n = parseInt(h, 16);
   if (Number.isNaN(n)) return [255, 255, 255];
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// 感知亮度判断：≥ 阈值视为亮色（用于文字、描边等对比色选择）
+export function isLightColor(rgb) {
+  return (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 >= LUMINANCE_THRESHOLD;
 }
 
 function srgbToLinear(v) {

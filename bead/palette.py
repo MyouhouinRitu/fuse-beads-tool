@@ -1,9 +1,19 @@
 """Bead color palette: defaults and CSV import/export."""
 
+from __future__ import annotations
+
 import csv
 import io
 import os
 import re
+from typing import TypedDict
+
+
+class Color(TypedDict):
+    index: int
+    code: str
+    name: str
+    hex: str
 
 HEADER = ["编号", "色号", "名称", "颜色"]
 
@@ -61,7 +71,7 @@ DEFAULT_PALETTE = [
 _HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
 
 
-def normalize_color(c):
+def normalize_color(c: dict[str, object] | None = None) -> Color:
     c = dict(c or {})
     try:
         index = int(c.get("index", 0))
@@ -75,7 +85,7 @@ def normalize_color(c):
     return {"index": index, "code": code, "name": name, "hex": hexv}
 
 
-def normalize_colors(colors):
+def normalize_colors(colors: list[dict[str, object]] | None) -> list[Color]:
     out = []
     for i, c in enumerate(colors or [], 1):
         c = dict(c)
@@ -84,7 +94,7 @@ def normalize_colors(colors):
     return out
 
 
-def _column_map(header):
+def _column_map(header: list[str]) -> dict[str, str]:
     mapping = {}
     for raw in header:
         key = str(raw).strip().lower()
@@ -99,7 +109,7 @@ def _column_map(header):
     return mapping
 
 
-def read_csv_text(text):
+def read_csv_text(text: str) -> list[Color]:
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
         return []
@@ -116,19 +126,16 @@ def read_csv_text(text):
     return normalize_colors(colors)
 
 
-def read_csv(path):
+def read_csv(path: str) -> list[Color]:
     with open(path, "r", encoding="utf-8-sig") as fh:
         return read_csv_text(fh.read())
 
 
-def write_csv(path, colors):
+def write_csv(path: str, colors: list[dict[str, object]]) -> None:
     rows = normalize_colors(colors)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=HEADER)
         writer.writeheader()
         for c in rows:
             writer.writerow({"编号": c["index"], "色号": c["code"], "名称": c["name"], "颜色": c["hex"]})
-
-
-def ensure_dir(path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)

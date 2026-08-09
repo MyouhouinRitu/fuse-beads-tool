@@ -1,6 +1,45 @@
 import * as api from './api.js';
 import * as C from './colors.js';
-import { drawPattern, clearCanvas, CELL, canvasMetrics } from './render.js';
+import { drawPattern, clearCanvas, canvasMetrics } from './render.js';
+import {
+  CELL,
+  GRID_MARGIN_CELLS,
+  ORIG_MAX_DIM,
+  DEFAULT_TARGET_PIXELS,
+  SCREEN_CELL_MIN,
+  SCREEN_CELL_MAX_DIM,
+  SCREEN_CELL_MAX_AREA,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  FIT_ZOOM_CAP,
+  VIEWPORT_PADDING,
+  ZOOM_WHEEL_FACTOR,
+  ZOOM_BUTTON_FACTOR,
+  QUICK_PICKER_MAX,
+  QUICK_PICKER_COLS,
+  QUICK_PICKER_CELL,
+  QUICK_PICKER_PAD,
+  QUICK_PICKER_HEIGHT,
+  QUICK_PICKER_EDGE_MARGIN,
+  QUICK_PICKER_OFFSET_CELLS,
+  EXPORT_CELL_MIN,
+  EXPORT_CELL_MAX,
+  EXPORT_CELL_DEFAULT,
+  EXPORT_PAD_MAX,
+  EXPORT_PREVIEW_CELL,
+  EXPORT_PREVIEW_MAX_W,
+  EXPORT_PREVIEW_MAX_H,
+  TOAST_DURATION_MS,
+  HINT_THROTTLE_MS,
+  AUTOSAVE_DELAY_MS,
+  CONFIG_SAVE_DELAY_MS,
+  HIGHLIGHT_BLINK_MS,
+  PANEL_ANIMATION_MS,
+  PANEL_COLLAPSED_WIDTH,
+  PANEL_FULL_WIDTH,
+  PANEL_IDS,
+  PANEL_STORAGE_KEY,
+} from './constants.js';
 import {
   createEmptyHistory,
   createTransaction,
@@ -119,7 +158,7 @@ const App = {
   redoStack: [],
   strokeBuffer: null,  // 一次画笔/橡皮按下到放开过程中累积的像素修改
   settings: {
-    targetPixels: 40000,
+    targetPixels: DEFAULT_TARGET_PIXELS,
     useLab: true,
     sharpen: true,
     showCodes: true,
@@ -159,7 +198,7 @@ function toast(msg) {
   els.toast.textContent = msg;
   els.toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => els.toast.classList.remove('show'), 2600);
+  toastTimer = setTimeout(() => els.toast.classList.remove('show'), TOAST_DURATION_MS);
 }
 
 let paletteHintShownAt = 0;
@@ -167,7 +206,7 @@ let paletteHintShownAt = 0;
 // 色板配置修改后不即时生效：弹出一次性提示，3 秒内不重复打扰
 function hintPaletteDeferred() {
   const now = Date.now();
-  if (now - paletteHintShownAt < 3000) return;
+  if (now - paletteHintShownAt < HINT_THROTTLE_MS) return;
   paletteHintShownAt = now;
   toast('色板配置修改后需单击「重新压缩」才会应用到画布');
 }
@@ -177,13 +216,9 @@ let distanceHintShownAt = 0;
 // 颜色距离修改后不即时生效：弹出一次性提示，3 秒内不重复打扰
 function hintDistanceDeferred() {
   const now = Date.now();
-  if (now - distanceHintShownAt < 3000) return;
+  if (now - distanceHintShownAt < HINT_THROTTLE_MS) return;
   distanceHintShownAt = now;
   toast('颜色距离修改后需单击「重新压缩」才会重新生成图案');
-}
-
-function setBusy(b) {
-  document.body.classList.toggle('busy', b);
 }
 
 function downloadDataUrl(dataUrl, filename) {
@@ -196,14 +231,6 @@ function downloadDataUrl(dataUrl, filename) {
 }
 
 // ---------------- 侧边栏折叠 / 展开 ----------------
-
-const PANEL_STORAGE_KEY = 'fuse-beads.panel-collapsed';
-const PANEL_IDS = ['left-panel', 'color-highlight-panel', 'right-panel'];
-const PANEL_FULL_WIDTH = {
-  'left-panel': 320,
-  'color-highlight-panel': 168,
-  'right-panel': 280,
-};
 
 function readPanelPrefs() {
   try {
@@ -228,8 +255,8 @@ function setPanelCollapsed(id, collapsed) {
   if (id === 'left-panel' && App.project) {
     // 左侧栏收起/展开会平移整个工作区视口；
     // 反向补偿画布位移，让图案保持在屏幕上的绝对位置不变
-    const current = panel.classList.contains('collapsed') ? 32 : PANEL_FULL_WIDTH[id];
-    const target = collapsed ? 32 : PANEL_FULL_WIDTH[id];
+    const current = panel.classList.contains('collapsed') ? PANEL_COLLAPSED_WIDTH : PANEL_FULL_WIDTH[id];
+    const target = collapsed ? PANEL_COLLAPSED_WIDTH : PANEL_FULL_WIDTH[id];
     panDelta = current - target;
   }
   panel.classList.toggle('collapsed', collapsed);
@@ -265,7 +292,7 @@ function animatePanCompensation(delta) {
   const panFrom = App.pan.x;
   const origFrom = App.originalImage ? App.origPan.x : null;
   const start = performance.now();
-  const dur = 180; // 与 CSS 宽度过渡时长一致
+  const dur = PANEL_ANIMATION_MS;
   const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
   const step = (now) => {
     const t = Math.min(1, (now - start) / dur);
@@ -306,9 +333,6 @@ function bindPanelToggles() {
 }
 
 // ---------------- 对比原图 / 同步拖拽 ----------------
-
-const ORIG_MAX_DIM = 2000; // 原图画布最大边长，避免超大图片占用过多内存
-const GRID_MARGIN_CELLS = 5; // 与 render.js MARGIN_CELLS 一致：图案外侧灰色边距格数
 
 // ---------- 原图缓存（IndexedDB，刷新后对比功能仍可用） ----------
 
@@ -480,7 +504,10 @@ function fitOriginal() {
   const vw = pane.clientWidth;
   const vh = pane.clientHeight;
   if (!vw || !vh) return;
-  App.origZoom = Math.max(0.05, Math.min((vw - 24) / cv.width, (vh - 24) / cv.height, 1.5));
+  App.origZoom = Math.max(
+    ZOOM_MIN,
+    Math.min((vw - VIEWPORT_PADDING) / cv.width, (vh - VIEWPORT_PADDING) / cv.height, FIT_ZOOM_CAP)
+  );
   App.origPan = { x: (vw - cv.width * App.origZoom) / 2, y: (vh - cv.height * App.origZoom) / 2 };
   applyOriginalTransform();
 }
@@ -492,8 +519,8 @@ function zoomAtOriginal(clientX, clientY, factor) {
   const stageLeft = rect.left - App.origPan.x;
   const stageTop = rect.top - App.origPan.y;
   const oldZ = App.origZoom;
-  const minZ = App.syncPan ? beadCellPx() * origZoomRatio() * 0.05 : 0.05;
-  const maxZ = App.syncPan ? beadCellPx() * origZoomRatio() * 8 : 8;
+  const minZ = App.syncPan ? beadCellPx() * origZoomRatio() * ZOOM_MIN : ZOOM_MIN;
+  const maxZ = App.syncPan ? beadCellPx() * origZoomRatio() * ZOOM_MAX : ZOOM_MAX;
   const newZ = Math.min(maxZ, Math.max(minZ, oldZ * factor));
   const ix = (clientX - rect.left) / oldZ;
   const iy = (clientY - rect.top) / oldZ;
@@ -612,12 +639,13 @@ async function ensureAuth() {
 
 function chooseScreenCell(width, height) {
   let cell = CELL;
-  const MAX_DIM = 28000, MAX_AREA = 80000000;
   const ok = (c) => {
     const { w, h } = canvasMetrics(width, height, c, 0);
-    return w <= MAX_DIM && h <= MAX_DIM && w * h <= MAX_AREA;
+    return w <= SCREEN_CELL_MAX_DIM && h <= SCREEN_CELL_MAX_DIM && w * h <= SCREEN_CELL_MAX_AREA;
   };
-  while (cell > 2 && !ok(cell)) cell = Math.max(2, Math.floor(cell / 2));
+  while (cell > SCREEN_CELL_MIN && !ok(cell)) {
+    cell = Math.max(SCREEN_CELL_MIN, Math.floor(cell / 2));
+  }
   return cell;
 }
 
@@ -787,7 +815,7 @@ function syncHighlightBlink() {
   App.highlightTimer = setInterval(() => {
     App.highlightBlink = !App.highlightBlink;
     redrawCanvas();
-  }, 500);
+  }, HIGHLIGHT_BLINK_MS);
 }
 
 function applyTransform() {
@@ -803,8 +831,8 @@ function zoomFit() {
   const cw = els.canvas.width;
   const ch = els.canvas.height;
   if (!cw || !ch) return;
-  const z = Math.min((vw - 24) / cw, (vh - 24) / ch, 1.5);
-  App.zoom = Math.max(0.05, z);
+  const z = Math.min((vw - VIEWPORT_PADDING) / cw, (vh - VIEWPORT_PADDING) / ch, FIT_ZOOM_CAP);
+  App.zoom = Math.max(ZOOM_MIN, z);
   App.pan = { x: (vw - cw * App.zoom) / 2, y: (vh - ch * App.zoom) / 2 };
   applyTransform();
   if (App.syncPan && App.originalImage) {
@@ -820,7 +848,7 @@ function zoomAt(clientX, clientY, factor) {
   const stageLeft = rect.left - App.pan.x;
   const stageTop = rect.top - App.pan.y;
   const oldZ = App.zoom;
-  const newZ = Math.min(8, Math.max(0.05, oldZ * factor));
+  const newZ = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, oldZ * factor));
   const bx = (clientX - rect.left) / oldZ;
   const by = (clientY - rect.top) / oldZ;
   App.zoom = newZ;
@@ -882,7 +910,7 @@ function scheduleConfigSave() {
     } catch (err) {
       toast('配置保存失败：' + err.message);
     }
-  }, 500);
+  }, CONFIG_SAVE_DELAY_MS);
 }
 
 function renumberPalette() {
@@ -1025,7 +1053,7 @@ function renderColorList(counts) {
     codeLabel.className = 'ci-code';
     codeLabel.textContent = c.code || String(c.index);
     const rgb = C.hexToRgb(c.hex);
-    codeLabel.style.color = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 >= 150 ? '#111111' : '#FFFFFF';
+    codeLabel.style.color = C.isLightColor(rgb) ? '#111111' : '#FFFFFF';
     sw.appendChild(codeLabel);
     const count = document.createElement('span');
     count.className = 'ci-count';
@@ -1087,9 +1115,8 @@ async function processUpload({ confirmHistory = true } = {}) {
     clearHistoryRecords();
     renderHistoryUI();
   }
-  setBusy(true);
   try {
-    const target = parseInt(els.targetPixels.value, 10) || 40000;
+    const target = parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS;
     const res = await api.uploadImage(App.originalFile, target, els.chkSharpen.checked);
     const img = new Image();
     img.src = 'data:image/png;base64,' + res.pngBase64;
@@ -1108,8 +1135,6 @@ async function processUpload({ confirmHistory = true } = {}) {
     toast(`已导入 ${res.width} × ${res.height}，共使用 ${used} 种颜色`);
   } catch (err) {
     toast('导入失败：' + err.message);
-  } finally {
-    setBusy(false);
   }
 }
 
@@ -1277,7 +1302,7 @@ function openQuickPicker(cell) {
   }
   const list = [...candSet];
   // 2) 不足 9 个时，用与当前颜色最相近的颜色补齐
-  if (list.length < 9) {
+  if (list.length < QUICK_PICKER_MAX) {
     const baseHex = own >= 0 && App.appliedPalette[own]
       ? App.appliedPalette[own].hex
       : (App.brushColor != null && App.appliedPalette[App.brushColor] ? App.appliedPalette[App.brushColor].hex : '#FFFFFF');
@@ -1287,11 +1312,11 @@ function openQuickPicker(cell) {
       .filter((s) => !list.includes(s.i) && !exclude.has(s.i))
       .sort((a, b) => a.d - b.d);
     for (const s of scored) {
-      if (list.length >= 9) break;
+      if (list.length >= QUICK_PICKER_MAX) break;
       list.push(s.i);
     }
   }
-  const scored = list.slice(0, 9).map((i) => ({ i }));
+  const scored = list.slice(0, QUICK_PICKER_MAX).map((i) => ({ i }));
   App.pickerCandidates = scored;
   const usedCounts = C.computeUsedCounts(grid, width, height);
 
@@ -1313,7 +1338,7 @@ function openQuickPicker(cell) {
     const code = document.createElement('span');
     code.className = 'qp-code';
     code.textContent = c.code || String(c.index);
-    code.style.color = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 >= 150 ? '#111111' : '#FFFFFF';
+    code.style.color = C.isLightColor(rgb) ? '#111111' : '#FFFFFF';
     const cnt = document.createElement('span');
     cnt.className = 'qp-count';
     cnt.textContent = usedCounts[scored[k].i] ? `×${usedCounts[scored[k].i]}` : '';
@@ -1334,14 +1359,20 @@ function openQuickPicker(cell) {
   const rect = els.canvas.getBoundingClientRect();
   const scale = rect.width / els.canvas.width;
   const sc = App.screenCell;
-  const cx = rect.left + ((cell.x + 5.5) * sc) * scale;
-  const cy = rect.top + ((cell.y + 5.5) * sc) * scale;
+  const cx = rect.left + ((cell.x + GRID_MARGIN_CELLS + 0.5) * sc) * scale;
+  const cy = rect.top + ((cell.y + GRID_MARGIN_CELLS + 0.5) * sc) * scale;
   const gap = sc * scale;
-  const bw = 54 * 3 + 22, bh = 250;
-  const left = Math.max(8, Math.min(cx - bw / 2, window.innerWidth - bw - 8));
-  let top = cy + gap * 1.5; // 像素下方，再隔一个像素格
-  if (top + bh > window.innerHeight - 8) top = cy - gap * 1.5 - bh;
-  top = Math.max(8, top);
+  const bw = QUICK_PICKER_CELL * QUICK_PICKER_COLS + QUICK_PICKER_PAD;
+  const bh = QUICK_PICKER_HEIGHT;
+  const left = Math.max(
+    QUICK_PICKER_EDGE_MARGIN,
+    Math.min(cx - bw / 2, window.innerWidth - bw - QUICK_PICKER_EDGE_MARGIN)
+  );
+  let top = cy + gap * QUICK_PICKER_OFFSET_CELLS; // 像素下方，再隔一个像素格
+  if (top + bh > window.innerHeight - QUICK_PICKER_EDGE_MARGIN) {
+    top = cy - gap * QUICK_PICKER_OFFSET_CELLS - bh;
+  }
+  top = Math.max(QUICK_PICKER_EDGE_MARGIN, top);
   box.style.left = left + 'px';
   box.style.top = top + 'px';
 }
@@ -1552,10 +1583,13 @@ function renderExportPreview() {
   const counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   const legend = buildLegend(counts);
   const display = buildDisplayData();
-  const cellSize = Math.max(5, Math.min(100, parseInt(els.dlgCell.value, 10) || 20));
-  const pad = Math.max(0, Math.min(200, parseInt(els.dlgPad.value, 10) || 0));
+  const cellSize = Math.max(
+    EXPORT_CELL_MIN,
+    Math.min(EXPORT_CELL_MAX, parseInt(els.dlgCell.value, 10) || EXPORT_CELL_DEFAULT)
+  );
+  const pad = Math.max(0, Math.min(EXPORT_PAD_MAX, parseInt(els.dlgPad.value, 10) || 0));
   const showLegend = els.dlgLegend.checked;
-  const previewCell = 8;
+  const previewCell = EXPORT_PREVIEW_CELL;
   const previewPad = Math.round(pad * previewCell / cellSize);
   const off = document.createElement('canvas');
   const octx = off.getContext('2d');
@@ -1571,7 +1605,7 @@ function renderExportPreview() {
     showLegend,
   });
   const pv = els.dlgPreview;
-  const scale = Math.min(290 / off.width, 250 / off.height, 1);
+  const scale = Math.min(EXPORT_PREVIEW_MAX_W / off.width, EXPORT_PREVIEW_MAX_H / off.height, 1);
   pv.width = Math.max(1, Math.round(off.width * scale));
   pv.height = Math.max(1, Math.round(off.height * scale));
   const pctx = pv.getContext('2d');
@@ -1592,9 +1626,12 @@ async function doExport() {
       legend,
       codes,
       options: {
-        cellSize: Math.max(5, Math.min(100, parseInt(els.dlgCell.value, 10) || 20)),
+        cellSize: Math.max(
+          EXPORT_CELL_MIN,
+          Math.min(EXPORT_CELL_MAX, parseInt(els.dlgCell.value, 10) || EXPORT_CELL_DEFAULT)
+        ),
         gridLines: els.dlgGrid.checked,
-        outerPad: Math.max(0, Math.min(200, parseInt(els.dlgPad.value, 10) || 0)),
+        outerPad: Math.max(0, Math.min(EXPORT_PAD_MAX, parseInt(els.dlgPad.value, 10) || 0)),
         showCodes: els.dlgCodes.checked,
         legend: els.dlgLegend.checked,
         format: fmt,
@@ -1616,7 +1653,7 @@ function buildStatePayload() {
   return {
     settings: {
       ...App.settings,
-      targetPixels: parseInt(els.targetPixels.value, 10) || 40000,
+      targetPixels: parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS,
     },
     project: App.project ? {
       width: App.project.width,
@@ -1635,7 +1672,7 @@ function buildStatePayload() {
 
 function scheduleAutosave() {
   clearTimeout(App.saveTimer);
-  App.saveTimer = setTimeout(saveStateNow, 800);
+  App.saveTimer = setTimeout(saveStateNow, AUTOSAVE_DELAY_MS);
 }
 
 async function saveStateNow() {
@@ -1877,12 +1914,12 @@ function bindEvents() {
   els.zoomIn.addEventListener('click', () => {
     const vp = els.canvasScroll;
     const r = vp.getBoundingClientRect();
-    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.25);
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, ZOOM_BUTTON_FACTOR);
   });
   els.zoomOut.addEventListener('click', () => {
     const vp = els.canvasScroll;
     const r = vp.getBoundingClientRect();
-    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.25);
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / ZOOM_BUTTON_FACTOR);
   });
   els.zoomFit.addEventListener('click', zoomFit);
 
@@ -1997,7 +2034,7 @@ function bindEvents() {
     if (e.target && e.target.closest && e.target.closest('#compare-original')) return;
     if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
     e.preventDefault();
-    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
   }, { passive: false });
 
   els.compareOriginal.addEventListener('mousedown', (e) => {
@@ -2020,7 +2057,7 @@ function bindEvents() {
     if (!App.project || !App.originalImage || !App.compareEnabled) return;
     e.preventDefault();
     e.stopPropagation();
-    zoomAtOriginal(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+    zoomAtOriginal(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
   }, { passive: false });
 
   document.querySelectorAll('.tabs .tab').forEach((btn) => {
@@ -2054,7 +2091,7 @@ function bindEvents() {
     const pickerOpen = !els.quickPicker.classList.contains('hidden');
     if (pickerOpen) {
       const n = parseInt(e.key, 10);
-      if (n >= 1 && n <= 9 && App.pickerCandidates && App.pickerCandidates[n - 1]) {
+      if (n >= 1 && n <= QUICK_PICKER_MAX && App.pickerCandidates && App.pickerCandidates[n - 1]) {
         e.preventDefault();
         pickQuickColor(n - 1);
       } else if (e.key === 'Escape') {
@@ -2077,7 +2114,6 @@ function setTool(t) {
   els.toolBrush.classList.toggle('active', t === 'brush');
   els.toolPicker.classList.toggle('active', t === 'picker');
   els.toolEraser.classList.toggle('active', t === 'eraser');
-  els.canvas.classList.toggle('mode-pan', t === 'drag');
   els.canvas.classList.toggle('mode-brush', t === 'brush');
   els.canvas.classList.toggle('mode-picker', t === 'picker');
   els.canvas.classList.toggle('mode-eraser', t === 'eraser');
