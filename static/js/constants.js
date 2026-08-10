@@ -33,6 +33,12 @@ export const SELECTION_COLOR = '#1976D2';
 export const SELECTION_STROKE_MIN = 3;
 export const SELECTION_STROKE_RATIO = 0.15;
 
+// ---------- 鼠标指向像素高亮（hover 边框） ----------
+export const HOVER_MIN_SCREEN_CELL = 7;        // 格子屏幕尺寸（格尺寸 × 缩放）低于该值时隐藏 hover 边框
+export const HOVER_STROKE_RATIO = 0.03;        // 边框线宽 = 格尺寸 × 该比例（默认格约 1px，随缩放等比变化）
+export const HOVER_DASH_RATIO = 0.22;          // 拖拽模式虚线每段长度 = 格尺寸 × 该比例（默认格约 6px）
+export const HOVER_DASH_MIN = 3;               // 虚线每段最小长度（画布像素）
+
 // ---------- 对比原图 ----------
 export const ORIG_MAX_DIM = 2000;             // 原图画布最大边长，超出按比例降采样
 

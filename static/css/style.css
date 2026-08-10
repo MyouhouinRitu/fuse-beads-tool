@@ -236,6 +236,9 @@ aside {
 .tool.active:hover { background: var(--primary-dark); }
 .mode-line { font-size: 13px; color: var(--muted); }
 .mode-label { color: var(--primary); font-weight: 600; }
+.brush-size-field { margin-left: 12px; }
+.brush-size-field input[type="range"] { width: 84px; }
+.brush-size-value { min-width: 16px; text-align: center; font-variant-numeric: tabular-nums; color: var(--text); }
 .brush-info { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .swatch {
   display: inline-block; width: 18px; height: 18px; border-radius: 4px;
@@ -321,7 +324,7 @@ aside {
   background: #fff;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
   transform-origin: 0 0;
-  cursor: grab;
+  cursor: default; /* 拖拽模式平时为普通光标，按下时（:active）才显示拖拽 */
   user-select: none;
   touch-action: none;
 }

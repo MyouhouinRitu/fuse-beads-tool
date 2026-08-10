@@ -434,6 +434,10 @@ async function main() {
   const hlPt = await canvasPoint(page, 5, 5);
   await page.mouse.click(hlPt.x, hlPt.y);
   await page.waitForTimeout(150);
+  // 移开鼠标，避免指向像素的 hover 虚线边框遮挡选中高亮
+  const hlVp = await page.locator('#canvas-scroll').boundingBox();
+  await page.mouse.move(hlVp.x + 8, hlVp.y + 8);
+  await page.waitForTimeout(120);
   const hl = await px(page, OP + MARGIN + 5 * CELL + 3, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
   assert.ok(hl[2] > 140 && hl[0] < 120, `高亮边框应为蓝色，实际 ${hl}`);
   console.log('[OK] 拖拽模式单击高亮');
@@ -510,13 +514,14 @@ async function main() {
     `选择另一种色号应清除前一种高亮，实际 ${frameReplace} vs ${baseRed}`);
   assert.ok(await page.locator('#highlight-color-list .hc-item').nth(blueIdx)
     .evaluate((el) => el.classList.contains('active')), '新选择的色号应处于高亮态');
-  await page.click('#tool-brush'); // 切换模式应清除颜色高亮
+  await page.click('#tool-brush'); // 切换模式后色号高亮应保留
   await page.waitForTimeout(150);
-  const frame3 = await px(page, OP + MARGIN + 5 * CELL + 2, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
-  assert.ok(Math.abs(frame3[0] - baseRed[0]) <= 12 && Math.abs(frame3[1] - baseRed[1]) <= 12 && Math.abs(frame3[2] - baseRed[2]) <= 12,
-    `切换画笔模式应清除颜色高亮，实际 ${frame3} vs ${baseRed}`);
+  assert.equal(await page.evaluate(() => window.__app.highlightColor != null), true,
+    '切换画笔模式后色号高亮应保留');
+  assert.ok(await page.locator('#highlight-color-list .hc-item').nth(blueIdx)
+    .evaluate((el) => el.classList.contains('active')), '切换画笔模式后清单项应保持激活态');
   await page.keyboard.press('Escape'); // 回拖拽，继续后续测试
-  console.log('[OK] 颜色清单高亮 / 取消 / 模式切换清除');
+  console.log('[OK] 颜色清单高亮 / 取消 / 模式切换保留');
 
   // 6. 事务历史：保存两次 -> 删除第二个状态
   await page.keyboard.press('Control+s');

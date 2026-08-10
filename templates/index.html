@@ -83,7 +83,15 @@
               <button id="tool-picker" class="tool" title="点击像素取色（ESC 返回拖拽）">取色</button>
               <button id="tool-eraser" class="tool" title="擦除格子（空位）">橡皮</button>
             </div>
-            <div class="mode-line">当前模式：<span id="mode-label" class="mode-label">拖拽模式</span></div>
+            <div class="mode-line">
+              当前模式：<span id="mode-label" class="mode-label">拖拽模式</span>
+              <label class="field brush-size-field hidden" id="brush-size-wrap"
+                title="画笔 / 橡皮的矩形边长 = 2 × 数值 − 1（仅画笔与橡皮模式显示）">
+                <span>尺寸</span>
+                <input type="range" id="brush-size" min="1" max="10" value="1">
+                <span id="brush-size-value" class="brush-size-value">1</span>
+              </label>
+            </div>
             <div class="brush-info">
               当前画笔：<span id="brush-swatch" class="swatch"></span><span id="brush-label"></span>
             </div>

@@ -86,6 +86,9 @@ const els = {
   toolPicker: $('tool-picker'),
   toolEraser: $('tool-eraser'),
   modeLabel: $('mode-label'),
+  brushSize: $('brush-size'),
+  brushSizeValue: $('brush-size-value'),
+  brushSizeWrap: $('brush-size-wrap'),
   brushSwatch: $('brush-swatch'),
   brushLabel: $('brush-label'),
   colorList: $('color-list'),
@@ -148,8 +151,10 @@ const App = {
   sliderN: null,
   editedSinceSlider: false,
   brushColor: null,    // 未选择颜色
+  brushSize: 1,        // 画笔 / 橡皮矩形边长的一半（边长 = 2 × brushSize − 1）
   tool: 'drag',        // drag（拖拽）/ brush（画笔）/ eraser（橡皮）
   selectedCell: null,
+  hoverCell: null,     // 鼠标当前指向的像素格（用于 hover 边框）
   painting: false,
   lastCell: null,
   pan: { x: 0, y: 0 },
@@ -165,6 +170,7 @@ const App = {
     emptyStyle: 'default',
     compare: false,
     syncPan: false,
+    brushSize: 1,
   },
   dirty: false,
   zoom: 1,
@@ -800,18 +806,27 @@ function redrawCanvas() {
     selected: App.selectedCell,
     highlightColor: App.highlightColor,
     highlightBlink: App.highlightBlink,
+    hover: App.hoverCell,
+    tool: App.tool,
+    brushSize: App.brushSize,
+    brushRgb: App.brushColor != null && App.appliedPalette[App.brushColor]
+      ? C.hexToRgb(App.appliedPalette[App.brushColor].hex)
+      : null,
   });
   applyTransform();
 }
 
 // 颜色清单高亮闪烁：高亮时按周期隐现，反色不明显也能看清选中色号
 function syncHighlightBlink() {
-  clearInterval(App.highlightTimer);
-  App.highlightTimer = null;
-  if (App.highlightColor == null || !App.project) {
+  const active = App.highlightColor != null && App.project;
+  if (!active) {
+    clearInterval(App.highlightTimer);
+    App.highlightTimer = null;
     App.highlightBlink = true;
     return;
   }
+  // 定时器已在运行时直接复用，避免鼠标移动触发的重绘反复重置闪烁相位
+  if (App.highlightTimer) return;
   App.highlightTimer = setInterval(() => {
     App.highlightBlink = !App.highlightBlink;
     redrawCanvas();
@@ -854,6 +869,8 @@ function zoomAt(clientX, clientY, factor) {
   App.zoom = newZ;
   App.pan = { x: clientX - stageLeft - bx * newZ, y: clientY - stageTop - by * newZ };
   applyTransform();
+  // 缩放后立即按新缩放重绘，让 hover 边框的隐藏阈值随缩放即时生效
+  redrawCanvas();
   if (App.syncPan && App.originalImage) {
     mirrorBeadToOrig();
     applyOriginalTransform();
@@ -1036,6 +1053,13 @@ function updateBrush() {
   els.brushLabel.textContent = `${c.name || ''} ${c.code || ''} ${c.hex}`.trim();
 }
 
+// 画笔 / 橡皮尺寸：同步拖动条显示与当前值（仅画笔与橡皮模式显示拖动条）
+function updateBrushSizeUI() {
+  els.brushSize.value = String(App.brushSize);
+  els.brushSizeValue.textContent = String(App.brushSize);
+  els.brushSizeWrap.classList.toggle('hidden', App.tool !== 'brush' && App.tool !== 'eraser');
+}
+
 function renderColorList(counts) {
   if (!counts && App.project) {
     counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
@@ -1211,6 +1235,22 @@ function paintCell(x, y) {
   return { x, y, from, to: v };
 }
 
+// 按画笔 / 橡皮尺寸涂一个矩形（边长 = 2×brushSize−1，以目标格为中心，裁剪到图案边界）
+function paintStamp(cell) {
+  if (!cell) return;
+  const r = App.brushSize - 1;
+  const { width, height } = App.project;
+  const x0 = Math.max(0, cell.x - r);
+  const y0 = Math.max(0, cell.y - r);
+  const x1 = Math.min(width - 1, cell.x + r);
+  const y1 = Math.min(height - 1, cell.y + r);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      paintCell(x, y);
+    }
+  }
+}
+
 // ---------------- 单步撤销 / 重做 ----------------
 
 function doUndo() {
@@ -1269,7 +1309,7 @@ function strokeLine(a, b) {
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx + dy;
   for (;;) {
-    paintCell(x0, y0);
+    paintStamp({ x: x0, y: y0 });
     if (x0 === x1 && y0 === y1) break;
     const e2 = 2 * err;
     if (e2 >= dy) { err += dy; x0 += sx; }
@@ -1693,6 +1733,8 @@ async function restoreState() {
   }
   if (st.settings) Object.assign(App.settings, st.settings);
   delete App.settings.outline; // 描边功能已移除
+  App.brushSize = Math.min(10, Math.max(1, parseInt(App.settings.brushSize, 10) || 1));
+  updateBrushSizeUI();
   els.targetPixels.value = App.settings.targetPixels;
   els.chkSharpen.checked = App.settings.sharpen;
   els.chkCodes.checked = App.settings.showCodes;
@@ -1910,6 +1952,13 @@ function bindEvents() {
   els.toolPicker.addEventListener('click', () => {
     setTool(App.tool === 'picker' ? 'drag' : 'picker');
   });
+  els.brushSize.addEventListener('input', () => {
+    App.brushSize = Math.min(10, Math.max(1, parseInt(els.brushSize.value, 10) || 1));
+    App.settings.brushSize = App.brushSize;
+    updateBrushSizeUI();
+    scheduleRender();
+    scheduleAutosave();
+  });
 
   els.zoomIn.addEventListener('click', () => {
     const vp = els.canvasScroll;
@@ -1947,7 +1996,7 @@ function bindEvents() {
         App.lastCell = cell;
         // 一次按下到放开的全部像素修改记为一步
         App.strokeBuffer = [];
-        paintCell(cell.x, cell.y);
+        paintStamp(cell);
       } else {
         dragState.panning = true;
       }
@@ -2018,6 +2067,36 @@ function bindEvents() {
     App.lastCell = null;
     els.canvas.style.cursor = '';
     els.canvasOriginal.style.cursor = '';
+  });
+  // 鼠标指向像素的 hover 边框：跟随鼠标定位；拖拽平移或指向对比原图时隐藏
+  els.canvasScroll.addEventListener('mousemove', (e) => {
+    if (!App.project) return;
+    if (e.target && e.target.closest && e.target.closest('#compare-original')) {
+      if (App.hoverCell != null) {
+        App.hoverCell = null;
+        scheduleRender();
+      }
+      return;
+    }
+    if (dragState.active && dragState.moved && dragState.panning) {
+      if (App.hoverCell != null) {
+        App.hoverCell = null;
+        scheduleRender();
+      }
+      return;
+    }
+    const cell = cellFromEvent(e);
+    const prev = App.hoverCell;
+    const same = prev != null && cell != null && prev.x === cell.x && prev.y === cell.y;
+    if (same || (prev == null && cell == null)) return;
+    App.hoverCell = cell;
+    scheduleRender();
+  });
+  els.canvasScroll.addEventListener('mouseleave', () => {
+    if (App.hoverCell != null) {
+      App.hoverCell = null;
+      scheduleRender();
+    }
   });
   els.canvas.addEventListener('contextmenu', (e) => {
     if (!App.project || App.tool !== 'drag') return;
@@ -2110,6 +2189,7 @@ function bindEvents() {
 }
 
 function setTool(t) {
+  if (App.tool === t) return;
   App.tool = t;
   els.toolBrush.classList.toggle('active', t === 'brush');
   els.toolPicker.classList.toggle('active', t === 'picker');
@@ -2118,12 +2198,12 @@ function setTool(t) {
   els.canvas.classList.toggle('mode-picker', t === 'picker');
   els.canvas.classList.toggle('mode-eraser', t === 'eraser');
   if (t !== 'drag') {
-    // 进入画笔 / 取色 / 橡皮模式时取消像素高亮与颜色高亮
-    const changed = App.selectedCell != null || App.highlightColor != null;
+    // 进入画笔 / 取色 / 橡皮模式时取消像素高亮；色号高亮保留，不随切换工具消失
     App.selectedCell = null;
-    App.highlightColor = null;
-    if (changed) renderAll();
   }
+  // 切换工具后立即重绘，让 hover 边框样式随之更新
+  redrawCanvas();
+  updateBrushSizeUI();
   els.modeLabel.textContent = t === 'brush' ? '画笔模式'
     : t === 'eraser' ? '橡皮模式'
       : t === 'picker' ? '取色模式' : '拖拽模式';
@@ -2160,8 +2240,10 @@ window.__app = App;
 window.__testHooks = {
   renderAll,
   redrawCanvas,
+  setTool,
   updateBrush,
   paintCell,
+  paintStamp,
   pickQuickColor,
   doUndo,
   doRedo,

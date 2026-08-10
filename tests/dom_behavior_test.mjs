@@ -86,9 +86,47 @@ const ctxStub = {
   _fillStyle: '#000000',
   get fillStyle() { return this._fillStyle; },
   set fillStyle(v) { this._fillStyle = v; },
+  _strokeStyle: '#000000',
+  get strokeStyle() { return this._strokeStyle; },
+  set strokeStyle(v) { this._strokeStyle = v; },
+  _lineWidth: 1,
+  get lineWidth() { return this._lineWidth; },
+  set lineWidth(v) { this._lineWidth = v; },
+  _lineDash: null,
+  _lineDashOffset: 0,
+  get lineDashOffset() { return this._lineDashOffset; },
+  set lineDashOffset(v) { this._lineDashOffset = v; },
   fillRect(x, y, w, h) { drawLog.fills.push({ style: this._fillStyle, x, y, w, h }); },
-  beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
-  strokeRect() {}, fillText() {}, fill() {}, save() {}, restore() {},
+  beginPath() {}, moveTo() {}, lineTo() {}, ellipse() {},
+  stroke() {
+    drawLog.strokes.push({
+      rect: false,
+      style: this._strokeStyle,
+      lineWidth: this._lineWidth,
+      dash: this._lineDash ? [...this._lineDash] : null,
+      dashOffset: this._lineDashOffset,
+    });
+  },
+  strokeRect(x, y, w, h) {
+    drawLog.strokes.push({
+      rect: true,
+      style: this._strokeStyle,
+      lineWidth: this._lineWidth,
+      x, y, w, h,
+      dash: this._lineDash ? [...this._lineDash] : null,
+      dashOffset: this._lineDashOffset,
+    });
+  },
+  setLineDash(v) { this._lineDash = [...v]; },
+  fillText() {}, fill() {},
+  save() {
+    this._savedDash = this._lineDash ? [...this._lineDash] : null;
+    this._savedDashOffset = this._lineDashOffset;
+  },
+  restore() {
+    this._lineDash = this._savedDash ? [...this._savedDash] : null;
+    this._lineDashOffset = this._savedDashOffset || 0;
+  },
   getImageData() { return { data: new Uint8ClampedArray(0) }; },
   drawImage() {}, setTransform() {}, clearRect() {},
 };
@@ -454,6 +492,192 @@ function mouseAt(cellX, cellY) {
   assert.equal(elsMap['chk-sync-pan'].checked, false, '取消对比后同步勾选框应被取消');
   assert.equal(App.compareEnabled, false, '取消对比后对比状态应关闭');
   console.log('[OK] 同步换算含网格/原图比例 / 取消对比联动取消同步');
+}
+
+// ---------------- 11. 鼠标指向像素的 hover 边框 ----------------
+{
+  seedProject();
+  App.tool = 'drag';
+  App.hoverCell = null;
+  App.selectedCell = null;
+  App.highlightColor = null;
+  hooks.renderAll();
+  canvasRectForCells();
+
+  // 拖拽模式：黑白相间虚线
+  const mm = elsMap['canvas-scroll'].listeners['mousemove'][0];
+  drawLog.strokes = [];
+  mm(mouseAt(1, 1));
+  assert.deepEqual(App.hoverCell, { x: 1, y: 1 }, '鼠标移动应记录指向的格子');
+  const rectStrokes = drawLog.strokes.filter((s) => s.rect);
+  assert.equal(rectStrokes.length, 2, '拖拽模式 hover 应绘制两遍虚线边框（黑 + 白）');
+  assert.equal(rectStrokes[0].style.toLowerCase(), '#000000', '第一遍应为黑色');
+  assert.equal(rectStrokes[1].style.toLowerCase(), '#ffffff', '第二遍应为白色');
+  assert.ok(rectStrokes[0].dash && rectStrokes[0].dash[0] > 0, '拖拽模式应使用虚线');
+  assert.ok(rectStrokes[1].dashOffset > 0, '第二遍虚线应错开半个周期');
+  assert.ok(rectStrokes[0].x >= 156 && rectStrokes[0].y >= 156, 'hover 边框应位于指向格子的画布坐标');
+
+  // 取色模式：3D 凸起效果（高光斜面 / 暗斜面 / 投影），不再使用虚线
+  App.tool = 'picker';
+  drawLog.strokes = [];
+  hooks.renderAll();
+  const picker3D = drawLog.strokes.filter((s) =>
+    s.style.includes('rgba(255, 255, 255, 0.85)') ||
+    s.style.includes('rgba(0, 0, 0, 0.45)') ||
+    s.style.includes('rgba(0, 0, 0, 0.35)'));
+  assert.ok(picker3D.length >= 3, '取色模式应绘制 3D 凸起（高光斜面 / 暗斜面 / 投影）');
+  assert.equal(drawLog.strokes.filter((s) => s.rect).length, 0, '取色模式不应再绘制虚线边框');
+
+  // 画笔模式：与取色一致的 3D 凸起（不再有内部黑实线）
+  App.tool = 'brush';
+  App.brushColor = 0; // 白色
+  drawLog.strokes = [];
+  hooks.renderAll();
+  const brush3D = drawLog.strokes.filter((s) =>
+    s.style.includes('rgba(255, 255, 255, 0.85)') ||
+    s.style.includes('rgba(0, 0, 0, 0.45)') ||
+    s.style.includes('rgba(0, 0, 0, 0.35)'));
+  assert.ok(brush3D.length >= 3, '画笔模式应绘制 3D 凸起（高光斜面 / 暗斜面 / 投影）');
+  assert.equal(drawLog.strokes.filter((s) => s.rect).length, 0, '画笔模式不应再有内部黑实线');
+
+  // 橡皮模式：非空位画边框 + X，空位不画
+  App.tool = 'eraser';
+  App.hoverCell = null;
+  drawLog.strokes = [];
+  hooks.renderAll();
+  const baseCount = drawLog.strokes.length;
+  App.hoverCell = { x: 0, y: 0 }; // grid[0] = 白色
+  hooks.renderAll();
+  const added = drawLog.strokes.length - baseCount;
+  assert.ok(added >= 3, `橡皮 hover 应绘制边框 + 两条对角线，实际增加 ${added} 条线`);
+  App.project.grid[0] = -1; // 变空位
+  App.hoverCell = { x: 0, y: 0 };
+  drawLog.strokes = [];
+  hooks.renderAll();
+  assert.equal(drawLog.strokes.filter((s) => s.rect).length, 0, '橡皮指向空位时不应绘制 hover 边框');
+
+  // 鼠标离开画布区应清除 hover
+  App.hoverCell = { x: 1, y: 1 };
+  const leave = elsMap['canvas-scroll'].listeners['mouseleave'][0];
+  leave({});
+  assert.equal(App.hoverCell, null, '鼠标离开画布区应清除 hover');
+
+  // hover 线宽随缩放等比变化：画布线宽只由格尺寸决定，屏幕粗细交给 CSS 缩放
+  App.tool = 'drag';
+  App.hoverCell = { x: 1, y: 1 };
+  App.zoom = 0.5;
+  drawLog.strokes = [];
+  hooks.renderAll();
+  const zoomRects = drawLog.strokes.filter((s) => s.rect);
+  assert.equal(zoomRects[0].lineWidth, 1, '缩放 0.5 时画布线宽应保持格尺寸比例（1px 细线）');
+  App.zoom = 1;
+  App.hoverCell = null;
+  console.log('[OK] 鼠标 hover 边框：拖拽 / 画笔 / 取色 / 橡皮');
+}
+
+// ---------------- 12. 颜色清单高亮闪烁：重绘不应重置定时器 ----------------
+{
+  seedProject();
+  App.highlightColor = 0;
+  App.highlightBlink = true;
+  hooks.renderAll();
+  const timer1 = App.highlightTimer;
+  assert.ok(timer1, '设置高亮后应启动闪烁定时器');
+  hooks.renderAll(); // 模拟鼠标移动触发的重绘
+  assert.equal(App.highlightTimer, timer1, '重复渲染不应重置闪烁定时器（否则闪烁会暂停）');
+  App.highlightColor = null;
+  hooks.renderAll();
+  assert.equal(App.highlightTimer, null, '取消高亮后应停止闪烁定时器');
+  console.log('[OK] 颜色清单高亮闪烁定时器不被重绘重置');
+}
+
+// ---------------- 13. 色号高亮连通块：相连像素描边合并为一个整块 ----------------
+{
+  seedProject();
+  // 3x3 全同色 → 一个连通块：外轮廓 12 条边，块内不再逐格描边
+  App.project = { width: 3, height: 3, grid: Int16Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0]) };
+  App.baseGrid = App.project.grid.slice();
+  App.highlightColor = 0;
+  App.highlightBlink = true;
+  drawLog.strokes = [];
+  hooks.renderAll();
+  const frameStyle = 'rgba(0, 0, 0, 0.9)'; // 白色格（亮色）用深色描边
+  const blockEdges = drawLog.strokes.filter((s) => s.style.includes(frameStyle));
+  assert.equal(blockEdges.length, 12, '3x3 整块外轮廓应为 12 条边');
+  assert.equal(drawLog.strokes.filter((s) => s.rect).length, 0, '连通块内部不应再逐格描边');
+
+  // 孤立单格 → 只有 4 条边
+  App.project = { width: 3, height: 3, grid: Int16Array.from([0, -1, -1, -1, -1, -1, -1, -1, -1]) };
+  App.baseGrid = App.project.grid.slice();
+  drawLog.strokes = [];
+  hooks.renderAll();
+  const singleEdges = drawLog.strokes.filter((s) => s.style.includes(frameStyle));
+  assert.equal(singleEdges.length, 4, '孤立单格应只有 4 条边');
+
+  // 两个水平相邻格 + 一个对角孤立格 → 2 个连通块：水平块 6 条边 + 对角块 4 条边
+  App.project = { width: 3, height: 2, grid: Int16Array.from([0, 0, -1, -1, -1, 0]) };
+  App.baseGrid = App.project.grid.slice();
+  drawLog.strokes = [];
+  hooks.renderAll();
+  const mixedEdges = drawLog.strokes.filter((s) => s.style.includes(frameStyle));
+  assert.equal(mixedEdges.length, 10, '水平相邻块（6 边）+ 对角孤立格（4 边）应共 10 条边');
+
+  App.highlightColor = null;
+  hooks.renderAll();
+  console.log('[OK] 色号高亮连通块：外轮廓合并、内部不描边');
+}
+
+// ---------------- 14. 画笔 / 橡皮尺寸：拖动条显示与矩形涂色 ----------------
+{
+  seedProject();
+  App.brushSize = 1;
+  App.selectedCell = null;
+  App.highlightColor = null;
+
+  // 拖动条仅在画笔 / 橡皮模式显示
+  hooks.setTool('brush');
+  assert.ok(!elsMap['brush-size-wrap'].classList.contains('hidden'), '画笔模式应显示尺寸拖动条');
+  hooks.setTool('drag');
+  assert.ok(elsMap['brush-size-wrap'].classList.contains('hidden'), '拖拽模式应隐藏尺寸拖动条');
+  hooks.setTool('eraser');
+  assert.ok(!elsMap['brush-size-wrap'].classList.contains('hidden'), '橡皮模式应显示尺寸拖动条');
+
+  // 拖动条输入 → 更新画笔尺寸并持久化
+  elsMap['brush-size'].value = '4';
+  elsMap['brush-size'].emit('input');
+  assert.equal(App.brushSize, 4, '拖动条输入应更新画笔尺寸');
+  assert.equal(App.settings.brushSize, 4, '画笔尺寸应同步到设置以便持久化');
+  assert.equal(elsMap['brush-size-value'].textContent, '4', '拖动条数值标签应同步');
+
+  // 尺寸 3（边长 5）：在 6x6 图案中心 (2,2) 涂满 5x5
+  App.project = { width: 6, height: 6, grid: Int16Array.from(Array(36).fill(0)) };
+  App.baseGrid = App.project.grid.slice();
+  App.tool = 'brush';
+  App.brushColor = 2;
+  App.brushSize = 3;
+  App.strokeBuffer = [];
+  hooks.paintStamp({ x: 2, y: 2 });
+  assert.equal(Array.from(App.project.grid).filter((v) => v === 2).length, 25, '尺寸 3 在 (2,2) 应涂满 5x5（25 格）');
+  assert.equal(App.strokeBuffer.length, 25, '一次盖章应记录 25 个像素修改');
+  App.strokeBuffer = null;
+
+  // 边缘裁剪：角落 (0,0) 盖章 → 只涂 3x3（用调色板内合法色号 1）
+  App.brushColor = 1;
+  App.strokeBuffer = [];
+  hooks.paintStamp({ x: 0, y: 0 });
+  assert.equal(Array.from(App.project.grid).filter((v) => v === 1).length, 9, '角落盖章应裁剪为 3x3（9 格）');
+  App.strokeBuffer = null;
+
+  // 橡皮尺寸：以 (3,3) 为中心擦除 5x5
+  App.tool = 'eraser';
+  App.strokeBuffer = [];
+  hooks.paintStamp({ x: 3, y: 3 });
+  const erased = Array.from(App.project.grid).filter((v) => v === -1).length;
+  assert.equal(erased, 25, '橡皮尺寸 3 在 (3,3) 应擦除 5x5（25 格）');
+  App.strokeBuffer = null;
+  App.brushSize = 1;
+  hooks.setTool('drag');
+  console.log('[OK] 画笔 / 橡皮尺寸：拖动条显示与矩形涂色');
 }
 
 console.log('\nDOM 行为测试全部通过');

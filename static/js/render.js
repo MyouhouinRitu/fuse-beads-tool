@@ -12,6 +12,10 @@ import {
   SELECTION_COLOR,
   SELECTION_STROKE_MIN,
   SELECTION_STROKE_RATIO,
+  HOVER_MIN_SCREEN_CELL,
+  HOVER_STROKE_RATIO,
+  HOVER_DASH_RATIO,
+  HOVER_DASH_MIN,
 } from './constants.js';
 import { isLightColor } from './colors.js';
 
@@ -68,6 +72,18 @@ function hex6(c) {
   return ((c >>> 16) & 255).toString(16).padStart(2, '0')
     + ((c >>> 8) & 255).toString(16).padStart(2, '0')
     + (c & 255).toString(16).padStart(2, '0');
+}
+
+// 自适应描边线宽：按格子的常用宽度与屏幕像素下限取较大者，
+// 并限制不超过半格，避免格子太小时描边几何失效
+function adaptiveStrokeWidth(cell, zoom, ratio, minScreenStroke) {
+  return Math.max(
+    Math.round(cell * ratio),
+    Math.min(
+      Math.ceil(minScreenStroke / zoom),
+      Math.max(1, Math.floor(cell / 2))
+    )
+  );
 }
 
 function textColor(r, g, b) {
@@ -182,6 +198,217 @@ function drawSelection(ctx, sel, originX, originY, cell) {
   ctx.strokeRect(x0 + inset, y0 + inset, cell - inset * 2, cell - inset * 2);
 }
 
+// 色号高亮连通块：按四方向（上下左右）找出同色相邻的像素组
+function findHighlightComponents(width, height, displayIdx, color) {
+  const n = width * height;
+  const visited = new Uint8Array(n);
+  const components = [];
+  for (let p = 0; p < n; p++) {
+    if (visited[p] || displayIdx[p] !== color) continue;
+    visited[p] = 1;
+    const comp = [];
+    const stack = [p];
+    while (stack.length) {
+      const q = stack.pop();
+      comp.push(q);
+      const x = q % width;
+      if (x > 0 && !visited[q - 1] && displayIdx[q - 1] === color) {
+        visited[q - 1] = 1;
+        stack.push(q - 1);
+      }
+      if (x < width - 1 && !visited[q + 1] && displayIdx[q + 1] === color) {
+        visited[q + 1] = 1;
+        stack.push(q + 1);
+      }
+      if (q >= width && !visited[q - width] && displayIdx[q - width] === color) {
+        visited[q - width] = 1;
+        stack.push(q - width);
+      }
+      if (q < n - width && !visited[q + width] && displayIdx[q + width] === color) {
+        visited[q + width] = 1;
+        stack.push(q + width);
+      }
+    }
+    components.push(comp);
+  }
+  return components;
+}
+
+// 连通块外轮廓：只画块与外界相邻的边，块内不再逐格描边，使整块看起来是一个整体
+function drawHighlightOutline(ctx, comp, width, height, displayIdx, displayRgb, originX, originY, cell, hlw) {
+  const color = displayIdx[comp[0]];
+  ctx.save();
+  ctx.lineWidth = hlw;
+  ctx.lineJoin = 'miter';
+  for (const p of comp) {
+    const x = p % width;
+    const y = (p / width) | 0;
+    const x0 = originX + (x + GRID_MARGIN_CELLS) * cell;
+    const y0 = originY + (y + GRID_MARGIN_CELLS) * cell;
+    const v = displayRgb[p];
+    const rgb = [(v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+    ctx.strokeStyle = isLightColor(rgb)
+      ? `rgba(0, 0, 0, ${HIGHLIGHT_FRAME_LIGHT})`
+      : `rgba(255, 255, 255, ${HIGHLIGHT_FRAME_DARK})`;
+    if (y === 0 || displayIdx[p - width] !== color) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x0 + cell, y0);
+      ctx.stroke();
+    }
+    if (y === height - 1 || displayIdx[p + width] !== color) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0 + cell);
+      ctx.lineTo(x0 + cell, y0 + cell);
+      ctx.stroke();
+    }
+    if (x === 0 || displayIdx[p - 1] !== color) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x0, y0 + cell);
+      ctx.stroke();
+    }
+    if (x === width - 1 || displayIdx[p + 1] !== color) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + cell, y0);
+      ctx.lineTo(x0 + cell, y0 + cell);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// 3D 凸起矩形：右下投影 + 上左高光斜面 + 下右暗斜面 + 左上高光点（取色 / 画笔共用）
+function drawRaisedRect(ctx, bx0, by0, bw, bh, hlw, gloss) {
+  ctx.save();
+  ctx.lineWidth = hlw;
+  // 投影（落在矩形右下外侧）
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.beginPath();
+  ctx.moveTo(bx0 + bw + 0.5, by0 + 1.5);
+  ctx.lineTo(bx0 + bw + 0.5, by0 + bh + 0.5);
+  ctx.lineTo(bx0 + 1.5, by0 + bh + 0.5);
+  ctx.stroke();
+  // 高光斜面：上 / 左
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.beginPath();
+  ctx.moveTo(bx0 + 0.5, by0 + 0.5);
+  ctx.lineTo(bx0 + bw - 0.5, by0 + 0.5);
+  ctx.moveTo(bx0 + 0.5, by0 + 0.5);
+  ctx.lineTo(bx0 + 0.5, by0 + bh - 0.5);
+  ctx.stroke();
+  // 暗斜面：下 / 右
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.beginPath();
+  ctx.moveTo(bx0 + 0.5, by0 + bh - 0.5);
+  ctx.lineTo(bx0 + bw - 0.5, by0 + bh - 0.5);
+  ctx.moveTo(bx0 + bw - 0.5, by0 + 0.5);
+  ctx.lineTo(bx0 + bw - 0.5, by0 + bh - 0.5);
+  ctx.stroke();
+  // 左上角高光点（矩形足够大时才画）
+  if (gloss) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(bx0 + 5, by0 + 5, 2, 1.5, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 鼠标指向像素的 hover 边框：按工具模式区分样式
+// - drag  ：黑白相间虚线
+// - brush ：与取色一致的 3D 凸起，按画笔尺寸显示矩形区域
+// - picker：3D 凸起（把格子“吸起来”）
+// - eraser：亮度自适应边框 + 对角 X，按尺寸显示矩形区域
+function drawHover(ctx, hover, tool, brushRgb, width, height, displayIdx, displayRgb, originX, originY, cell, zoom, brushSize) {
+  if (!hover || !tool || cell * zoom < HOVER_MIN_SCREEN_CELL) return;
+  const p = hover.y * width + hover.x;
+  if (p < 0 || p >= width * height) return;
+  // 取色只作用于非空位（橡皮按矩形区域判断，见 eraser 分支）
+  if (tool === 'picker' && displayIdx[p] < 0) return;
+  if (tool === 'brush' && !brushRgb) return;
+  const size = brushSize || 1;
+
+  const x0 = originX + (hover.x + GRID_MARGIN_CELLS) * cell;
+  const y0 = originY + (hover.y + GRID_MARGIN_CELLS) * cell;
+  // 画布线宽只随格尺寸等比变化，屏幕上的粗细由 CSS 缩放呈现，
+  // 这样缩放时边框会跟着格子一起变粗/变细，直到低于隐藏阈值
+  const hlw = Math.max(1, Math.round(cell * HOVER_STROKE_RATIO));
+  const inset = hlw / 2;
+
+  if (tool === 'drag') {
+    // 双色错位虚线：黑先画，白偏移半个虚线周期后叠加，形成相间效果
+    const dash = Math.max(HOVER_DASH_MIN, Math.round(cell * HOVER_DASH_RATIO));
+    ctx.save();
+    ctx.lineWidth = hlw;
+    ctx.setLineDash([dash, dash]);
+    ctx.strokeStyle = '#000000';
+    ctx.lineDashOffset = 0;
+    ctx.strokeRect(x0 + inset, y0 + inset, cell - inset * 2, cell - inset * 2);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineDashOffset = dash;
+    ctx.strokeRect(x0 + inset, y0 + inset, cell - inset * 2, cell - inset * 2);
+    ctx.restore();
+    return;
+  }
+
+  if (tool === 'picker') {
+    // 3D 凸起效果：像把格子“吸起来”
+    drawRaisedRect(ctx, x0, y0, cell, cell, hlw, cell >= 14);
+    return;
+  }
+
+  if (tool === 'brush') {
+    // 与取色一致的 3D 凸起；按画笔尺寸显示整个矩形（边长 2n-1，裁剪到图案边界）
+    const r = size - 1;
+    const sx0 = Math.max(0, hover.x - r);
+    const sy0 = Math.max(0, hover.y - r);
+    const sx1 = Math.min(width - 1, hover.x + r);
+    const sy1 = Math.min(height - 1, hover.y + r);
+    const bx0 = originX + (sx0 + GRID_MARGIN_CELLS) * cell;
+    const by0 = originY + (sy0 + GRID_MARGIN_CELLS) * cell;
+    const bw = (sx1 - sx0 + 1) * cell;
+    const bh = (sy1 - sy0 + 1) * cell;
+    drawRaisedRect(ctx, bx0, by0, bw, bh, hlw, bw >= 14 && bh >= 14);
+    return;
+  }
+
+  // eraser：亮度自适应边框 + 对角 X；按橡皮尺寸显示整个矩形区域
+  const r = size - 1;
+  const sx0 = Math.max(0, hover.x - r);
+  const sy0 = Math.max(0, hover.y - r);
+  const sx1 = Math.min(width - 1, hover.x + r);
+  const sy1 = Math.min(height - 1, hover.y + r);
+  // 矩形内至少一个非空位才显示（空位擦了没意义），描边颜色取矩形内第一个非空位格子的亮度
+  let ref = -1;
+  for (let yy = sy0; yy <= sy1 && ref < 0; yy++) {
+    for (let xx = sx0; xx <= sx1; xx++) {
+      const pp = yy * width + xx;
+      if (displayIdx[pp] >= 0) { ref = displayRgb[pp]; break; }
+    }
+  }
+  if (ref < 0) return;
+  const bx0 = originX + (sx0 + GRID_MARGIN_CELLS) * cell;
+  const by0 = originY + (sy0 + GRID_MARGIN_CELLS) * cell;
+  const bw = (sx1 - sx0 + 1) * cell;
+  const bh = (sy1 - sy0 + 1) * cell;
+  const rgb = [(ref >>> 16) & 255, (ref >>> 8) & 255, ref & 255];
+  const frame = isLightColor(rgb)
+    ? `rgba(0, 0, 0, ${HIGHLIGHT_FRAME_LIGHT})`
+    : `rgba(255, 255, 255, ${HIGHLIGHT_FRAME_DARK})`;
+  ctx.save();
+  ctx.lineWidth = hlw;
+  ctx.strokeStyle = frame;
+  ctx.strokeRect(bx0 + inset, by0 + inset, bw - inset * 2, bh - inset * 2);
+  ctx.beginPath();
+  ctx.moveTo(bx0 + hlw, by0 + hlw);
+  ctx.lineTo(bx0 + bw - hlw, by0 + bh - hlw);
+  ctx.moveTo(bx0 + bw - hlw, by0 + hlw);
+  ctx.lineTo(bx0 + hlw, by0 + bh - hlw);
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
   const cell = opts.cell || CELL;
   const outerPad = opts.outerPad ?? OUTER_PAD;
@@ -240,21 +467,14 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
   // 颜色清单高亮：半透明覆盖层 + 亮度自适应描边（描边带屏幕像素下限）
   if (opts.highlightColor != null && opts.highlightBlink !== false) {
     const zoom = opts.zoom || 1;
-    // 屏幕线宽 = 画布线宽 × zoom；取「按格子的常规宽度」与「屏幕像素下限」的较大者，
-    // 并限制不超过半格，避免格子太小时描边几何失效
-    const hlw = Math.max(
-      Math.round(cell * HIGHLIGHT_STROKE_RATIO),
-      Math.min(
-        Math.ceil(HIGHLIGHT_MIN_SCREEN_STROKE / zoom),
-        Math.max(1, Math.floor(cell / 2))
-      )
-    );
-    const inset = hlw / 2;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const p = y * width + x;
-        const v = displayIdx[p];
-        if (v < 0 || v !== opts.highlightColor) continue;
+    const hlw = adaptiveStrokeWidth(cell, zoom, HIGHLIGHT_STROKE_RATIO, HIGHLIGHT_MIN_SCREEN_STROKE);
+    // 按四方向连通性分组：相连的同色像素作为一个整块
+    const components = findHighlightComponents(width, height, displayIdx, opts.highlightColor);
+    for (const comp of components) {
+      // 半透明覆盖层（逐格）：暗色格子提亮、亮色格子压暗，任何颜色都有反差
+      for (const p of comp) {
+        const x = p % width;
+        const y = (p / width) | 0;
         const c = displayRgb[p];
         const r = (c >>> 16) & 255;
         const g = (c >>> 8) & 255;
@@ -262,20 +482,34 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
         const light = isLightColor([r, g, b]);
         const x0 = ox + (x + GRID_MARGIN_CELLS) * cell;
         const y0 = oy + (y + GRID_MARGIN_CELLS) * cell;
-        // 半透明覆盖层：暗色格子提亮、亮色格子压暗，任何颜色（含灰色）都有反差
         ctx.fillStyle = light
           ? `rgba(0, 0, 0, ${HIGHLIGHT_WASH_LIGHT})`
           : `rgba(255, 255, 255, ${HIGHLIGHT_WASH_DARK})`;
         ctx.fillRect(x0, y0, cell, cell);
-        // 亮度自适应描边：亮格子用深框、暗格子用浅框
-        ctx.strokeStyle = light
-          ? `rgba(0, 0, 0, ${HIGHLIGHT_FRAME_LIGHT})`
-          : `rgba(255, 255, 255, ${HIGHLIGHT_FRAME_DARK})`;
-        ctx.lineWidth = hlw;
-        ctx.strokeRect(x0 + inset, y0 + inset, cell - inset * 2, cell - inset * 2);
       }
     }
+    // 外轮廓：整块只描一次边界，内部不再逐格描边
+    for (const comp of components) {
+      drawHighlightOutline(ctx, comp, width, height, displayIdx, displayRgb, ox, oy, cell, hlw);
+    }
   }
+
+  // 鼠标指向像素的 hover 边框画在最上层（高亮之上），保证任意模式下都可见
+  drawHover(
+    ctx,
+    opts.hover,
+    opts.tool,
+    opts.brushRgb,
+    width,
+    height,
+    displayIdx,
+    displayRgb,
+    ox,
+    oy,
+    cell,
+    opts.zoom || 1,
+    opts.brushSize || 1
+  );
 
   if (legend.length && opts.showLegend !== false) {
     drawLegend(ctx, legend, cell, metrics.gridW, oy + metrics.gridH, outerPad);
