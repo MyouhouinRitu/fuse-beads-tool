@@ -224,7 +224,7 @@ async function main() {
     await page.waitForTimeout(200);
     const gridAfter = await page.evaluate(() => Array.from(window.__app.project.grid));
     assert.deepEqual(gridAfter, gridBefore, '点击原图不应修改拼豆图');
-    await page.keyboard.press('Escape'); // 回拖拽模式
+    await page.keyboard.press('Escape'); // 回选择模式
 
     // 取消对比原图时同步拖拽应一并取消；未勾选对比时勾选同步 → 自动勾选对比
     await page.check('#chk-sync-pan'); // 对比已开启，直接启用同步
@@ -256,9 +256,9 @@ async function main() {
     });
     const paneBox = await page.locator('#compare-original').boundingBox();
     await page.mouse.move(paneBox.x + 40, paneBox.y + 60);
-    await page.mouse.down();
+    await page.mouse.down({ button: 'right' });
     await page.mouse.move(paneBox.x + 100, paneBox.y + 120, { steps: 6 });
-    await page.mouse.up();
+    await page.mouse.up({ button: 'right' });
     await page.waitForTimeout(200);
     const afterPan = await page.evaluate(() => {
       const a = window.__app;
@@ -341,6 +341,8 @@ async function main() {
   const countsBefore = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#color-list .ci-count')).map((e) => e.textContent).join(','));
   await page.click('#color-list .color-item:first-child');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#selection-controls')).display), 'none',
+    '画笔模式应隐藏同色选区与选中高亮');
   const countsAfter = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#color-list .ci-count')).map((e) => e.textContent).join(','));
   assert.equal(countsAfter, countsBefore, '点选颜色后色号右侧的数量不应丢失');
@@ -384,9 +386,11 @@ async function main() {
   await page.click('#tool-brush');
   pt = await canvasPoint(page, 20, 20);
   await page.mouse.click(pt.x, pt.y);
-  await page.keyboard.press('Escape'); // 画笔模式按 ESC 回拖拽，D 仅在拖拽模式生效
-  assert.equal(await page.textContent('#mode-label'), '拖拽模式', 'ESC 应返回拖拽模式');
-  await page.mouse.click(pt.x, pt.y); // 拖拽模式单击 = 高亮该像素
+  await page.keyboard.press('Escape'); // 画笔模式按 ESC 回选择模式，D 仅在单选一格时生效
+  assert.equal(await page.textContent('#mode-label'), '选择模式', 'ESC 应返回选择模式');
+  assert.notEqual(await page.evaluate(() => getComputedStyle(document.querySelector('#selection-controls')).display), 'none',
+    '选择模式应显示同色选区与选中高亮');
+  await page.mouse.click(pt.x, pt.y); // 选择模式单击 = 选中该像素
   await page.keyboard.press('d');
   await page.waitForSelector('#quick-picker:not(.hidden)', { timeout: 3000 });
   assert.equal(await page.locator('#quick-picker button:not(.qp-cancel)').count(), 9, '应弹出 9 个备选色');
@@ -416,6 +420,7 @@ async function main() {
   await page.waitForTimeout(100);
   assert.ok(await page.locator('#quick-picker').evaluate((el) => el.classList.contains('hidden')),
     '九宫格打开后直接拖拽应自动关闭');
+  await page.keyboard.press('Escape'); // 清除拖拽可能产生的选区，确保后续为“无选区取色”
   console.log('[OK] 九宫格拖拽自动关闭');
 
   // 5.5 取色工具：点击像素取色，ESC 回拖拽
@@ -427,28 +432,35 @@ async function main() {
   assert.ok(brushLabel.includes('#E53935'), `取色后画笔应为红色，实际 ${brushLabel}`);
   assert.equal(await page.textContent('#mode-label'), '画笔模式', '取色后应自动切换为画笔模式');
   await page.keyboard.press('Escape');
-  assert.equal(await page.textContent('#mode-label'), '拖拽模式', '取色模式 ESC 应返回拖拽');
+  assert.equal(await page.textContent('#mode-label'), '选择模式', '取色模式 ESC 应返回选择模式');
   console.log('[OK] 取色工具');
 
-  // 5.6 拖拽模式单击像素 = 高亮（蓝色边框）
+  // 5.6 选择模式单击像素 = 选中（虚线选区）
   const hlPt = await canvasPoint(page, 5, 5);
   await page.mouse.click(hlPt.x, hlPt.y);
   await page.waitForTimeout(150);
-  // 移开鼠标，避免指向像素的 hover 虚线边框遮挡选中高亮
+  // 移开鼠标，避免 hover 虚线干扰选区像素采样
   const hlVp = await page.locator('#canvas-scroll').boundingBox();
   await page.mouse.move(hlVp.x + 8, hlVp.y + 8);
   await page.waitForTimeout(120);
-  const hl = await px(page, OP + MARGIN + 5 * CELL + 3, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
-  assert.ok(hl[2] > 140 && hl[0] < 120, `高亮边框应为蓝色，实际 ${hl}`);
-  console.log('[OK] 拖拽模式单击高亮');
+  const selState = await page.evaluate(() => {
+    const a = window.__app;
+    return { size: a.selection.size, has: a.selection.has(5 * a.project.width + 5) };
+  });
+  assert.equal(selState.size, 1, '单击应选中一个格子');
+  assert.equal(selState.has, true, '应选中 (5,5)');
+  const selPx = await px(page, OP + MARGIN + 5 * CELL + 10, OP + MARGIN + 5 * CELL);
+  assert.ok(selPx[0] < 120 || (selPx[0] > 200 && selPx[1] > 200 && selPx[2] > 200),
+    `选区边框应为黑/白虚线像素，实际 ${selPx}`);
+  console.log('[OK] 选择模式单击选择（虚线选区）');
 
   // 5.7 工作区空白处拖拽 = 平移图片
   const beforePan = await page.evaluate(() => window.__app.pan.x);
   const vp = await page.locator('#canvas-scroll').boundingBox();
   await page.mouse.move(vp.x + 8, vp.y + 8);
-  await page.mouse.down();
+  await page.mouse.down({ button: 'right' });
   await page.mouse.move(vp.x + 60, vp.y + 40, { steps: 5 });
-  await page.mouse.up();
+  await page.mouse.up({ button: 'right' });
   await page.waitForTimeout(100);
   const afterPan = await page.evaluate(() => window.__app.pan.x);
   assert.ok(Math.abs(afterPan - beforePan) > 20, `工作区拖拽应平移图片：${beforePan} -> ${afterPan}`);
@@ -466,7 +478,8 @@ async function main() {
     const scale = rect.width / canvas.width;
     return { x: rect.left + (1.5 * 26) * scale, y: rect.top + (1.5 * 26) * scale };
   });
-  await page.mouse.click(clearPt.x, clearPt.y); // 清除像素高亮，避免与颜色高亮混叠
+  await page.keyboard.press('Escape'); // 清除选区，避免与颜色高亮混叠
+  await page.mouse.click(clearPt.x, clearPt.y); // 移动鼠标位置
   await page.waitForTimeout(120);
   const baseRed = await px(page, OP + MARGIN + 5 * CELL + 2, OP + MARGIN + 5 * CELL + Math.floor(CELL / 2));
   assert.ok(baseRed[0] > 150 && baseRed[1] < 130 && baseRed[2] < 130, `前置：样本点应为红色，实际 ${baseRed}`);

@@ -40,7 +40,7 @@
       </label>
       <span id="used-colors" class="muted"></span>
       <span class="spacer"></span>
-      <span class="hint">拖拽平移 · 滚轮缩放 · 单击像素高亮 · D 键九宫格选色（仅拖拽模式）· ESC 返回拖拽 · Ctrl+S 保存状态 · Ctrl+Z 撤销 · Ctrl+Y 重做</span>
+      <span class="hint">右键拖拽平移 · 滚轮缩放 · 左键单击/拖拽选择区域 · Shift 追加多选 · D 键九宫格改色（单选格优先，否则悬停格）· ESC 清除选择/返回选择模式 · Ctrl+S 保存状态 · Ctrl+Z 撤销 · Ctrl+Y 重做</span>
     </div>
   </header>
 
@@ -79,12 +79,19 @@
         <section id="tab-edit" class="tab-panel hidden">
           <div class="panel-block">
             <div class="tool-row">
-              <button id="tool-brush" class="tool" title="用当前颜色涂色（ESC 返回拖拽）">画笔</button>
-              <button id="tool-picker" class="tool" title="点击像素取色（ESC 返回拖拽）">取色</button>
+              <button id="tool-brush" class="tool" title="用当前颜色涂色（ESC 返回选择模式）">画笔</button>
+              <button id="tool-picker" class="tool" title="点击像素取色（ESC 返回选择模式）">取色</button>
               <button id="tool-eraser" class="tool" title="擦除格子（空位）">橡皮</button>
             </div>
             <div class="mode-line">
-              当前模式：<span id="mode-label" class="mode-label">拖拽模式</span>
+              当前模式：<span id="mode-label" class="mode-label">选择模式</span>
+              <span id="selection-controls" class="selection-controls hidden">
+                <label class="chk" title="单击只选择与该像素四方向（上下左右）相连的同色像素">
+                  <input type="checkbox" id="same-color-select">同色选区
+                </label>
+                <button id="select-highlight" type="button" class="tool-mini"
+                  title="选中当前高亮色号的全部像素并取消高亮显示" disabled>选中高亮</button>
+              </span>
               <label class="field brush-size-field hidden" id="brush-size-wrap"
                 title="画笔 / 橡皮的矩形边长 = 2 × 数值 − 1（仅画笔与橡皮模式显示）">
                 <span>尺寸</span>

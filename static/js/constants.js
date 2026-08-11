@@ -28,16 +28,22 @@ export const HIGHLIGHT_WASH_LIGHT = 0.30;         // 亮色格子叠黑色覆盖
 export const HIGHLIGHT_FRAME_DARK = 0.95;         // 暗色格子的浅色描边透明度
 export const HIGHLIGHT_FRAME_LIGHT = 0.90;        // 亮色格子的深色描边透明度
 
-// ---------- 像素选中（拖拽模式单击高亮） ----------
-export const SELECTION_COLOR = '#1976D2';
-export const SELECTION_STROKE_MIN = 3;
-export const SELECTION_STROKE_RATIO = 0.15;
-
 // ---------- 鼠标指向像素高亮（hover 边框） ----------
 export const HOVER_MIN_SCREEN_CELL = 7;        // 格子屏幕尺寸（格尺寸 × 缩放）低于该值时隐藏 hover 边框
 export const HOVER_STROKE_RATIO = 0.03;        // 边框线宽 = 格尺寸 × 该比例（默认格约 1px，随缩放等比变化）
-export const HOVER_DASH_RATIO = 0.22;          // 拖拽模式虚线每段长度 = 格尺寸 × 该比例（默认格约 6px）
+export const HOVER_BRUSH_STROKE_RATIO = 0.12;  // 画笔模式当前颜色边框线宽 = 格尺寸 × 该比例（默认格约 3px）
+export const HOVER_DASH_RATIO = 0.22;          // 选择模式虚线每段长度 = 格尺寸 × 该比例（默认格约 6px）
 export const HOVER_DASH_MIN = 3;               // 虚线每段最小长度（画布像素）
+
+// ---------- 选区显示（虚线外轮廓，缩小时保持可读） ----------
+export const SELECTION_MIN_SCREEN_STROKE = 2;  // 选区线宽至少的屏幕像素
+export const SELECTION_MIN_SCREEN_DASH = 4;    // 选区虚线段至少的屏幕像素
+
+// ---------- 3D 凸起效果（取色 / 画笔 / 九宫格目标格） ----------
+export const RAISED_SHADOW_ALPHA = 0.35;       // 右下投影透明度
+export const RAISED_BEVEL_LIGHT_ALPHA = 0.85;  // 上 / 左高光斜面透明度
+export const RAISED_BEVEL_DARK_ALPHA = 0.45;   // 下 / 右暗斜面透明度
+export const RAISED_GLOSS_ALPHA = 0.45;        // 左上高光点透明度
 
 // ---------- 对比原图 ----------
 export const ORIG_MAX_DIM = 2000;             // 原图画布最大边长，超出按比例降采样
