@@ -191,18 +191,23 @@
   <div id="export-dialog" class="dialog-mask hidden">
     <div class="dialog dialog-wide">
       <h3>导出图片</h3>
+      <div id="dlg-busy" class="dlg-busy hidden">
+        <div class="dlg-progress"><div class="dlg-progress-bar"></div></div>
+        <div id="dlg-status" class="dlg-status">正在导出…</div>
+      </div>
       <div class="dialog-body">
         <div class="dlg-preview-wrap">
           <canvas id="dlg-preview" class="dlg-preview"></canvas>
         </div>
         <div class="dlg-options">
           <label class="field">每格大小（像素）
-            <input type="number" id="dlg-cell-size" min="5" max="100" value="26">
+            <input type="number" id="dlg-cell-size" min="5" max="100" value="28">
           </label>
           <label class="chk"><input type="checkbox" id="dlg-grid-lines" checked>显示网格线</label>
           <label class="field">外部白边（像素）
             <input type="number" id="dlg-pad" min="0" max="200" value="20">
           </label>
+          <label class="chk" title="在导出图片四周显示浅蓝底行列号"><input type="checkbox" id="dlg-edge-numbers">显示行列号</label>
           <label class="chk"><input type="checkbox" id="dlg-codes" checked>显示色号</label>
           <label class="chk"><input type="checkbox" id="dlg-legend" checked>附带色号图例</label>
           <label class="field">透明色

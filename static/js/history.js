@@ -8,8 +8,8 @@ export function createEmptyHistory() {
   return { items: [], currentId: null, nextId: 1 };
 }
 
-// 兼容旧版树形结构：旧数据无法映射为扁平列表，直接返回空历史；
-// 新结构仅保留含完整快照的合法节点。
+// 历史数据清洗：仅保留含完整快照的合法节点；
+// 无法解析的旧 / 损坏数据直接返回空历史。
 export function sanitizeHistory(h) {
   if (!h || typeof h !== 'object' || !Array.isArray(h.items)) return createEmptyHistory();
   const items = [];

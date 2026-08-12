@@ -158,6 +158,16 @@ export function computeUsedCounts(grid, width, height) {
   return counts;
 }
 
+// 当前使用中的颜色种数（按格子色号去重统计）
+export function countUsedColors(grid, width, height) {
+  const seen = new Set();
+  for (let p = 0; p < width * height; p++) {
+    const v = grid[p];
+    if (v >= 0) seen.add(v);
+  }
+  return seen.size;
+}
+
 class MinHeap {
   constructor() { this.a = []; }
   push(x) {

@@ -19,8 +19,8 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fuse_ui_'));
 const IMG = path.join(TMP, 'ui_test.png');
 const STATE = path.join(ROOT, 'data', 'state.json');
 const OP = 0; // 工作区不再保留外部白边（导出时才使用外部白边）
-const CELL = 26; // 默认格子大小（与 render.js CELL 一致）
-const MARGIN = 5 * CELL;
+const CELL = 28; // 默认格子大小（与 render.js CELL 一致）
+const MARGIN = 1 * CELL; // 图案外侧 1 格行列号条（原 5 格透明边距已移除）
 const ccx = (x) => OP + MARGIN + x * CELL + Math.floor(CELL / 2);
 const ccy = (y) => OP + MARGIN + y * CELL + Math.floor(CELL / 2);
 
@@ -84,10 +84,10 @@ async function canvasPoint(page, cellX, cellY) {
     const canvas = document.querySelector('#canvas');
     const rect = canvas.getBoundingClientRect();
     const scale = rect.width / canvas.width;
-    const cell = 26;
+    const cell = 28;
     return {
-      x: rect.left + ((cx + 5.5) * cell) * scale,
-      y: rect.top + ((cy + 5.5) * cell) * scale,
+      x: rect.left + ((cx + 1.5) * cell) * scale,
+      y: rect.top + ((cy + 1.5) * cell) * scale,
     };
   }, [cellX, cellY]);
 }
@@ -109,7 +109,7 @@ async function main() {
   });
 
   // 1. 导入图片
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.goto(BASE + '/?test=1', { waitUntil: 'networkidle' });
   // 本测试的断言基于 48 色示例色板，先切过去（默认色板是 221 色 MARD）
   await page.selectOption('#config-select', 'default_48');
   await page.waitForTimeout(400);
@@ -119,10 +119,26 @@ async function main() {
   await page.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, { timeout: 20000 });
   await page.waitForFunction(() => document.querySelector('#used-colors')?.textContent.includes('3 种颜色'), null, { timeout: 5000 });
   await page.uncheck('#chk-codes'); // 关闭格内色号文字，避免干扰像素断言
-  assert.equal(await page.evaluate(() => document.querySelector('#canvas').width), 1508, '画布宽应为 (48+10)*26（无外部白边）');
-  assert.equal(await page.evaluate(() => document.querySelector('#canvas').height), 1508, '画布高应为 (48+10)*26（无图例区）');
+  assert.equal(await page.evaluate(() => document.querySelector('#canvas').width), 1400, '画布宽应为 (48+2)*28（无外部白边）');
+  assert.equal(await page.evaluate(() => document.querySelector('#canvas').height), 1400, '画布高应为 (48+2)*28（无图例区）');
   await near(await px(page, ccx(5), ccy(5)), [229, 57, 53], 14);   // 红色块
   await near(await px(page, ccx(40), ccy(5)), [30, 136, 229], 14);  // 蓝色块
+  // 行列号条网格线：外圈端帽不画线，条内细灰 / 每 5 格粗灰实线，图案边缘保持黑线
+  const ox = MARGIN;
+  const oy = MARGIN;
+  const gw = 48 * CELL;
+  const gh = 48 * CELL;
+  await near(await px(page, ox, oy - CELL / 2), [214, 230, 247], 8);       // 顶条左端帽：浅蓝无黑线
+  await near(await px(page, ox + gw - 1, oy - CELL / 2), [214, 230, 247], 8); // 顶条右端帽
+  await near(await px(page, ox - CELL / 2, oy), [214, 230, 247], 8);       // 左条顶端帽
+  await near(await px(page, ox - CELL / 2, oy + gh - 1), [214, 230, 247], 8); // 左条底端帽
+  await near(await px(page, ox, oy + CELL / 2), [0, 0, 0], 12);            // 图案左边缘黑线
+  await near(await px(page, ox + CELL / 2, oy), [0, 0, 0], 12);            // 图案上边缘黑线
+  await near(await px(page, ox + CELL, oy - CELL / 2), [184, 192, 200], 20);    // 顶条分隔细灰线（1px 居中，采样为 50% 混合）
+  await near(await px(page, ox + 5 * CELL, oy - CELL / 2), [154, 154, 154], 20); // 顶条每 5 格粗灰线
+  await near(await px(page, ox - CELL / 2, oy + CELL), [184, 192, 200], 20);    // 左条分隔细灰线（1px 居中，采样为 50% 混合）
+  await near(await px(page, ox - CELL / 2, oy + 5 * CELL), [154, 154, 154], 20); // 左条每 5 格粗灰线
+  console.log('[OK] 行列号条网格线：外圈端帽无线，条内细灰 / 每 5 格粗灰');
   console.log('[OK] 导入并显示像素网格');
 
   // 1.2 工具栏与右侧面板布局：无描边；显示色号/透明色在画布工具栏；记录+自动保存位于导出左侧；事务历史带未保存提示
@@ -239,15 +255,15 @@ async function main() {
     assert.ok(await page.evaluate(() => document.querySelector('#chk-compare').checked),
       '未勾选对比时勾选同步应自动勾选对比');
 
-    // 同步换算：原图 zoom = 拼豆 zoom × CELL；原图 pan = 拼豆 pan + 5 格边距 × CELL × zoom
-    const MARGIN = 5;
-    const CELL = 26;
+    // 同步换算：原图 zoom = 拼豆 zoom × CELL；原图 pan = 拼豆 pan + 1 格行列号条 × CELL × zoom
+    const MARGIN = 1;
+    const CELL = 28;
     const initConsistent = await page.evaluate(() => {
       const a = window.__app;
-      return Math.abs(a.origPan.x - (a.pan.x + 5 * 26 * a.zoom)) < 1
-        && Math.abs(a.origZoom - a.zoom * 26) < 1e-6;
+      return Math.abs(a.origPan.x - (a.pan.x + 1 * 28 * a.zoom)) < 1
+        && Math.abs(a.origZoom - a.zoom * 28) < 1e-6;
     });
-    assert.ok(initConsistent, '开启同步后原图坐标应包含 5 格边距与像素格放大换算');
+    assert.ok(initConsistent, '开启同步后原图坐标应包含 1 格行列号条与像素格放大换算');
 
     // 同步拖拽：拖动原图 → 两侧按同一屏幕位移平移
     const beforePan = await page.evaluate(() => {
@@ -476,7 +492,7 @@ async function main() {
     const canvas = document.querySelector('#canvas');
     const rect = canvas.getBoundingClientRect();
     const scale = rect.width / canvas.width;
-    return { x: rect.left + (1.5 * 26) * scale, y: rect.top + (1.5 * 26) * scale };
+    return { x: rect.left + (0.5 * 28) * scale, y: rect.top + (0.5 * 28) * scale };
   });
   await page.keyboard.press('Escape'); // 清除选区，避免与颜色高亮混叠
   await page.mouse.click(clearPt.x, clearPt.y); // 移动鼠标位置
@@ -567,6 +583,8 @@ async function main() {
   const outJpg = path.join(TMP, 'exported.jpg');
   fs.copyFileSync(dlPath, outJpg);
   assert.ok(fs.statSync(outJpg).size > 1000, '导出文件过小');
+  await page.waitForFunction(() => document.querySelector('#export-dialog').classList.contains('hidden'),
+    null, { timeout: 5000 });
   // 取消「附带色号图例」后再次导出，输出应与带图例时不同
   await page.click('#btn-export');
   await page.fill('#dlg-cell-size', '10');
@@ -580,7 +598,25 @@ async function main() {
   const outJpgNoLegend = path.join(TMP, 'exported_nolegend.jpg');
   fs.copyFileSync(dlPath2, outJpgNoLegend);
   assert.notEqual(fs.statSync(outJpgNoLegend).size, fs.statSync(outJpg).size, '图例开关应改变导出图片');
-  console.log('[OK] 导出 JPG（预览 + 图例开关生效）');
+  await page.waitForFunction(() => document.querySelector('#export-dialog').classList.contains('hidden'),
+    null, { timeout: 5000 });
+  // 勾选「显示行列号」后导出应与不带行列号的图片不同
+  await page.click('#btn-export');
+  await page.fill('#dlg-cell-size', '10');
+  await page.check('#dlg-legend');
+  await page.check('#dlg-edge-numbers');
+  const [download3] = await Promise.all([
+    page.waitForEvent('download'),
+    page.click('#dlg-export-ok'),
+  ]);
+  const dlPath3 = await download3.path();
+  if (!dlPath3) throw new Error('导出下载未返回文件路径');
+  const outJpgNumbers = path.join(TMP, 'exported_numbers.jpg');
+  fs.copyFileSync(dlPath3, outJpgNumbers);
+  assert.notEqual(fs.statSync(outJpgNumbers).size, fs.statSync(outJpg).size, '行列号开关应改变导出图片');
+  await page.waitForFunction(() => document.querySelector('#export-dialog').classList.contains('hidden'),
+    null, { timeout: 5000 });
+  console.log('[OK] 导出 JPG（预览 + 图例开关 + 行列号开关生效）');
 
   // 8. 自动保存 + 刷新恢复
   // 等待最新状态（删除后的单节点树 + 擦除的空位）真正落盘，再刷新
@@ -739,10 +775,10 @@ img.save(${JSON.stringify(LARGE_IMG)})
         panX: a.pan.x,
       };
     });
-    assert.ok(Math.abs(kCheck.origZoom - kCheck.zoom * 26 * (kCheck.gridW / kCheck.dispW)) < 1e-6,
-      `原图 zoom 应 = 拼豆 zoom × 26 × (网格宽/原图显示宽)，实际 ${kCheck.origZoom} vs ${kCheck.zoom * 26 * (kCheck.gridW / kCheck.dispW)}`);
-    assert.ok(Math.abs(kCheck.origPanX - (kCheck.panX + 5 * 26 * kCheck.zoom)) < 1,
-      '原图 pan 应含 5 格边距偏移');
+    assert.ok(Math.abs(kCheck.origZoom - kCheck.zoom * 28 * (kCheck.gridW / kCheck.dispW)) < 1e-6,
+      `原图 zoom 应 = 拼豆 zoom × 28 × (网格宽/原图显示宽)，实际 ${kCheck.origZoom} vs ${kCheck.zoom * 28 * (kCheck.gridW / kCheck.dispW)}`);
+    assert.ok(Math.abs(kCheck.origPanX - (kCheck.panX + 1 * 28 * kCheck.zoom)) < 1,
+      '原图 pan 应含 1 格行列号条偏移');
     await page.uncheck('#chk-sync-pan');
     await page.uncheck('#chk-compare');
     await page.waitForTimeout(250);

@@ -3,10 +3,21 @@
 // 改动时需要同步更新。
 
 // ---------- 画布 / 渲染 ----------
-export const CELL = 26;                       // 每格拼豆在画布上的像素尺寸
-export const GRID_MARGIN_CELLS = 5;           // 图案外侧灰色 × 边距格数
+export const CELL = 28;                       // 每格拼豆在画布上的像素尺寸
+export const CANVAS_EDGE_CELLS = 1;           // 画布四周行列号条的格数（图案外侧 1 格）
 export const OUTER_PAD = 20;                  // 导出时图案外侧纯白边距（像素）
 export const DEFAULT_TARGET_PIXELS = 40000;   // 「目标像素量」输入框默认值
+export const BRUSH_SIZE_MIN = 1;              // 画笔 / 橡皮最小尺寸
+export const BRUSH_SIZE_MAX = 10;             // 画笔 / 橡皮最大尺寸（与模板中滑块 max 一致）
+
+// ---------- 工具模式 ----------
+export const TOOLS = {
+  SELECT: 'select',
+  BRUSH: 'brush',
+  ERASER: 'eraser',
+  PICKER: 'picker',
+};
+
 export const SCREEN_CELL_MIN = 2;             // 超大图案自动缩小格时的最小格尺寸
 export const SCREEN_CELL_MAX_DIM = 28000;     // 画布允许的最大边长（像素）
 export const SCREEN_CELL_MAX_AREA = 80000000; // 画布允许的最大面积（像素²）
@@ -45,6 +56,11 @@ export const RAISED_BEVEL_LIGHT_ALPHA = 0.85;  // 上 / 左高光斜面透明度
 export const RAISED_BEVEL_DARK_ALPHA = 0.45;   // 下 / 右暗斜面透明度
 export const RAISED_GLOSS_ALPHA = 0.45;        // 左上高光点透明度
 
+// ---------- 边缘行列号 ----------
+export const EDGE_NUMBER_MIN_CELL = 8;      // 格尺寸小于该值时隐藏边缘行列号
+export const EDGE_NUMBER_FONT_RATIO = 0.5;  // 行列号字号 = 格尺寸 × 该比例（与格内色号一致）
+export const EDGE_NUMBER_BG = '#D6E6F7';    // 行列号格底色（浅蓝）
+
 // ---------- 对比原图 ----------
 export const ORIG_MAX_DIM = 2000;             // 原图画布最大边长，超出按比例降采样
 
@@ -60,7 +76,7 @@ export const QUICK_PICKER_OFFSET_CELLS = 1.5; // 九宫格相对像素的纵向�
 // ---------- 导出预览 ----------
 export const EXPORT_CELL_MIN = 5;
 export const EXPORT_CELL_MAX = 100;
-export const EXPORT_CELL_DEFAULT = 20;        // 导出「每格大小」输入为空时的默认值
+export const EXPORT_CELL_DEFAULT = 28;        // 导出「每格大小」输入为空时的默认值
 export const EXPORT_PAD_MAX = 200;
 export const EXPORT_PREVIEW_CELL = 8;         // 导出预览的格子像素
 export const EXPORT_PREVIEW_MAX_W = 290;      // 预览画布最大宽

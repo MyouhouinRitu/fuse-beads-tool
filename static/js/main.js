@@ -1,9 +1,19 @@
 import * as api from './api.js';
 import * as C from './colors.js';
-import { drawPattern, clearCanvas, canvasMetrics, findConnectedComponents } from './render.js';
+import {
+  drawPattern,
+  drawPatternBase,
+  drawPatternOverlay,
+  clearCanvas,
+  canvasMetrics,
+  findConnectedComponents,
+} from './render.js';
 import {
   CELL,
-  GRID_MARGIN_CELLS,
+  BRUSH_SIZE_MIN,
+  BRUSH_SIZE_MAX,
+  TOOLS,
+  CANVAS_EDGE_CELLS,
   ORIG_MAX_DIM,
   DEFAULT_TARGET_PIXELS,
   SCREEN_CELL_MIN,
@@ -119,6 +129,7 @@ const els = {
   dlgCell: $('dlg-cell-size'),
   dlgGrid: $('dlg-grid-lines'),
   dlgPad: $('dlg-pad'),
+  dlgEdgeNumbers: $('dlg-edge-numbers'),
   dlgCodes: $('dlg-codes'),
   dlgLegend: $('dlg-legend'),
   dlgEmptyStyle: $('dlg-empty-style'),
@@ -126,6 +137,8 @@ const els = {
   dlgOk: $('dlg-export-ok'),
   dlgCancel: $('dlg-export-cancel'),
   dlgPreview: $('dlg-preview'),
+  dlgBusy: $('dlg-busy'),
+  dlgStatus: $('dlg-status'),
   dirtyIndicator: $('dirty-indicator'),
   loginMask: $('login-mask'),
   loginToken: $('login-token'),
@@ -134,6 +147,11 @@ const els = {
 };
 
 const ctx = els.canvas.getContext('2d');
+
+// 工作区底图离屏缓存：单元格 / 行列号 / 网格线等静态内容只在内容变化时重绘，
+// hover / 选区 / 高亮等覆盖层单独叠加，避免移动鼠标时反复重建底图
+const baseCanvas = document.createElement('canvas');
+const baseCtx = baseCanvas.getContext('2d');
 
 const App = {
   configs: [],
@@ -155,7 +173,7 @@ const App = {
   editedSinceSlider: false,
   brushColor: null,    // 未选择颜色
   brushSize: 1,        // 画笔 / 橡皮矩形边长的一半（边长 = 2 × brushSize − 1）
-  tool: 'select',      // select（选择）/ brush（画笔）/ eraser（橡皮）/ picker（取色）
+  tool: TOOLS.SELECT,  // select（选择）/ brush（画笔）/ eraser（橡皮）/ picker（取色）
   selection: new Set(), // 当前选中的像素格索引集合（p = y*width + x）
   dragSelect: null,     // 矩形拖选中的实时预览范围 {x0,y0,x1,y1}
   sameColorSelect: false, // 同色选区：单击只选四方向相连的同色像素
@@ -192,6 +210,7 @@ const App = {
 };
 
 let renderQueued = false;
+let canvasRenderQueued = false;
 let toastTimer = null;
 let authResolve = null;
 let batchingFill = false; // 批量填充时暂缓逐格重绘/自动保存，结束后统一提交
@@ -241,12 +260,73 @@ function hintDistanceDeferred() {
 }
 
 function downloadDataUrl(dataUrl, filename) {
+  downloadUrl(dataUrl, filename);
+}
+
+// 触发浏览器下载（data URL 或普通 URL）
+function downloadUrl(url, filename) {
   const a = document.createElement('a');
-  a.href = dataUrl;
+  a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+// 颜色条目通用文案：色号 / 完整标题
+function codeOf(c) {
+  return (c && (c.code || String(c.index))) || '';
+}
+
+function titleOf(c) {
+  return `${c.name || ''} ${c.code || ''} ${c.hex}`.trim();
+}
+
+// 数量徽标（如 ×12）：与导出图例的「色号 × 数量」格式区分，徽标省略前导空格
+function countBadge(count) {
+  return count ? `×${count}` : '';
+}
+
+// 解析输入数值并夹取到 [min, max]；非法 / 为空时返回 fallback
+function clampInt(raw, min, max, fallback) {
+  const n = parseInt(raw, 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+// 是否存在事务历史或单步撤销/重做记录
+function hasPendingRecords() {
+  return App.history.items.length > 0 || App.undoStack.length > 0 || App.redoStack.length > 0;
+}
+
+// 有事务/撤销记录时弹确认并清空；无记录或用户取消时返回 false
+function confirmClearRecords(message) {
+  if (!hasPendingRecords()) return true;
+  if (!confirm(message)) return false;
+  clearHistoryRecords();
+  renderHistoryUI();
+  return true;
+}
+
+// 计算把尺寸适配进视口的缩放与居中位移
+function fitToViewport(sizeW, sizeH, vw, vh, cap) {
+  const zoom = Math.max(ZOOM_MIN, Math.min((vw - VIEWPORT_PADDING) / sizeW, (vh - VIEWPORT_PADDING) / sizeH, cap));
+  return {
+    zoom,
+    pan: { x: (vw - sizeW * zoom) / 2, y: (vh - sizeH * zoom) / 2 },
+  };
+}
+
+// 围绕画布上某点缩放：保持该点的内容位置不变，返回新的 zoom 与 pan
+function zoomAroundPoint(rectLeft, rectTop, panX, panY, oldZoom, clientX, clientY, newZoom) {
+  const stageLeft = rectLeft - panX;
+  const stageTop = rectTop - panY;
+  const ix = (clientX - rectLeft) / oldZoom;
+  const iy = (clientY - rectTop) / oldZoom;
+  return {
+    zoom: newZoom,
+    pan: { x: clientX - stageLeft - ix * newZoom, y: clientY - stageTop - iy * newZoom },
+  };
 }
 
 // ---------------- 侧边栏折叠 / 展开 ----------------
@@ -285,29 +365,10 @@ function setPanelCollapsed(id, collapsed) {
   writePanelPrefs(prefs);
 }
 
-let rAFAsync = null;
-
-// 检测 requestAnimationFrame 是否为异步（浏览器）还是同步（测试桩）
-function rafIsAsync() {
-  if (rAFAsync == null) {
-    let pending = true;
-    requestAnimationFrame(() => { pending = false; });
-    rAFAsync = pending;
-  }
-  return rAFAsync;
-}
-
 // 与侧边栏宽度过渡同步地平移画布，保证画面在屏幕上保持绝对位置
 function animatePanCompensation(delta) {
   const panTo = App.pan.x + delta;
   const origTo = App.originalImage ? App.origPan.x + delta : null;
-  if (!rafIsAsync()) {
-    App.pan.x = panTo;
-    if (origTo != null) App.origPan.x = origTo;
-    applyTransform();
-    applyOriginalTransform();
-    return;
-  }
   const panFrom = App.pan.x;
   const origFrom = App.originalImage ? App.origPan.x : null;
   const start = performance.now();
@@ -468,11 +529,11 @@ function applyOriginalTransform() {
 }
 
 // ---------- 同步拖拽的坐标换算 ----------
-// 拼豆图每个像素格在画布上占 screenCell 像素，且图案外侧有 GRID_MARGIN_CELLS 格边距；
+// 拼豆图每个像素格在画布上占 screenCell 像素，图案外侧有 1 格行列号条；
 // 拼豆网格是原图压缩后的结果，因此整张网格 ↔ 整张原图：
 //   拼豆格 (x,y) 对应原图中被压缩为该格的原图像素块 (x*sw, y*sh)
 // 原图 zoom = 拼豆 zoom × screenCell × (网格宽 / 原图显示宽)
-//   原图 pan  = 拼豆 pan + 5 格边距 × screenCell × 拼豆 zoom
+//   原图 pan  = 拼豆 pan + 1 格行列号条 × screenCell × 拼豆 zoom
 function beadCellPx() {
   return App.screenCell || CELL;
 }
@@ -487,7 +548,7 @@ function origZoomRatio() {
 
 function origFromBead() {
   const cell = beadCellPx();
-  const marginPx = GRID_MARGIN_CELLS * cell * App.zoom;
+  const marginPx = CANVAS_EDGE_CELLS * cell * App.zoom;
   return {
     pan: { x: App.pan.x + marginPx, y: App.pan.y + marginPx },
     zoom: App.zoom * cell * origZoomRatio(),
@@ -497,7 +558,7 @@ function origFromBead() {
 function beadFromOrig(pan, zoom) {
   const cell = beadCellPx();
   const beadZoom = zoom / (cell * origZoomRatio());
-  const marginPx = GRID_MARGIN_CELLS * cell * beadZoom;
+  const marginPx = CANVAS_EDGE_CELLS * cell * beadZoom;
   return {
     pan: { x: pan.x - marginPx, y: pan.y - marginPx },
     zoom: beadZoom,
@@ -523,11 +584,9 @@ function fitOriginal() {
   const vw = pane.clientWidth;
   const vh = pane.clientHeight;
   if (!vw || !vh) return;
-  App.origZoom = Math.max(
-    ZOOM_MIN,
-    Math.min((vw - VIEWPORT_PADDING) / cv.width, (vh - VIEWPORT_PADDING) / cv.height, FIT_ZOOM_CAP)
-  );
-  App.origPan = { x: (vw - cv.width * App.origZoom) / 2, y: (vh - cv.height * App.origZoom) / 2 };
+  const fit = fitToViewport(cv.width, cv.height, vw, vh, FIT_ZOOM_CAP);
+  App.origZoom = fit.zoom;
+  App.origPan = fit.pan;
   applyOriginalTransform();
 }
 
@@ -535,16 +594,13 @@ function zoomAtOriginal(clientX, clientY, factor) {
   const cv = els.canvasOriginal;
   const rect = cv.getBoundingClientRect();
   if (rect.width === 0 || !App.originalImage) return;
-  const stageLeft = rect.left - App.origPan.x;
-  const stageTop = rect.top - App.origPan.y;
   const oldZ = App.origZoom;
   const minZ = App.syncPan ? beadCellPx() * origZoomRatio() * ZOOM_MIN : ZOOM_MIN;
   const maxZ = App.syncPan ? beadCellPx() * origZoomRatio() * ZOOM_MAX : ZOOM_MAX;
   const newZ = Math.min(maxZ, Math.max(minZ, oldZ * factor));
-  const ix = (clientX - rect.left) / oldZ;
-  const iy = (clientY - rect.top) / oldZ;
-  App.origPan = { x: clientX - stageLeft - ix * newZ, y: clientY - stageTop - iy * newZ };
-  App.origZoom = newZ;
+  const r = zoomAroundPoint(rect.left, rect.top, App.origPan.x, App.origPan.y, oldZ, clientX, clientY, newZ);
+  App.origZoom = r.zoom;
+  App.origPan = r.pan;
   if (App.syncPan) {
     mirrorOrigToBead();
   }
@@ -656,15 +712,21 @@ async function ensureAuth() {
 
 // ---------------- 渲染 ----------------
 
+let screenCellCache = { key: null, value: null };
+
 function chooseScreenCell(width, height) {
+  const key = width + 'x' + height;
+  if (screenCellCache.key === key) return screenCellCache.value;
   let cell = CELL;
   const ok = (c) => {
-    const { w, h } = canvasMetrics(width, height, c, 0);
+    // 工作区含四周 1 格行列号条，且无外部白边
+    const { w, h } = canvasMetrics(width, height, c, 0, 0, c);
     return w <= SCREEN_CELL_MAX_DIM && h <= SCREEN_CELL_MAX_DIM && w * h <= SCREEN_CELL_MAX_AREA;
   };
   while (cell > SCREEN_CELL_MIN && !ok(cell)) {
     cell = Math.max(SCREEN_CELL_MIN, Math.floor(cell / 2));
   }
+  screenCellCache = { key, value: cell };
   return cell;
 }
 
@@ -687,21 +749,12 @@ function buildLegend(counts) {
   const legend = [];
   App.appliedPalette.forEach((c, i) => {
     if (counts[i]) {
-      legend.push({ hex: c.hex, code: c.code || String(c.index), count: counts[i] });
+      legend.push({ hex: c.hex, code: codeOf(c), count: counts[i] });
     }
   });
   // 按豆数量从多到少排序，数量相同按编号
   legend.sort((a, b) => b.count - a.count || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
   return legend;
-}
-
-function distinctCount(grid, width, height) {
-  const set = new Set();
-  for (let p = 0; p < width * height; p++) {
-    const v = grid[p];
-    if (v >= 0) set.add(v);
-  }
-  return set.size;
 }
 
 // 从基副本按颜色数量 N 生成工作副本（合并成保留色）
@@ -718,8 +771,8 @@ function mergeGrid(source, palette, useLab, n) {
 
 function applySlider(n) {
   if (!App.project) return;
-  const baseUsed = App.baseGrid ? distinctCount(App.baseGrid, App.project.width, App.project.height) : 0;
-  const hasHistory = App.history.items.length > 0 || App.undoStack.length > 0 || App.redoStack.length > 0;
+  const baseUsed = App.baseGrid ? C.countUsedColors(App.baseGrid, App.project.width, App.project.height) : 0;
+  const hasHistory = hasPendingRecords();
   if (hasHistory || App.editedSinceSlider) {
     const msg = hasHistory
       ? '调整滑块将清空全部事务历史与撤销记录，并丢弃滑块调整后的编辑，从基副本重新生成图案。是否继续？'
@@ -737,9 +790,7 @@ function applySlider(n) {
   App.project.grid = mergeGrid(App.baseGrid, App.appliedPalette, App.settings.useLab, n);
   App.sliderN = n;
   App.editedSinceSlider = false;
-  App.selection = new Set(); // 项目内容重建，选区一并清空（与重新压缩/切换事务一致）
-  App.dragSelect = null;
-  closeQuickPicker();
+  resetProjectEditingState();
   renderAll();
   scheduleAutosave();
 }
@@ -752,14 +803,24 @@ function clearHistoryRecords() {
   App.strokeBuffer = null;
 }
 
+// 项目内容重建后统一重置编辑状态：选区/拖拽预览/色号高亮/九宫格与单步记录，并视为无未保存修改
+function resetProjectEditingState() {
+  App.selection = new Set();
+  App.dragSelect = null;
+  App.highlightColor = null;
+  App.undoStack = [];
+  App.redoStack = [];
+  App.strokeBuffer = null;
+  closeQuickPicker();
+  setDirty(false);
+}
+
 function buildCodes() {
   const { grid, width, height } = App.project;
   const codes = new Array(width * height).fill('');
   for (let p = 0; p < grid.length; p++) {
     const v = grid[p];
-    if (v >= 0 && App.appliedPalette[v]) {
-      codes[p] = App.appliedPalette[v].code || String(App.appliedPalette[v].index);
-    }
+    if (v >= 0) codes[p] = codeOf(App.appliedPalette[v]);
   }
   return codes;
 }
@@ -785,9 +846,8 @@ function renderAll() {
     return;
   }
   const counts = C.computeUsedCounts(project.grid, project.width, project.height);
-  let used = 0;
-  for (const c of counts) if (c > 0) used++;
-  const baseUsed = App.baseGrid ? distinctCount(App.baseGrid, project.width, project.height) : used;
+  const used = C.countUsedColors(project.grid, project.width, project.height);
+  const baseUsed = App.baseGrid ? C.countUsedColors(App.baseGrid, project.width, project.height) : used;
   App.maxColors = App.sliderN ?? baseUsed;
   els.colorSlider.max = String(Math.max(2, baseUsed));
   els.colorSlider.value = String(App.maxColors);
@@ -800,28 +860,50 @@ function renderAll() {
   let empty = 0;
   for (let p = 0; p < project.grid.length; p++) if (project.grid[p] < 0) empty++;
   els.cellInfo.textContent = `${project.width} × ${project.height} · 总量 ${project.grid.length - empty} · 空位 ${empty}`;
-  renderColorList(counts);
+  renderBrushColorList(counts);
   renderHighlightColorList(counts);
   syncHighlightBlink();
   updateModeControls();
 }
 
-function redrawCanvas() {
+let lastDisplay = null; // 底图对应的显示数据，覆盖层复用避免每帧重建
+
+// 渲染底图到离屏画布（单元格 / 行列号 / 网格线 / 色号），内容变化时才调用
+function renderBaseLayer() {
   const project = App.project;
   if (!project) return;
   const display = buildDisplayData();
-
+  lastDisplay = display;
   App.screenCell = chooseScreenCell(project.width, project.height);
-  // 选区 = 已确认选区 + 拖拽中的实时矩形预览
-  const selected = buildRenderSelection();
-  drawPattern(ctx, project.width, project.height, display.idx, display.rgb, {
+  drawPatternBase(baseCtx, project.width, project.height, display.idx, display.rgb, {
     cell: App.screenCell,
     outerPad: 0, // 工作区不再保留纯白边距，图例只在导出时显示
     gridLines: true,
     hatch: true,
     emptyStyle: App.settings.emptyStyle,
+    edgeNumbers: true, // 工作区始终显示四周行列号条
     showCodes: App.settings.showCodes,
     codes: buildCodes(),
+  });
+}
+
+// 把底图 + 覆盖层（选区 / 高亮 / hover / 九宫格目标格）合成到主画布
+function composeCanvas() {
+  const project = App.project;
+  if (!project) return;
+  if (!lastDisplay) renderBaseLayer();
+  const display = lastDisplay;
+  // 选区 = 已确认选区 + 拖拽中的实时矩形预览
+  const selected = buildRenderSelection();
+  const metrics = canvasMetrics(project.width, project.height, App.screenCell, 0, 0, App.screenCell);
+  // 尺寸未变时不清空画布，直接覆盖绘制（底图覆盖整块画布）
+  if (ctx.canvas.width !== metrics.w) ctx.canvas.width = metrics.w;
+  if (ctx.canvas.height !== metrics.h) ctx.canvas.height = metrics.h;
+  ctx.drawImage(baseCanvas, 0, 0);
+  drawPatternOverlay(ctx, project.width, project.height, display.idx, display.rgb, {
+    cell: App.screenCell,
+    outerPad: 0,
+    edgeNumbers: true,
     zoom: App.zoom,
     selected,
     highlightColor: App.highlightColor,
@@ -837,6 +919,13 @@ function redrawCanvas() {
     },
   });
   applyTransform();
+}
+
+function redrawCanvas() {
+  const project = App.project;
+  if (!project) return;
+  renderBaseLayer();
+  composeCanvas();
 }
 
 // 选区 + 拖拽预览的合并集合（带缓存：引用未变时复用上次结果）
@@ -867,7 +956,7 @@ function syncHighlightBlink() {
   if (App.highlightTimer) return;
   App.highlightTimer = setInterval(() => {
     App.highlightBlink = !App.highlightBlink;
-    redrawCanvas();
+    composeCanvas();
   }, HIGHLIGHT_BLINK_MS);
 }
 
@@ -884,9 +973,9 @@ function zoomFit() {
   const cw = els.canvas.width;
   const ch = els.canvas.height;
   if (!cw || !ch) return;
-  const z = Math.min((vw - VIEWPORT_PADDING) / cw, (vh - VIEWPORT_PADDING) / ch, FIT_ZOOM_CAP);
-  App.zoom = Math.max(ZOOM_MIN, z);
-  App.pan = { x: (vw - cw * App.zoom) / 2, y: (vh - ch * App.zoom) / 2 };
+  const fit = fitToViewport(cw, ch, vw, vh, FIT_ZOOM_CAP);
+  App.zoom = fit.zoom;
+  App.pan = fit.pan;
   applyTransform();
   if (App.syncPan && App.originalImage) {
     mirrorBeadToOrig();
@@ -898,17 +987,14 @@ function zoomAt(clientX, clientY, factor) {
   if (!App.project) return;
   const rect = els.canvas.getBoundingClientRect();
   if (rect.width === 0) return;
-  const stageLeft = rect.left - App.pan.x;
-  const stageTop = rect.top - App.pan.y;
   const oldZ = App.zoom;
   const newZ = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, oldZ * factor));
-  const bx = (clientX - rect.left) / oldZ;
-  const by = (clientY - rect.top) / oldZ;
-  App.zoom = newZ;
-  App.pan = { x: clientX - stageLeft - bx * newZ, y: clientY - stageTop - by * newZ };
+  const r = zoomAroundPoint(rect.left, rect.top, App.pan.x, App.pan.y, oldZ, clientX, clientY, newZ);
+  App.zoom = r.zoom;
+  App.pan = r.pan;
   applyTransform();
-  // 缩放后立即按新缩放重绘，让 hover 边框的隐藏阈值随缩放即时生效
-  redrawCanvas();
+  // 缩放后立即重绘覆盖层，让 hover 边框的隐藏阈值随缩放即时生效（底图不受缩放影响）
+  composeCanvas();
   if (App.syncPan && App.originalImage) {
     mirrorBeadToOrig();
     applyOriginalTransform();
@@ -1088,7 +1174,24 @@ function updateBrush() {
   }
   els.brushSwatch.style.background = c.hex;
   els.brushSwatch.style.border = '';
-  els.brushLabel.textContent = `${c.name || ''} ${c.code || ''} ${c.hex}`.trim();
+  els.brushLabel.textContent = titleOf(c);
+}
+
+// 已应用调色板中最暗的颜色索引（按感知亮度），画笔未选色时用作默认颜色
+function darkestPaletteIndex() {
+  if (!App.appliedPalette.length) return null;
+  let best = 0;
+  let bestLum = Infinity;
+  App.appliedPalette.forEach((c, i) => {
+    if (!c || !c.hex) return;
+    const [r, g, b] = C.hexToRgb(c.hex);
+    const lum = (r * 299 + g * 587 + b * 114) / 1000;
+    if (lum < bestLum) {
+      bestLum = lum;
+      best = i;
+    }
+  });
+  return best;
 }
 
 // 模式相关控件：画笔/橡皮显示尺寸拖动条；选择模式显示同色选区与选中高亮颜色
@@ -1096,13 +1199,14 @@ function updateModeControls() {
   const size = String(App.brushSize);
   if (els.brushSize.value !== size) els.brushSize.value = size;
   if (els.brushSizeValue.textContent !== size) els.brushSizeValue.textContent = size;
-  els.brushSizeWrap.classList.toggle('hidden', App.tool !== 'brush' && App.tool !== 'eraser');
-  els.selectionControls.classList.toggle('hidden', App.tool !== 'select');
+  els.brushSizeWrap.classList.toggle('hidden', App.tool !== TOOLS.BRUSH && App.tool !== TOOLS.ERASER);
+  els.selectionControls.classList.toggle('hidden', App.tool !== TOOLS.SELECT);
   const disabled = App.highlightColor == null;
   if (els.selectHighlightBtn.disabled !== disabled) els.selectHighlightBtn.disabled = disabled;
 }
 
-function renderColorList(counts) {
+// 右侧画笔颜色列表（可点击选择画笔颜色；选择模式有选区时点击为整块填充）
+function renderBrushColorList(counts) {
   if (!counts && App.project) {
     counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   }
@@ -1111,31 +1215,31 @@ function renderColorList(counts) {
   App.appliedPalette.forEach((c, i) => {
     const item = document.createElement('div');
     item.className = 'color-item' + (App.brushColor === i ? ' selected' : '');
-    item.title = `${c.name || ''} ${c.code || ''} ${c.hex}`;
+    item.title = titleOf(c);
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = c.hex;
     const codeLabel = document.createElement('span');
     codeLabel.className = 'ci-code';
-    codeLabel.textContent = c.code || String(c.index);
+    codeLabel.textContent = codeOf(c);
     const rgb = C.hexToRgb(c.hex);
     codeLabel.style.color = C.isLightColor(rgb) ? '#111111' : '#FFFFFF';
     sw.appendChild(codeLabel);
     const count = document.createElement('span');
     count.className = 'ci-count';
-    count.textContent = counts && counts[i] ? `×${counts[i]}` : '';
+    count.textContent = counts && counts[i] ? countBadge(counts[i]) : '';
     item.append(sw, count);
     item.addEventListener('click', () => {
       App.brushColor = i;
       updateBrush();
-      if (App.tool === 'select' && App.selection.size > 0) {
+      if (App.tool === TOOLS.SELECT && App.selection.size > 0) {
         // 选择模式且有选区：将选区填充为该颜色，保持选择与模式，整块记一步撤销
         fillSelectionWithBrush();
       } else {
         // 无选区：切换为画笔模式
-        setTool('brush');
+        setTool(TOOLS.BRUSH);
       }
-      renderColorList();
+      renderBrushColorList();
     });
     list.appendChild(item);
   });
@@ -1158,16 +1262,16 @@ function renderHighlightColorList(counts) {
   for (const { c, i, count } of entries) {
     const item = document.createElement('div');
     item.className = 'hc-item' + (App.highlightColor === i ? ' active' : '');
-    item.title = `${c.name || ''} ${c.code || ''} ${c.hex} ×${count}`;
+    item.title = `${titleOf(c)} ×${count}`;
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = c.hex;
     const code = document.createElement('span');
     code.className = 'hc-code';
-    code.textContent = c.code || String(c.index);
+    code.textContent = codeOf(c);
     const cnt = document.createElement('span');
     cnt.className = 'hc-count';
-    cnt.textContent = `×${count}`;
+    cnt.textContent = countBadge(count);
     item.append(sw, code, cnt);
     item.addEventListener('click', () => {
       // 单选：再次点击取消，选择其它色号则替换
@@ -1182,11 +1286,7 @@ function renderHighlightColorList(counts) {
 
 async function processUpload({ confirmHistory = true } = {}) {
   if (!App.originalFile) return;
-  if (confirmHistory && (App.history.items.length || App.undoStack.length || App.redoStack.length)) {
-    if (!confirm('导入图片将清空全部事务历史与撤销记录。是否继续？')) return;
-    clearHistoryRecords();
-    renderHistoryUI();
-  }
+  if (confirmHistory && !confirmClearRecords('导入图片将清空全部事务历史与撤销记录。是否继续？')) return;
   try {
     const target = parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS;
     const res = await api.uploadImage(App.originalFile, target, els.chkSharpen.checked);
@@ -1201,9 +1301,7 @@ async function processUpload({ confirmHistory = true } = {}) {
     const rgba = octx.getImageData(0, 0, res.width, res.height).data;
     App.compressed = { rgba, width: res.width, height: res.height };
     applyMapping();
-    const counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
-    let used = 0;
-    for (const c of counts) if (c > 0) used++;
+    const used = C.countUsedColors(App.project.grid, App.project.width, App.project.height);
     toast(`已导入 ${res.width} × ${res.height}，共使用 ${used} 种颜色`);
   } catch (err) {
     toast('导入失败：' + err.message);
@@ -1214,24 +1312,16 @@ function applyMapping() {
   if (!App.compressed) return;
   const isNew = !App.project;
   const { rgba, width, height } = App.compressed;
-  const { grid, counts } = C.computeInitialMapping(rgba, width, height, App.palette, App.settings.useLab);
+  const { grid } = C.computeInitialMapping(rgba, width, height, App.palette, App.settings.useLab);
   App.project = { width, height, grid };
   App.baseGrid = grid.slice();
   // 重新压缩/导入后，当前色板配置成为已应用色板（画布与编辑工具随之更新）
   App.appliedPalette = App.palette.map((c) => ({ ...c }));
-  App.selection = new Set();
-  App.dragSelect = null;
-  App.highlightColor = null;
-  closeQuickPicker(); // 网格被替换，九宫格目标格索引可能失效
-  let used = 0;
-  for (const c of counts) if (c > 0) used++;
-  App.maxColors = Math.max(2, used);
+  // 网格被替换，九宫格目标格索引可能失效
+  resetProjectEditingState();
+  App.maxColors = Math.max(2, C.countUsedColors(grid, width, height));
   App.sliderN = null;
   App.editedSinceSlider = false;
-  App.undoStack = [];
-  App.redoStack = [];
-  App.strokeBuffer = null;
-  setDirty(false);
   renderAll();
   if (isNew) zoomFit();
   scheduleAutosave();
@@ -1242,11 +1332,7 @@ async function recompress() {
   if (App.project && App.dirty) {
     if (!confirm('重新压缩将按新设置重新生成图案，并丢弃画布上的手动修改。是否继续？')) return;
   }
-  if (App.history.items.length || App.undoStack.length || App.redoStack.length) {
-    if (!confirm('重新压缩将清空全部事务历史与撤销记录。是否继续？')) return;
-    clearHistoryRecords();
-    renderHistoryUI();
-  }
+  if (!confirmClearRecords('重新压缩将清空全部事务历史与撤销记录。是否继续？')) return;
   await processUpload({ confirmHistory: false });
   zoomFit(); // 重新压缩后默认适应窗口
 }
@@ -1262,9 +1348,9 @@ function cellFromEvent(e) {
   const py = (e.clientY - rect.top) / scale;
   const gx = Math.floor(px / cell);
   const gy = Math.floor(py / cell);
-  const x = gx - 5;
-  const y = gy - 5;
-  // 四周 5 格为灰色 X 边距，属于图片但不可改色
+  const x = gx - CANVAS_EDGE_CELLS;
+  const y = gy - CANVAS_EDGE_CELLS;
+  // 四周 1 格为行列号条，不属于图案
   if (x < 0 || y < 0 || x >= App.project.width || y >= App.project.height) return null;
   return { x, y };
 }
@@ -1272,7 +1358,7 @@ function cellFromEvent(e) {
 function paintCell(x, y) {
   const { grid, width } = App.project;
   const p = y * width + x;
-  const v = App.tool === 'eraser' ? -1 : (App.brushColor != null ? App.brushColor : -2);
+  const v = App.tool === TOOLS.ERASER ? -1 : (App.brushColor != null ? App.brushColor : -2);
   if (v === -2) return; // 未选择颜色
   if (grid[p] === v) return null;
   const from = grid[p];
@@ -1312,7 +1398,6 @@ function clearSelection() {
   renderAll();
 }
 
-// 四方向（上下左右）相连的同色像素组；空位视为只有自身一格
 // 同色连通块：返回包含 (x,y) 的四方向同色像素组（复用 render.js 的连通分组）；空位视为只有自身一格
 function connectedColorCells(x, y) {
   const { grid, width, height } = App.project;
@@ -1426,7 +1511,8 @@ function setDirty(d) {
   els.dirtyIndicator.classList.toggle('hidden', !d);
 }
 
-function pickColorFromCell(cell) {
+// 取色工具：把目标格的颜色设为画笔色；有选区时立即填充选区，否则切回画笔模式
+function applyPickerColor(cell) {
   const v = App.project.grid[cell.y * App.project.width + cell.x];
   if (v < 0) {
     toast('该位置是空位，无法取色');
@@ -1434,14 +1520,14 @@ function pickColorFromCell(cell) {
   }
   App.brushColor = v;
   updateBrush();
-  renderColorList();
+  renderBrushColorList();
   if (App.selection.size > 0) {
     // 有选区：取色后立即把选区填充为该颜色，再回选择模式（选区保留）
     fillSelectionWithBrush();
-    setTool('select');
+    setTool(TOOLS.SELECT);
   } else {
     // 无选区：取色后切换为画笔模式
-    setTool('brush');
+    setTool(TOOLS.BRUSH);
   }
 }
 
@@ -1465,19 +1551,32 @@ function scheduleRender() {
   requestAnimationFrame(() => { renderQueued = false; renderAll(); });
 }
 
+// 仅重绘画布（hover 等不影响面板的变化），避免移动鼠标时反复重建颜色清单等面板 DOM
+function scheduleCanvasRender() {
+  if (canvasRenderQueued || renderQueued) return;
+  canvasRenderQueued = true;
+  requestAnimationFrame(() => {
+    canvasRenderQueued = false;
+    if (renderQueued) return; // 全量重绘即将执行，由 renderAll 统一覆盖
+    composeCanvas();
+  });
+}
+
 // ---------------- D 键快速选色 ----------------
 
-function openQuickPicker(cell) {
-  if (!App.appliedPalette.length) return;
+// 九宫格候选色的邻近 8 格偏移（不含自身）
+const QUICK_PICKER_NEIGHBORS = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+
+// 构建九宫格候选色：周围 8 格的颜色优先，不足 9 个时用最相近颜色补齐
+function buildQuickCandidates(cell) {
   const { grid, width, height } = App.project;
   const p = cell.y * width + cell.x;
   App.pickerCell = { x: cell.x, y: cell.y, p, original: grid[p] };
   App.pickerPreviewIndex = null;
   const own = grid[p];
   const exclude = new Set(own >= 0 ? [own] : []);
-  // 1) 先取周围一圈 8 个格子的颜色（去重）
   const candSet = new Set();
-  for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
+  for (const [dx, dy] of QUICK_PICKER_NEIGHBORS) {
     const nx = cell.x + dx;
     const ny = cell.y + dy;
     if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -1485,7 +1584,6 @@ function openQuickPicker(cell) {
     if (v >= 0 && !exclude.has(v)) candSet.add(v);
   }
   const list = [...candSet];
-  // 2) 不足 9 个时，用与当前颜色最相近的颜色补齐
   if (list.length < QUICK_PICKER_MAX) {
     const baseHex = own >= 0 && App.appliedPalette[own]
       ? App.appliedPalette[own].hex
@@ -1502,14 +1600,18 @@ function openQuickPicker(cell) {
   }
   const scored = list.slice(0, QUICK_PICKER_MAX).map((i) => ({ i }));
   App.pickerCandidates = scored;
-  const usedCounts = C.computeUsedCounts(grid, width, height);
+  return scored;
+}
 
+// 渲染九宫格弹窗内容（候选按钮 + 取消）
+function renderQuickPicker(scored) {
   const box = els.quickPicker;
   box.innerHTML = '';
   const title = document.createElement('div');
   title.className = 'qp-title';
   title.textContent = '相近颜色（按 1-9 选择）';
   box.appendChild(title);
+  const usedCounts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   for (let k = 0; k < scored.length; k++) {
     const c = App.appliedPalette[scored[k].i];
     const btn = document.createElement('button');
@@ -1521,16 +1623,16 @@ function openQuickPicker(cell) {
     const rgb = C.hexToRgb(c.hex);
     const code = document.createElement('span');
     code.className = 'qp-code';
-    code.textContent = c.code || String(c.index);
+    code.textContent = codeOf(c);
     code.style.color = C.isLightColor(rgb) ? '#111111' : '#FFFFFF';
     const cnt = document.createElement('span');
     cnt.className = 'qp-count';
-    cnt.textContent = usedCounts[scored[k].i] ? `×${usedCounts[scored[k].i]}` : '';
+    cnt.textContent = countBadge(usedCounts[scored[k].i]);
     cnt.style.color = code.style.color;
     btn.appendChild(code);
     btn.appendChild(cnt);
-    btn.title = `${c.name || ''} ${c.code || ''} ${c.hex}`;
-    btn.addEventListener('click', () => pickQuickColor(k));
+    btn.title = titleOf(c);
+    btn.addEventListener('click', () => applyQuickColor(k));
     btn.addEventListener('mouseover', () => previewQuickColor(k));
     box.appendChild(btn);
   }
@@ -1540,12 +1642,16 @@ function openQuickPicker(cell) {
   cancel.addEventListener('click', closeQuickPicker);
   box.appendChild(cancel);
   box.classList.remove('hidden');
+}
 
+// 把九宫格弹窗定位到目标格下方（空间不足时移到上方，并限制在窗口内）
+function positionQuickPicker(cell) {
+  const box = els.quickPicker;
   const rect = els.canvas.getBoundingClientRect();
   const scale = rect.width / els.canvas.width;
   const sc = App.screenCell;
-  const cx = rect.left + ((cell.x + GRID_MARGIN_CELLS + 0.5) * sc) * scale;
-  const cy = rect.top + ((cell.y + GRID_MARGIN_CELLS + 0.5) * sc) * scale;
+  const cx = rect.left + ((cell.x + CANVAS_EDGE_CELLS + 0.5) * sc) * scale;
+  const cy = rect.top + ((cell.y + CANVAS_EDGE_CELLS + 0.5) * sc) * scale;
   const gap = sc * scale;
   const bw = QUICK_PICKER_CELL * QUICK_PICKER_COLS + QUICK_PICKER_PAD;
   const bh = QUICK_PICKER_HEIGHT;
@@ -1562,13 +1668,20 @@ function openQuickPicker(cell) {
   box.style.top = top + 'px';
 }
 
-function pickQuickColor(k) {
+function openQuickPicker(cell) {
+  if (!App.appliedPalette.length) return;
+  const scored = buildQuickCandidates(cell);
+  renderQuickPicker(scored);
+  positionQuickPicker(cell);
+}
+
+function applyQuickColor(k) {
   const cand = App.pickerCandidates && App.pickerCandidates[k];
   if (!cand) return;
   const { grid } = App.project;
   const pc = App.pickerCell; // 九宫格打开时由 openQuickPicker 设置目标格
   App.brushColor = cand.i;
-  setTool('select'); // 改完颜色后回到选择模式（九宫格仅单选一格时可用）
+  setTool(TOOLS.SELECT); // 改完颜色后回到选择模式（九宫格仅单选一格时可用）
   updateBrush();
   if (pc) {
     // 悬停预览可能已改动格子，这里统一以「打开时的原始颜色 → 目标颜色」记一步
@@ -1583,7 +1696,7 @@ function pickQuickColor(k) {
   App.pickerPreviewIndex = null;
   App.pickerCell = null;
   closeQuickPicker();
-  renderColorList();
+  renderBrushColorList();
   scheduleRender();
 }
 
@@ -1637,21 +1750,14 @@ async function switchNode(id) {
   const snap = node.snapshot;
   App.project = { width: snap.width, height: snap.height, grid: Int16Array.from(snap.grid) };
   App.baseGrid = App.project.grid.slice();
-  App.selection = new Set();
-  App.dragSelect = null;
-  App.highlightColor = null;
-  App.maxColors = snap.maxColors || distinctCount(App.project.grid, snap.width, snap.height) || 2;
+  App.maxColors = snap.maxColors || C.countUsedColors(App.project.grid, snap.width, snap.height) || 2;
   App.sliderN = null;
   App.editedSinceSlider = false;
   App.history.currentId = id;
   // 切换到其它事务后，以该事务快照中的色板作为已应用色板渲染画布
   App.appliedPalette = (snap.palette || []).map((c) => ({ ...c }));
   // 切换到其它事务后，工作网格整体被替换，旧的单步记录不再有效
-  App.undoStack = [];
-  App.redoStack = [];
-  App.strokeBuffer = null;
-  setDirty(false);
-  closeQuickPicker();
+  resetProjectEditingState();
 
   const exists = snap.paletteName && App.configs.some((c) => c.name === snap.paletteName);
   if (exists) {
@@ -1667,7 +1773,7 @@ async function switchNode(id) {
   } else {
     App.palette = (snap.palette || []).map((c) => ({ ...c }));
   }
-  renderColorList();
+  renderBrushColorList();
   updateBrush();
   renderAll();
   renderHistoryUI();
@@ -1702,15 +1808,11 @@ function clearAll() {
   App.baseGrid = null;
   App.compressed = null;
   App.originalFile = null;
-  clearHistoryRecords();
+  App.history = createEmptyHistory();
   App.maxColors = 2;
   App.sliderN = null;
   App.editedSinceSlider = false;
-  setDirty(false);
-  App.selection = new Set();
-  App.dragSelect = null;
-  App.highlightColor = null;
-  closeQuickPicker();
+  resetProjectEditingState();
   renderHistoryUI();
   renderAll();
   scheduleAutosave();
@@ -1770,7 +1872,7 @@ function buildExportData() {
   for (let p = 0; p < n; p++) {
     const v = App.project.grid[p];
     if (v < 0) { gridOut[p] = -1; continue; }
-    if (App.appliedPalette[v]) codesOut[p] = App.appliedPalette[v].code || String(App.appliedPalette[v].index);
+    codesOut[p] = codeOf(App.appliedPalette[v]);
     const hex = App.appliedPalette[v] ? App.appliedPalette[v].hex : '#FFFFFF';
     let i = hexMap.get(hex);
     if (i == null) {
@@ -1797,11 +1899,8 @@ function renderExportPreview() {
   const counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   const legend = buildLegend(counts);
   const display = buildDisplayData();
-  const cellSize = Math.max(
-    EXPORT_CELL_MIN,
-    Math.min(EXPORT_CELL_MAX, parseInt(els.dlgCell.value, 10) || EXPORT_CELL_DEFAULT)
-  );
-  const pad = Math.max(0, Math.min(EXPORT_PAD_MAX, parseInt(els.dlgPad.value, 10) || 0));
+  const cellSize = clampInt(els.dlgCell.value, EXPORT_CELL_MIN, EXPORT_CELL_MAX, EXPORT_CELL_DEFAULT);
+  const pad = clampInt(els.dlgPad.value, 0, EXPORT_PAD_MAX, 0);
   const showLegend = els.dlgLegend.checked;
   const previewCell = EXPORT_PREVIEW_CELL;
   const previewPad = Math.round(pad * previewCell / cellSize);
@@ -1813,6 +1912,7 @@ function renderExportPreview() {
     gridLines: els.dlgGrid.checked,
     hatch: true,
     emptyStyle: els.dlgEmptyStyle.value,
+    edgeNumbers: els.dlgEdgeNumbers.checked,
     showCodes: els.dlgCodes.checked,
     codes: buildCodes(),
     legend: showLegend ? legend : [],
@@ -1831,6 +1931,9 @@ async function doExport() {
   if (!App.project) return;
   const fmt = els.dlgFormat.value;
   const { grid, palette, legend, codes } = buildExportData();
+  // 导出期间显示进度条并禁止操作导出界面
+  els.dlgBusy.classList.remove('hidden');
+  els.dlgStatus.textContent = '正在导出…';
   try {
     const res = await api.exportImage({
       width: App.project.width,
@@ -1840,12 +1943,10 @@ async function doExport() {
       legend,
       codes,
       options: {
-        cellSize: Math.max(
-          EXPORT_CELL_MIN,
-          Math.min(EXPORT_CELL_MAX, parseInt(els.dlgCell.value, 10) || EXPORT_CELL_DEFAULT)
-        ),
+        cellSize: clampInt(els.dlgCell.value, EXPORT_CELL_MIN, EXPORT_CELL_MAX, EXPORT_CELL_DEFAULT),
         gridLines: els.dlgGrid.checked,
-        outerPad: Math.max(0, Math.min(EXPORT_PAD_MAX, parseInt(els.dlgPad.value, 10) || 0)),
+        outerPad: clampInt(els.dlgPad.value, 0, EXPORT_PAD_MAX, 0),
+        edgeNumbers: els.dlgEdgeNumbers.checked,
         showCodes: els.dlgCodes.checked,
         legend: els.dlgLegend.checked,
         format: fmt,
@@ -1854,10 +1955,13 @@ async function doExport() {
       },
     });
     downloadDataUrl(res.dataUrl, `拼豆图案.${fmt === 'png' ? 'png' : 'jpg'}`);
-    toast('导出成功');
+    els.dlgStatus.textContent = '导出完成';
+    await new Promise((r) => setTimeout(r, 900)); // 稍作停留展示完成状态
     els.exportDialog.classList.add('hidden');
   } catch (err) {
     toast('导出失败：' + err.message);
+  } finally {
+    els.dlgBusy.classList.add('hidden');
   }
 }
 
@@ -1898,16 +2002,9 @@ async function saveStateNow() {
   }
 }
 
-async function restoreState() {
-  let st;
-  try {
-    st = await api.getState();
-  } catch (e) {
-    st = {};
-  }
-  if (st.settings) Object.assign(App.settings, st.settings);
-  delete App.settings.outline; // 描边功能已移除
-  App.brushSize = Math.min(10, Math.max(1, parseInt(App.settings.brushSize, 10) || 1));
+// 把持久化设置同步到 App 状态与界面控件
+function applySettingsToControls() {
+  App.brushSize = clampInt(App.settings.brushSize, BRUSH_SIZE_MIN, BRUSH_SIZE_MAX, BRUSH_SIZE_MIN);
   App.sameColorSelect = !!App.settings.sameColorSelect;
   els.sameColorChk.checked = App.sameColorSelect;
   els.targetPixels.value = App.settings.targetPixels;
@@ -1923,42 +2020,57 @@ async function restoreState() {
   els.chkCompare.checked = App.compareEnabled;
   els.chkSyncPan.checked = App.syncPan;
   els.canvasScroll.classList.remove('compare-on');
+}
 
-  if (st.project) {
-    App.project = {
-      width: st.project.width,
-      height: st.project.height,
-      grid: Int16Array.from(st.project.grid || []),
-    };
-    App.baseGrid = st.project.baseGrid
-      ? Int16Array.from(st.project.baseGrid)
-      : App.project.grid.slice();
-    App.maxColors = st.project.maxColors || distinctCount(App.project.grid, st.project.width, st.project.height) || 2;
-    App.sliderN = st.project.sliderN ?? null;
-    App.editedSinceSlider = !!st.project.editedSinceSlider;
-    App.configName = st.project.paletteName || App.configName;
-    // 已应用色板 = 上次保存/导入时画布所用的色板，画布与编辑工具按其显示
-    App.appliedPalette = (st.project.palette && st.project.palette.length)
-      ? st.project.palette.map((c) => ({ ...c }))
-      : App.appliedPalette.map((c) => ({ ...c }));
-    // 色板配置（可编辑）以磁盘上的配置为准；仅当配置不存在时回退到快照色板
-    const configExists = App.configName && App.configs.some((c) => c.name === App.configName);
-    if (configExists) {
-      try {
-        const res = await api.getConfig(App.configName);
-        App.palette = res.colors;
-      } catch (e) {
-        // 保留已加载的配置色板
-      }
-    } else if (st.project.palette && st.project.palette.length) {
-      App.palette = st.project.palette.map((c) => ({ ...c }));
+// 恢复项目快照（画布、基副本、色板配置与已应用色板）
+async function restoreProjectState(st) {
+  if (!st.project) return;
+  App.project = {
+    width: st.project.width,
+    height: st.project.height,
+    grid: Int16Array.from(st.project.grid || []),
+  };
+  App.baseGrid = st.project.baseGrid
+    ? Int16Array.from(st.project.baseGrid)
+    : App.project.grid.slice();
+  App.maxColors = st.project.maxColors || C.countUsedColors(App.project.grid, st.project.width, st.project.height) || 2;
+  App.sliderN = st.project.sliderN ?? null;
+  App.editedSinceSlider = !!st.project.editedSinceSlider;
+  App.configName = st.project.paletteName || App.configName;
+  // 已应用色板 = 上次保存/导入时画布所用的色板，画布与编辑工具按其显示
+  App.appliedPalette = (st.project.palette && st.project.palette.length)
+    ? st.project.palette.map((c) => ({ ...c }))
+    : App.appliedPalette.map((c) => ({ ...c }));
+  // 色板配置（可编辑）以磁盘上的配置为准；仅当配置不存在时回退到快照色板
+  const configExists = App.configName && App.configs.some((c) => c.name === App.configName);
+  if (configExists) {
+    try {
+      const res = await api.getConfig(App.configName);
+      App.palette = res.colors;
+    } catch (e) {
+      // 保留已加载的配置色板
     }
-    els.configSelect.value = App.configName || '';
-    renderColorTable();
-    renderColorList();
-    updateBrush();
+  } else if (st.project.palette && st.project.palette.length) {
+    App.palette = st.project.palette.map((c) => ({ ...c }));
   }
-  App.history = sanitizeHistory(st.history || st.tree);
+  els.configSelect.value = App.configName || '';
+  renderColorTable();
+  renderBrushColorList();
+  updateBrush();
+}
+
+async function restoreState() {
+  let st;
+  try {
+    st = await api.getState();
+  } catch (e) {
+    st = {};
+  }
+  if (st.settings) Object.assign(App.settings, st.settings);
+  delete App.settings.outline; // 描边功能已移除
+  applySettingsToControls();
+  await restoreProjectState(st);
+  App.history = sanitizeHistory(st.history);
   renderHistoryUI();
   renderAll();
   if (App.project) zoomFit();
@@ -1976,6 +2088,240 @@ async function restoreState() {
       els.chkSyncPan.checked = false;
     }
   }
+}
+
+// ---------------- 画布交互（鼠标 / 滚轮） ----------------
+
+function blurActive() {
+  if (document.activeElement && typeof document.activeElement.blur === 'function') {
+    document.activeElement.blur();
+  }
+}
+
+// 右键拖拽平移（工作区 / 对比原图共用入口）
+function startPanDrag(e, { orig = false } = {}) {
+  dragState.active = true;
+  dragState.orig = orig;
+  dragState.moved = false;
+  dragState.panning = !orig;
+  dragState.startX = e.clientX;
+  dragState.startY = e.clientY;
+  dragState.panStart = { ...App.pan };
+  if (orig) dragState.origPanStart = { ...App.origPan };
+  dragState.downCell = null; // 右键不参与选择/取色
+  dragState.selectionAnchor = null;
+  dragState.shift = false;
+}
+
+// 左键按下：进入选择 / 涂色 / 取色流程的公共初始状态
+function startLeftDrag(e, cell) {
+  dragState.active = true;
+  dragState.moved = false;
+  dragState.panning = false;
+  dragState.startX = e.clientX;
+  dragState.startY = e.clientY;
+  dragState.panStart = { ...App.pan };
+  dragState.downCell = cell;
+  dragState.selectionAnchor = null;
+  dragState.shift = false;
+}
+
+// 一次交互结束后统一复位拖拽状态
+function resetDragState() {
+  App.dragSelect = null;
+  dragState.active = false;
+  dragState.orig = false;
+  dragState.moved = false;
+  dragState.panning = false;
+  dragState.selectionAnchor = null;
+  dragState.downCell = null;
+  dragState.shift = false;
+  App.painting = false;
+  App.lastCell = null;
+  els.canvas.style.cursor = '';
+  els.canvasOriginal.style.cursor = '';
+}
+
+// hover 边框定位：只在工作区图案上更新，拖拽平移或指向对比原图时隐藏
+function updateHoverCell(e) {
+  if (!App.project) return;
+  if (e.target && e.target.closest && e.target.closest('#compare-original')) {
+    if (App.hoverCell != null) {
+      App.hoverCell = null;
+      scheduleCanvasRender();
+    }
+    return;
+  }
+  if (dragState.active && dragState.moved && dragState.panning) {
+    if (App.hoverCell != null) {
+      App.hoverCell = null;
+      scheduleCanvasRender();
+    }
+    return;
+  }
+  const cell = cellFromEvent(e);
+  const prev = App.hoverCell;
+  const same = prev != null && cell != null && prev.x === cell.x && prev.y === cell.y;
+  if (same || (prev == null && cell == null)) return;
+  App.hoverCell = cell;
+  scheduleCanvasRender();
+}
+
+// 拖拽移动：对比原图平移 / 工作区平移 / 选择矩形预览 / 画笔橡皮连续涂色
+function updateDragMove(e) {
+  if (dragState.orig) {
+    const dx = e.clientX - dragState.startX;
+    const dy = e.clientY - dragState.startY;
+    if (!dragState.moved && Math.hypot(dx, dy) > 4) dragState.moved = true;
+    if (dragState.moved) {
+      if (App.syncPan) {
+        App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
+        App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
+      } else {
+        App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
+      }
+      applyOriginalTransform();
+      if (App.syncPan) applyTransform();
+      els.canvasOriginal.style.cursor = 'grabbing';
+    }
+    return;
+  }
+  if (!dragState.active || !App.project) return;
+  const dx = e.clientX - dragState.startX;
+  const dy = e.clientY - dragState.startY;
+  if (!dragState.moved && Math.hypot(dx, dy) > 4) dragState.moved = true;
+  if (dragState.moved && dragState.panning) {
+    App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
+    if (App.syncPan && App.originalImage) {
+      mirrorBeadToOrig();
+      applyOriginalTransform();
+    }
+    els.canvas.style.cursor = 'grabbing';
+    applyTransform();
+    return;
+  }
+  if (App.tool === TOOLS.SELECT && dragState.moved && dragState.selectionAnchor && !App.sameColorSelect) {
+    // 矩形拖选实时预览（裁剪到图案边界）
+    const cell = cellFromEvent(e);
+    if (!cell) return;
+    const a = dragState.selectionAnchor;
+    App.dragSelect = {
+      x0: Math.min(a.x, cell.x), y0: Math.min(a.y, cell.y),
+      x1: Math.max(a.x, cell.x), y1: Math.max(a.y, cell.y),
+    };
+    scheduleRender();
+    return;
+  }
+  if (!App.painting) return;
+  const cell = cellFromEvent(e);
+  if (!cell) return;
+  if (App.lastCell) strokeLine(App.lastCell, cell);
+  App.lastCell = cell;
+}
+
+// 统一的 mousemove 入口：先更新 hover，再处理拖拽
+function onWindowMouseMove(e) {
+  updateHoverCell(e);
+  updateDragMove(e);
+}
+
+function onWindowMouseUp() {
+  if (dragState.active && !dragState.moved) {
+    if (App.tool === TOOLS.SELECT && dragState.downCell) {
+      // 选择模式：单击选中（同色选区勾选时选连通块）
+      selectClick(dragState.downCell, dragState.shift);
+    } else if (App.tool === TOOLS.PICKER && dragState.downCell) {
+      applyPickerColor(dragState.downCell);
+    }
+  } else if (dragState.active && dragState.moved && App.tool === TOOLS.SELECT
+    && dragState.selectionAnchor && App.dragSelect && !App.sameColorSelect) {
+    // 选择模式：左键拖拽 = 矩形选区（Shift 追加并集）
+    selectRect(App.dragSelect, dragState.shift);
+  }
+  if (App.strokeBuffer) {
+    if (App.strokeBuffer.length) recordStep(App.undoStack, App.redoStack, App.strokeBuffer);
+    App.strokeBuffer = null;
+    renderHistoryUI();
+  }
+  resetDragState();
+}
+
+function onCanvasScrollMouseDown(e) {
+  if (!App.project) return;
+  const inOrig = e.target && e.target.closest && e.target.closest('#compare-original');
+  if (e.button === 2) {
+    // 右键：工作区内任意位置拖拽平移（对比原图由自己的右键处理）
+    e.preventDefault();
+    if (inOrig) return;
+    blurActive();
+    if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
+    startPanDrag(e);
+    els.canvas.style.cursor = 'grabbing';
+    return;
+  }
+  if (e.button !== 0 || inOrig) return;
+  blurActive();
+  const cell = cellFromEvent(e);
+  e.preventDefault();
+  if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
+  startLeftDrag(e, cell);
+  if (App.tool === TOOLS.SELECT) {
+    // 选择模式：左键单击/拖拽选择区域（同色选区勾选时拖拽无效，仅单击）
+    if (cell) {
+      dragState.selectionAnchor = cell;
+      dragState.shift = !!e.shiftKey;
+      if (!e.shiftKey && !App.sameColorSelect && (App.selection.size || App.dragSelect)) {
+        // 非 Shift 新选区开始时立即清空旧选区（Shift 追加并集则保留；同色选区拖拽无效不清空）
+        App.selection = new Set();
+        App.dragSelect = null;
+        scheduleRender();
+      }
+    }
+    return;
+  }
+  if (App.tool === TOOLS.BRUSH || App.tool === TOOLS.ERASER) {
+    // 画笔 / 橡皮：从图案格开始连续涂色
+    if (cell) {
+      App.painting = true;
+      App.lastCell = cell;
+      // 一次按下到放开的全部像素修改记为一步
+      App.strokeBuffer = [];
+      paintStamp(cell);
+    }
+    return;
+  }
+  // 取色模式：单击在 mouseup 时取色
+}
+
+function onCompareMouseDown(e) {
+  if (!App.project || !App.originalImage || !App.compareEnabled) return;
+  if (e.button !== 2) return; // 对比原图同样改为右键拖拽
+  e.preventDefault();
+  blurActive();
+  startPanDrag(e, { orig: true });
+  els.canvasOriginal.style.cursor = 'grabbing';
+}
+
+function onCanvasScrollMouseLeave() {
+  if (App.hoverCell != null) {
+    App.hoverCell = null;
+    scheduleCanvasRender();
+  }
+}
+
+function onCanvasWheel(e) {
+  if (!App.project) return;
+  if (e.target && e.target.closest && e.target.closest('#compare-original')) return;
+  if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
+  e.preventDefault();
+  zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
+}
+
+function onCompareWheel(e) {
+  if (!App.project || !App.originalImage || !App.compareEnabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  zoomAtOriginal(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
 }
 
 // ---------------- 事件绑定 ----------------
@@ -2039,7 +2385,7 @@ function bindEvents() {
   els.dlgOk.addEventListener('click', doExport);
   for (const [key, evt] of [
     ['dlgCell', 'input'], ['dlgPad', 'input'],
-    ['dlgGrid', 'change'], ['dlgCodes', 'change'], ['dlgLegend', 'change'],
+    ['dlgGrid', 'change'], ['dlgEdgeNumbers', 'change'], ['dlgCodes', 'change'], ['dlgLegend', 'change'],
     ['dlgEmptyStyle', 'change'], ['dlgFormat', 'change'],
   ]) {
     els[key].addEventListener(evt, renderExportPreview);
@@ -2083,12 +2429,7 @@ function bindEvents() {
   });
   els.btnExportConfig.addEventListener('click', () => {
     if (!App.configName) return;
-    const a = document.createElement('a');
-    a.href = '/api/configs/' + encodeURIComponent(App.configName) + '/export';
-    a.download = App.configName + '.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    downloadUrl('/api/configs/' + encodeURIComponent(App.configName) + '/export', App.configName + '.csv');
   });
   els.btnRenameConfig.addEventListener('click', async () => {
     if (!App.configName) return;
@@ -2117,16 +2458,25 @@ function bindEvents() {
   });
   els.btnAddColor.addEventListener('click', addColor);
 
-  els.toolBrush.addEventListener('click', () => {
-    if (App.brushColor == null) { toast('请先在左侧选择一种颜色'); return; }
-    setTool(App.tool === 'brush' ? 'select' : 'brush');
-  });
-  els.toolEraser.addEventListener('click', () => {
-    setTool(App.tool === 'eraser' ? 'select' : 'eraser');
-  });
-  els.toolPicker.addEventListener('click', () => {
-    setTool(App.tool === 'picker' ? 'select' : 'picker');
-  });
+  // 模式按钮：画笔 / 橡皮 / 取色互斥切换（画笔未选色时先取调色板最暗色）
+  for (const [btnKey, tool] of [
+    ['toolBrush', TOOLS.BRUSH],
+    ['toolEraser', TOOLS.ERASER],
+    ['toolPicker', TOOLS.PICKER],
+  ]) {
+    els[btnKey].addEventListener('click', () => {
+      if (tool === TOOLS.BRUSH && App.brushColor == null) {
+        // 未选色时默认取调色板中最暗的颜色，避免被拦在画笔模式之外
+        const dark = darkestPaletteIndex();
+        if (dark == null) { toast('调色板为空，请先导入颜色配置'); return; }
+        App.brushColor = dark;
+        updateBrush();
+        renderBrushColorList();
+        renderAll();
+      }
+      setTool(App.tool === tool ? TOOLS.SELECT : tool);
+    });
+  }
   els.sameColorChk.addEventListener('change', () => {
     App.sameColorSelect = els.sameColorChk.checked;
     App.settings.sameColorSelect = App.sameColorSelect;
@@ -2147,242 +2497,38 @@ function bindEvents() {
     renderAll();
   });
   els.brushSize.addEventListener('input', () => {
-    App.brushSize = Math.min(10, Math.max(1, parseInt(els.brushSize.value, 10) || 1));
+    App.brushSize = clampInt(els.brushSize.value, BRUSH_SIZE_MIN, BRUSH_SIZE_MAX, BRUSH_SIZE_MIN);
     App.settings.brushSize = App.brushSize;
     updateModeControls();
     scheduleRender();
     scheduleAutosave();
   });
 
-  els.zoomIn.addEventListener('click', () => {
-    const vp = els.canvasScroll;
-    const r = vp.getBoundingClientRect();
-    zoomAt(r.left + r.width / 2, r.top + r.height / 2, ZOOM_BUTTON_FACTOR);
-  });
-  els.zoomOut.addEventListener('click', () => {
-    const vp = els.canvasScroll;
-    const r = vp.getBoundingClientRect();
-    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / ZOOM_BUTTON_FACTOR);
-  });
+  // 缩放按钮：围绕工作区中心缩放
+  for (const [btnKey, factor] of [
+    ['zoomIn', ZOOM_BUTTON_FACTOR],
+    ['zoomOut', 1 / ZOOM_BUTTON_FACTOR],
+  ]) {
+    els[btnKey].addEventListener('click', () => {
+      const vp = els.canvasScroll;
+      const r = vp.getBoundingClientRect();
+      zoomAt(r.left + r.width / 2, r.top + r.height / 2, factor);
+    });
+  }
   els.zoomFit.addEventListener('click', zoomFit);
 
-  els.canvasScroll.addEventListener('mousedown', (e) => {
-    if (!App.project) return;
-    const inOrig = e.target && e.target.closest && e.target.closest('#compare-original');
-    if (e.button === 2) {
-      // 右键：工作区内任意位置拖拽平移（对比原图由自己的右键处理）
-      e.preventDefault();
-      if (inOrig) return;
-      if (document.activeElement && typeof document.activeElement.blur === 'function') {
-        document.activeElement.blur();
-      }
-      if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
-      dragState.active = true;
-      dragState.orig = false;
-      dragState.moved = false;
-      dragState.panning = true;
-      dragState.startX = e.clientX;
-      dragState.startY = e.clientY;
-      dragState.panStart = { ...App.pan };
-      dragState.downCell = null; // 右键不参与选择/取色，避免残留上次左键的格子
-      dragState.selectionAnchor = null;
-      dragState.shift = false;
-      els.canvas.style.cursor = 'grabbing';
-      return;
-    }
-    if (e.button !== 0 || inOrig) return;
-    if (document.activeElement && typeof document.activeElement.blur === 'function') {
-      document.activeElement.blur();
-    }
-    const cell = cellFromEvent(e);
-    e.preventDefault();
-    if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
-    dragState.active = true;
-    dragState.moved = false;
-    dragState.panning = false;
-    dragState.startX = e.clientX;
-    dragState.startY = e.clientY;
-    dragState.panStart = { ...App.pan };
-    dragState.downCell = cell;
-    dragState.selectionAnchor = null;
-    dragState.shift = false;
-    if (App.tool === 'select') {
-      // 选择模式：左键单击/拖拽选择区域（同色选区勾选时拖拽无效，仅单击）
-      if (cell) {
-        dragState.selectionAnchor = cell;
-        dragState.shift = !!e.shiftKey;
-        if (!e.shiftKey && !App.sameColorSelect && (App.selection.size || App.dragSelect)) {
-          // 非 Shift 新选区开始时立即清空旧选区（Shift 追加并集则保留；同色选区拖拽无效不清空）
-          App.selection = new Set();
-          App.dragSelect = null;
-          scheduleRender();
-        }
-      }
-      return;
-    }
-    if (App.tool === 'brush' || App.tool === 'eraser') {
-      // 画笔 / 橡皮：从图案格开始连续涂色
-      if (cell) {
-        App.painting = true;
-        App.lastCell = cell;
-        // 一次按下到放开的全部像素修改记为一步
-        App.strokeBuffer = [];
-        paintStamp(cell);
-      }
-      return;
-    }
-    // 取色模式：单击在 mouseup 时取色
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (dragState.orig) {
-      const dx = e.clientX - dragState.startX;
-      const dy = e.clientY - dragState.startY;
-      if (!dragState.moved && Math.hypot(dx, dy) > 4) dragState.moved = true;
-      if (dragState.moved) {
-        if (App.syncPan) {
-          App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
-          App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
-        } else {
-          App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
-        }
-        applyOriginalTransform();
-        if (App.syncPan) applyTransform();
-        els.canvasOriginal.style.cursor = 'grabbing';
-      }
-      return;
-    }
-    if (!dragState.active || !App.project) return;
-    const dx = e.clientX - dragState.startX;
-    const dy = e.clientY - dragState.startY;
-    if (!dragState.moved && Math.hypot(dx, dy) > 4) dragState.moved = true;
-    if (dragState.moved && dragState.panning) {
-      App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
-      if (App.syncPan && App.originalImage) {
-        mirrorBeadToOrig();
-        applyOriginalTransform();
-      }
-      els.canvas.style.cursor = 'grabbing';
-      applyTransform();
-      return;
-    }
-    if (App.tool === 'select' && dragState.moved && dragState.selectionAnchor && !App.sameColorSelect) {
-      // 矩形拖选实时预览（裁剪到图案边界）
-      const cell = cellFromEvent(e);
-      if (!cell) return;
-      const a = dragState.selectionAnchor;
-      App.dragSelect = {
-        x0: Math.min(a.x, cell.x), y0: Math.min(a.y, cell.y),
-        x1: Math.max(a.x, cell.x), y1: Math.max(a.y, cell.y),
-      };
-      scheduleRender();
-      return;
-    }
-    if (!App.painting) return;
-    const cell = cellFromEvent(e);
-    if (!cell) return;
-    if (App.lastCell) strokeLine(App.lastCell, cell);
-    App.lastCell = cell;
-  });
-  window.addEventListener('mouseup', () => {
-    if (dragState.active && !dragState.moved) {
-      if (App.tool === 'select' && dragState.downCell) {
-        // 选择模式：单击选中（同色选区勾选时选连通块）
-        selectClick(dragState.downCell, dragState.shift);
-      } else if (App.tool === 'picker' && dragState.downCell) {
-        pickColorFromCell(dragState.downCell);
-      }
-    } else if (dragState.active && dragState.moved && App.tool === 'select'
-      && dragState.selectionAnchor && App.dragSelect && !App.sameColorSelect) {
-      // 选择模式：左键拖拽 = 矩形选区（Shift 追加并集）
-      selectRect(App.dragSelect, dragState.shift);
-    }
-    if (App.strokeBuffer) {
-      if (App.strokeBuffer.length) recordStep(App.undoStack, App.redoStack, App.strokeBuffer);
-      App.strokeBuffer = null;
-      renderHistoryUI();
-    }
-    App.dragSelect = null;
-    dragState.active = false;
-    dragState.orig = false;
-    dragState.moved = false;
-    dragState.panning = false;
-    dragState.selectionAnchor = null;
-    dragState.downCell = null;
-    dragState.shift = false;
-    App.painting = false;
-    App.lastCell = null;
-    els.canvas.style.cursor = '';
-    els.canvasOriginal.style.cursor = '';
-  });
-  // 鼠标指向像素的 hover 边框：跟随鼠标定位；拖拽平移或指向对比原图时隐藏
-  els.canvasScroll.addEventListener('mousemove', (e) => {
-    if (!App.project) return;
-    if (e.target && e.target.closest && e.target.closest('#compare-original')) {
-      if (App.hoverCell != null) {
-        App.hoverCell = null;
-        scheduleRender();
-      }
-      return;
-    }
-    if (dragState.active && dragState.moved && dragState.panning) {
-      if (App.hoverCell != null) {
-        App.hoverCell = null;
-        scheduleRender();
-      }
-      return;
-    }
-    const cell = cellFromEvent(e);
-    const prev = App.hoverCell;
-    const same = prev != null && cell != null && prev.x === cell.x && prev.y === cell.y;
-    if (same || (prev == null && cell == null)) return;
-    App.hoverCell = cell;
-    scheduleRender();
-  });
-  els.canvasScroll.addEventListener('mouseleave', () => {
-    if (App.hoverCell != null) {
-      App.hoverCell = null;
-      scheduleRender();
-    }
-  });
+  els.canvasScroll.addEventListener('mousedown', onCanvasScrollMouseDown);
+  window.addEventListener('mousemove', onWindowMouseMove);
+  window.addEventListener('mouseup', onWindowMouseUp);
+  els.canvasScroll.addEventListener('mouseleave', onCanvasScrollMouseLeave);
   // 九宫格：鼠标移出弹窗时还原悬停预览的颜色
   els.quickPicker.addEventListener('mouseleave', restoreQuickPickerPreview);
   // 全域禁用右键菜单：工具不需要右键菜单，避免拖拽结束时在菜单栏等位置弹出
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  els.canvasScroll.addEventListener('wheel', (e) => {
-    if (!App.project) return;
-    if (e.target && e.target.closest && e.target.closest('#compare-original')) return;
-    if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
-    e.preventDefault();
-    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
-  }, { passive: false });
-
-  els.compareOriginal.addEventListener('mousedown', (e) => {
-    if (!App.project || !App.originalImage || !App.compareEnabled) return;
-    if (e.button !== 2) return; // 对比原图同样改为右键拖拽
-    e.preventDefault();
-    if (document.activeElement && typeof document.activeElement.blur === 'function') {
-      document.activeElement.blur();
-    }
-    dragState.active = true;
-    dragState.orig = true;
-    dragState.moved = false;
-    dragState.panning = false;
-    dragState.startX = e.clientX;
-    dragState.startY = e.clientY;
-    dragState.panStart = { ...App.pan };
-    dragState.origPanStart = { ...App.origPan };
-    dragState.downCell = null;
-    dragState.selectionAnchor = null;
-    dragState.shift = false;
-    els.canvasOriginal.style.cursor = 'grabbing';
-  });
-  els.compareOriginal.addEventListener('wheel', (e) => {
-    if (!App.project || !App.originalImage || !App.compareEnabled) return;
-    e.preventDefault();
-    e.stopPropagation();
-    zoomAtOriginal(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
-  }, { passive: false });
+  els.canvasScroll.addEventListener('wheel', onCanvasWheel, { passive: false });
+  els.compareOriginal.addEventListener('mousedown', onCompareMouseDown);
+  els.compareOriginal.addEventListener('wheel', onCompareWheel, { passive: false });
 
   document.querySelectorAll('.tabs .tab').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2395,19 +2541,22 @@ function bindEvents() {
   });
 
   window.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    const t = e.target;
+    const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+    const mod = e.ctrlKey || e.metaKey;
+    // Ctrl+S 与 Ctrl+Z/Y 同样遵循焦点守卫：输入框内不拦截浏览器快捷键
+    if (mod && e.key.toLowerCase() === 's' && !inField) {
       e.preventDefault();
       saveTransaction();
       return;
     }
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    if (inField) return;
+    if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       doUndo();
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    if (mod && e.key.toLowerCase() === 'y') {
       e.preventDefault();
       doRedo();
       return;
@@ -2417,13 +2566,13 @@ function bindEvents() {
       const n = parseInt(e.key, 10);
       if (n >= 1 && n <= QUICK_PICKER_MAX && App.pickerCandidates && App.pickerCandidates[n - 1]) {
         e.preventDefault();
-        pickQuickColor(n - 1);
+        applyQuickColor(n - 1);
       } else if (e.key === 'Escape') {
         closeQuickPicker();
       }
       return;
     }
-    if (e.key.toLowerCase() === 'd' && App.tool === 'select' && App.project && !dragState.active) {
+    if (e.key.toLowerCase() === 'd' && App.tool === TOOLS.SELECT && App.project && !dragState.active) {
       // 单选一格时作用于选中格，否则作用于当前悬停格（拖拽中忽略）
       let target = null;
       if (App.selection.size === 1) {
@@ -2438,7 +2587,7 @@ function bindEvents() {
       }
     } else if (e.key === 'Escape') {
       closeQuickPicker();
-      if (App.tool !== 'select') setTool('select');
+      if (App.tool !== TOOLS.SELECT) setTool(TOOLS.SELECT);
       else clearSelection();
     }
   });
@@ -2447,13 +2596,13 @@ function bindEvents() {
 function setTool(t) {
   if (App.tool === t) return;
   App.tool = t;
-  els.toolBrush.classList.toggle('active', t === 'brush');
-  els.toolPicker.classList.toggle('active', t === 'picker');
-  els.toolEraser.classList.toggle('active', t === 'eraser');
-  els.canvas.classList.toggle('mode-brush', t === 'brush');
-  els.canvas.classList.toggle('mode-picker', t === 'picker');
-  els.canvas.classList.toggle('mode-eraser', t === 'eraser');
-  if (t === 'brush' || t === 'eraser') {
+  els.toolBrush.classList.toggle('active', t === TOOLS.BRUSH);
+  els.toolPicker.classList.toggle('active', t === TOOLS.PICKER);
+  els.toolEraser.classList.toggle('active', t === TOOLS.ERASER);
+  els.canvas.classList.toggle('mode-brush', t === TOOLS.BRUSH);
+  els.canvas.classList.toggle('mode-picker', t === TOOLS.PICKER);
+  els.canvas.classList.toggle('mode-eraser', t === TOOLS.ERASER);
+  if (t === TOOLS.BRUSH || t === TOOLS.ERASER) {
     // 画笔 / 橡皮模式下选区没有意义，进入时清空；色号高亮保留
     App.selection = new Set();
     App.dragSelect = null;
@@ -2461,14 +2610,23 @@ function setTool(t) {
   // 切换工具后立即重绘，让 hover 边框样式随之更新
   redrawCanvas();
   updateModeControls();
-  els.modeLabel.textContent = t === 'brush' ? '画笔模式'
-    : t === 'eraser' ? '橡皮模式'
-      : t === 'picker' ? '取色模式' : '选择模式';
+  els.modeLabel.textContent = t === TOOLS.BRUSH ? '画笔模式'
+    : t === TOOLS.ERASER ? '橡皮模式'
+      : t === TOOLS.PICKER ? '取色模式' : '选择模式';
 }
 
 // ---------------- 启动 ----------------
 
+// 启动时校验关键 DOM 元素，缺失时立即报错，避免运行到一半才崩溃
+function assertElements() {
+  const missing = Object.entries(els)
+    .filter(([, el]) => !el)
+    .map(([k]) => k);
+  if (missing.length) throw new Error('缺少页面元素：' + missing.join(', '));
+}
+
 async function init() {
+  assertElements();
   applyPanelPrefs();
   bindEvents();
   await ensureAuth();
@@ -2490,29 +2648,37 @@ async function init() {
 
 init();
 
-// 调试句柄（便于自动化测试读取内部状态）
-window.__app = App;
+// 调试 / 自动化测试句柄：仅在 URL 带 ?test=1 或预置 __FUSE_TEST__ 全局标记时暴露，
+// 避免生产页面被任意脚本读取内部状态
+const exposeTestHooks = (
+  (typeof window !== 'undefined' && window.__FUSE_TEST__ === true)
+  || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('test'))
+);
+if (exposeTestHooks) {
+  window.__app = App;
 
-// 自动化测试用：暴露需要直接驱动的内部函数
-window.__testHooks = {
-  renderAll,
-  redrawCanvas,
-  setTool,
-  updateBrush,
-  paintCell,
-  paintStamp,
-  pickQuickColor,
-  doUndo,
-  doRedo,
-  applySlider,
-  saveTransaction,
-  switchNode,
-  doDeleteNode,
-  clearAll,
-  restoreState,
-  renderHistoryUI,
-  openExportDialog,
-  renderExportPreview,
-  mirrorBeadToOrig,
-  mirrorOrigToBead,
-};
+  // 自动化测试用：暴露需要直接驱动的内部函数
+  window.__testHooks = {
+    renderAll,
+    redrawCanvas,
+    drawPattern,
+    setTool,
+    updateBrush,
+    paintCell,
+    paintStamp,
+    applyQuickColor,
+    doUndo,
+    doRedo,
+    applySlider,
+    saveTransaction,
+    switchNode,
+    doDeleteNode,
+    clearAll,
+    restoreState,
+    renderHistoryUI,
+    openExportDialog,
+    renderExportPreview,
+    mirrorBeadToOrig,
+    mirrorOrigToBead,
+  };
+}

@@ -1,6 +1,7 @@
-import {
+﻿import {
   CELL,
-  GRID_MARGIN_CELLS,
+  TOOLS,
+  CANVAS_EDGE_CELLS,
   OUTER_PAD,
   HIGHLIGHT_STROKE_RATIO,
   HIGHLIGHT_MIN_SCREEN_STROKE,
@@ -19,6 +20,9 @@ import {
   RAISED_BEVEL_LIGHT_ALPHA,
   RAISED_BEVEL_DARK_ALPHA,
   RAISED_GLOSS_ALPHA,
+  EDGE_NUMBER_MIN_CELL,
+  EDGE_NUMBER_FONT_RATIO,
+  EDGE_NUMBER_BG,
 } from './constants.js';
 import { isLightColor } from './colors.js';
 
@@ -30,6 +34,9 @@ const LEGEND_ROW_GAP = 8;            // 图例行间距（像素）
 const LEGEND_BOTTOM_GAP_RATIO = 1.2; // 图例下方留白（格）
 const GRID_LINE_THIN_RATIO = 0.04;   // 细网格线宽（格）
 const GRID_LINE_THICK_RATIO = 0.10;  // 每 5 格加粗线宽（格）
+const GRID_DASH_RATIO = 0.5;         // 每 5 格虚线每段长度（格）
+const GRID_LINE_COLOR = '#9A9A9A';   // 格内灰色网格线
+const GRID_BOUNDARY_COLOR = '#000000'; // 图片边缘粗黑线
 const LEGEND_FONT_MIN = 12;
 const LEGEND_FONT_RATIO = 0.9;       // 图例字体大小（格）
 const LEGEND_SWATCH_MIN = 8;
@@ -53,20 +60,22 @@ function legendRows(count, gridW, cell) {
   return Math.max(1, Math.ceil(count / perRow));
 }
 
-export function canvasMetrics(width, height, cell = CELL, legendCount = 0, outerPad = OUTER_PAD) {
-  const gridW = (width + 2 * GRID_MARGIN_CELLS) * cell;
-  const gridH = (height + 2 * GRID_MARGIN_CELLS) * cell;
+export function canvasMetrics(width, height, cell = CELL, legendCount = 0, outerPad = OUTER_PAD, edge = 0) {
+  // edge：四周行列号条的像素宽度（工作区为 1 格，导出为 0）
+  const gridW = width * cell;
+  const gridH = height * cell;
   const rows = legendRows(legendCount, gridW, cell);
   const legendH = rows
     ? rows * (cell * LEGEND_ROW_HEIGHT_CELLS + LEGEND_ROW_GAP) + cell * LEGEND_BOTTOM_GAP_RATIO
     : 0;
   return {
-    w: gridW + 2 * outerPad,
-    h: gridH + 2 * outerPad + legendH,
+    w: gridW + 2 * edge + 2 * outerPad,
+    h: gridH + 2 * edge + 2 * outerPad + legendH,
     gridW,
     gridH,
-    originX: outerPad,
-    originY: outerPad,
+    originX: outerPad + edge,
+    originY: outerPad + edge,
+    edge,
     legendRows: rows,
   };
 }
@@ -75,6 +84,11 @@ function hex6(c) {
   return ((c >>> 16) & 255).toString(16).padStart(2, '0')
     + ((c >>> 8) & 255).toString(16).padStart(2, '0')
     + (c & 255).toString(16).padStart(2, '0');
+}
+
+// 把打包成整数的 RGB（0xRRGGBB）拆成 [r, g, b]
+function rgbFromPacked(v) {
+  return [(v >>> 16) & 255, (v >>> 8) & 255, v & 255];
 }
 
 // 自适应描边线宽：按格子的常用宽度与屏幕像素下限取较大者，
@@ -93,7 +107,7 @@ function textColor(r, g, b) {
   return isLightColor([r, g, b]) ? '#111111' : '#FFFFFF';
 }
 
-// 透明格（外侧边距与橡皮擦除的空位使用同一底色与斜线）
+// 空位格（橡皮擦除后）使用同一底色与斜线
 const EMPTY_STYLES = {
   default: { bg: '#ECECEC', line: '#C8C8C8' },
   black: { bg: '#000000', line: '#C8C8C8' },
@@ -114,29 +128,127 @@ function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
   ctx.stroke();
 }
 
-function drawGridLines(ctx, originX, originY, gridW, gridH, cell) {
+// 网格线规范：
+// - 图案边缘粗黑实线；格内细灰线；每 5 格粗灰虚线；每 10 格粗灰实线
+// - 行列号条内：通常细灰线、每 5 格粗灰实线（不用虚线）；外圈不画线
+function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0) {
   const thin = Math.max(1, Math.round(cell * GRID_LINE_THIN_RATIO));
   const thick = Math.max(2, Math.round(cell * GRID_LINE_THICK_RATIO));
-  const cols = Math.round(gridW / cell);
-  const rows = Math.round(gridH / cell);
-  for (let k = 0; k <= cols; k++) {
-    const lw = k % 5 === 0 ? thick : thin;
-    const x = originX + k * cell;
-    ctx.beginPath();
-    ctx.moveTo(x, originY);
-    ctx.lineTo(x, originY + gridH);
-    ctx.lineWidth = lw;
-    ctx.stroke();
+  const dash = Math.max(3, Math.round(cell * GRID_DASH_RATIO));
+  const x0 = originX - edgeCells * cell;
+  const y0 = originY - edgeCells * cell;
+  const spanW = (width + 2 * edgeCells) * cell;
+  const spanH = (height + 2 * edgeCells) * cell;
+  const patternStyle = (kp, total) => {
+    if (kp === 0 || kp === total) return { lw: thick, color: GRID_BOUNDARY_COLOR, dashed: false };
+    if (kp % 10 === 0) return { lw: thick, color: GRID_LINE_COLOR, dashed: false };
+    if (kp % 5 === 0) return { lw: thick, color: GRID_LINE_COLOR, dashed: true };
+    return { lw: thin, color: GRID_LINE_COLOR, dashed: false };
+  };
+  const edgeStyle = (kp, total) => {
+    if (kp === 0 || kp === total) return { lw: thick, color: GRID_BOUNDARY_COLOR, dashed: false };
+    if (kp % 5 === 0) return { lw: thick, color: GRID_LINE_COLOR, dashed: false };
+    return { lw: thin, color: GRID_LINE_COLOR, dashed: false };
+  };
+  // 相同样式的实线合并成一条路径批量绘制；虚线逐段绘制，保证每段虚线段相位一致
+  const solidGroups = new Map();
+  const strokeSeg = (map, x1, y1, x2, y2, s) => {
+    if (s.dashed) {
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = s.lw;
+      ctx.setLineDash([dash, dash]);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      return;
+    }
+    const key = `${s.lw}|${s.color}`;
+    let g = map.get(key);
+    if (!g) { g = { lw: s.lw, color: s.color, segs: [] }; map.set(key, g); }
+    g.segs.push(x1, y1, x2, y2);
+  };
+  const flushGroups = (map) => {
+    for (const g of map.values()) {
+      ctx.strokeStyle = g.color;
+      ctx.lineWidth = g.lw;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      for (let i = 0; i < g.segs.length; i += 4) {
+        ctx.moveTo(g.segs[i], g.segs[i + 1]);
+        ctx.lineTo(g.segs[i + 2], g.segs[i + 3]);
+      }
+      ctx.stroke();
+    }
+  };
+  const vGroups = new Map();
+  const hGroups = new Map();
+  ctx.save();
+  for (let k = 0; k <= width + 2 * edgeCells; k++) {
+    const kp = k - edgeCells;
+    if (edgeCells && (kp === -1 || kp === width + 1)) continue; // 行列号外圈不画线
+    const s = patternStyle(kp, width);
+    const se = edgeStyle(kp, width);
+    let x = x0 + k * cell;
+    if (!edgeCells && (k === 0 || k === width)) x += (k === 0 ? s.lw : -s.lw) / 2; // 无行列号时边缘防裁剪
+    if (edgeCells) {
+      if (kp !== 0 && kp !== width) strokeSeg(vGroups, x, y0, x, y0 + cell, se);  // 顶部行列号条（两端帽不画）
+      strokeSeg(vGroups, x, y0 + cell, x, y0 + cell + height * cell, s);          // 图案
+      if (kp !== 0 && kp !== width) strokeSeg(vGroups, x, y0 + cell + height * cell, x, y0 + spanH, se); // 底部行列号条（两端帽不画）
+    } else {
+      strokeSeg(vGroups, x, y0, x, y0 + spanH, s);
+    }
   }
-  for (let k = 0; k <= rows; k++) {
-    const lw = k % 5 === 0 ? thick : thin;
-    const y = originY + k * cell;
-    ctx.beginPath();
-    ctx.moveTo(originX, y);
-    ctx.lineTo(originX + gridW, y);
-    ctx.lineWidth = lw;
-    ctx.stroke();
+  flushGroups(vGroups); // 竖直实线先画，水平线后画压在上方（与旧实现逐段绘制顺序一致）
+  for (let k = 0; k <= height + 2 * edgeCells; k++) {
+    const kp = k - edgeCells;
+    if (edgeCells && (kp === -1 || kp === height + 1)) continue; // 行列号外圈不画线
+    const s = patternStyle(kp, height);
+    const se = edgeStyle(kp, height);
+    let y = y0 + k * cell;
+    if (!edgeCells && (k === 0 || k === height)) y += (k === 0 ? s.lw : -s.lw) / 2; // 无行列号时边缘防裁剪
+    if (edgeCells) {
+      if (kp !== 0 && kp !== height) strokeSeg(hGroups, x0, y, x0 + cell, y, se); // 左侧行列号条（两端帽不画）
+      strokeSeg(hGroups, x0 + cell, y, x0 + cell + width * cell, y, s);           // 图案
+      if (kp !== 0 && kp !== height) strokeSeg(hGroups, x0 + cell + width * cell, y, x0 + spanW, y, se); // 右侧行列号条（两端帽不画）
+    } else {
+      strokeSeg(hGroups, x0, y, x0 + spanW, y, s);
+    }
   }
+  flushGroups(hGroups);
+  ctx.restore();
+}
+
+// 行列号条底色：上下左右四条（不含四角）
+function fillEdgeStrips(ctx, width, height, originX, originY, cell) {
+  ctx.fillStyle = EDGE_NUMBER_BG;
+  ctx.fillRect(originX, originY - cell, width * cell, cell);
+  ctx.fillRect(originX, originY + height * cell, width * cell, cell);
+  ctx.fillRect(originX - cell, originY, cell, height * cell);
+  ctx.fillRect(originX + width * cell, originY, cell, height * cell);
+}
+
+// 边缘行列号数字：浅蓝底与分隔线由 fillEdgeStrips / drawGridLines 绘制，这里只写字
+function drawEdgeNumbers(ctx, width, height, originX, originY, cell) {
+  if (cell < EDGE_NUMBER_MIN_CELL) return;
+  const font = Math.max(8, Math.round(cell * EDGE_NUMBER_FONT_RATIO));
+  ctx.font = `${font}px Consolas, "Courier New", monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#000000';
+  // 上 / 下列号（左到右递增）、左 / 右行号（上到下递增），与图案格对齐
+  for (let x = 0; x < width; x++) {
+    const cx = originX + x * cell + cell / 2;
+    ctx.fillText(String(x + 1), cx, originY - cell / 2);
+    ctx.fillText(String(x + 1), cx, originY + height * cell + cell / 2);
+  }
+  for (let y = 0; y < height; y++) {
+    const cy = originY + y * cell + cell / 2;
+    ctx.fillText(String(y + 1), originX - cell / 2, cy);
+    ctx.fillText(String(y + 1), originX + width * cell + cell / 2, cy);
+  }
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
 }
 
 function drawCodes(ctx, width, height, displayIdx, displayRgb, codes, originX, originY, cell) {
@@ -151,10 +263,10 @@ function drawCodes(ctx, width, height, displayIdx, displayRgb, codes, originX, o
       if (displayIdx[p] < 0) continue;
       const code = codes[p];
       if (!code) continue;
-      const x0 = originX + (x + GRID_MARGIN_CELLS) * cell + cell / 2;
-      const y0 = originY + (y + GRID_MARGIN_CELLS) * cell + cell / 2;
+      const x0 = originX + x * cell + cell / 2;
+      const y0 = originY + y * cell + cell / 2;
       const v = displayRgb[p];
-      const c = v ? [(v >> 16) & 255, (v >> 8) & 255, v & 255] : CODE_FALLBACK_RGB;
+      const c = v ? rgbFromPacked(v) : CODE_FALLBACK_RGB;
       ctx.fillStyle = textColor(c[0], c[1], c[2]);
       ctx.fillText(code, x0, y0);
     }
@@ -186,7 +298,7 @@ function drawLegend(ctx, legend, cell, gridW, baseY, outerPad = OUTER_PAD) {
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, sw - 1, sw - 1);
     ctx.fillStyle = LEGEND_TEXT_COLOR;
-    ctx.fillText(`${e.code}×${e.count}`, x + sw + LEGEND_TEXT_GAP, y + sw - LEGEND_TEXT_DESCENT);
+    ctx.fillText(`${e.code} × ${e.count}`, x + sw + LEGEND_TEXT_GAP, y + sw - LEGEND_TEXT_DESCENT);
     x += entryW;
   }
 }
@@ -222,8 +334,8 @@ function collectComponentEdges(comp, width, height, originX, originY, cell) {
   for (const p of comp) {
     const x = p % width;
     const y = (p / width) | 0;
-    const x0 = originX + (x + GRID_MARGIN_CELLS) * cell;
-    const y0 = originY + (y + GRID_MARGIN_CELLS) * cell;
+    const x0 = originX + x * cell;
+    const y0 = originY + y * cell;
     const push = (ex0, ey0, ex1, ey1) => edges.push({ x0: ex0, y0: ey0, x1: ex1, y1: ey1, p });
     if (y === 0 || !set.has(p - width)) push(x0, y0, x0 + cell, y0);
     if (y === height - 1 || !set.has(p + width)) push(x0, y0 + cell, x0 + cell, y0 + cell);
@@ -275,8 +387,7 @@ function drawHighlightOutline(ctx, comp, width, height, displayIdx, displayRgb, 
   ctx.lineWidth = hlw;
   ctx.lineJoin = 'miter';
   for (const e of edges) {
-    const v = displayRgb[e.p];
-    const rgb = [(v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+    const rgb = rgbFromPacked(displayRgb[e.p]);
     ctx.strokeStyle = isLightColor(rgb)
       ? `rgba(0, 0, 0, ${HIGHLIGHT_FRAME_LIGHT})`
       : `rgba(255, 255, 255, ${HIGHLIGHT_FRAME_DARK})`;
@@ -345,18 +456,18 @@ function drawHover(ctx, state) {
   const p = hover.y * width + hover.x;
   if (p < 0 || p >= width * height) return;
   // 取色只作用于非空位（橡皮按矩形区域判断，见 eraser 分支）
-  if (tool === 'picker' && displayIdx[p] < 0) return;
-  if (tool === 'brush' && !brushRgb) return;
+  if (tool === TOOLS.PICKER && displayIdx[p] < 0) return;
+  if (tool === TOOLS.BRUSH && !brushRgb) return;
   const size = brushSize || 1;
 
-  const x0 = originX + (hover.x + GRID_MARGIN_CELLS) * cell;
-  const y0 = originY + (hover.y + GRID_MARGIN_CELLS) * cell;
+  const x0 = originX + hover.x * cell;
+  const y0 = originY + hover.y * cell;
   // 画布线宽只随格尺寸等比变化，屏幕上的粗细由 CSS 缩放呈现，
   // 这样缩放时边框会跟着格子一起变粗/变细，直到低于隐藏阈值
   const hlw = Math.max(1, Math.round(cell * HOVER_STROKE_RATIO));
   const inset = hlw / 2;
 
-  if (tool === 'select') {
+  if (tool === TOOLS.SELECT) {
     // 双色错位虚线：黑先画，白偏移半个虚线周期后叠加，形成相间效果
     const dash = Math.max(HOVER_DASH_MIN, Math.round(cell * HOVER_DASH_RATIO));
     ctx.save();
@@ -372,22 +483,26 @@ function drawHover(ctx, state) {
     return;
   }
 
-  if (tool === 'picker') {
+  if (tool === TOOLS.PICKER) {
     // 3D 凸起效果：像把格子“吸起来”
     drawRaisedRect(ctx, x0, y0, cell, cell, hlw, cell >= 14);
     return;
   }
 
-  if (tool === 'brush') {
+  if (tool === TOOLS.BRUSH) {
     // 内部每一格边缘涂上画笔颜色，大方形外圈加黑色细实线，右下保留阴影；
     // 按画笔尺寸显示整个矩形（边长 2n-1，不裁剪，保持形状一致）
     const r = size - 1;
-    const bx0 = originX + (hover.x - r + GRID_MARGIN_CELLS) * cell;
-    const by0 = originY + (hover.y - r + GRID_MARGIN_CELLS) * cell;
+    const bx0 = originX + (hover.x - r) * cell;
+    const by0 = originY + (hover.y - r) * cell;
     const bw = (2 * r + 1) * cell;
     const bh = (2 * r + 1) * cell;
     const brushHlw = Math.max(1, Math.round(cell * HOVER_BRUSH_STROKE_RATIO));
     ctx.save();
+    // 只渲染在图案区域内，不覆盖四周行列号条
+    ctx.beginPath();
+    ctx.rect(originX, originY, width * cell, height * cell);
+    ctx.clip();
     // 右下阴影
     ctx.lineWidth = hlw;
     drawDropShadow(ctx, bx0, by0, bw, bh);
@@ -411,8 +526,8 @@ function drawHover(ctx, state) {
 
   // eraser：亮度自适应边框 + 对角 X；按橡皮尺寸显示整个矩形（不裁剪，X 不随边缘/角落形变）
   const r = size - 1;
-  const bx0 = originX + (hover.x - r + GRID_MARGIN_CELLS) * cell;
-  const by0 = originY + (hover.y - r + GRID_MARGIN_CELLS) * cell;
+  const bx0 = originX + (hover.x - r) * cell;
+  const by0 = originY + (hover.y - r) * cell;
   const bw = (2 * r + 1) * cell;
   const bh = (2 * r + 1) * cell;
   // 图案范围内至少一个非空位才显示（空位擦了没意义），描边颜色取第一个非空位格子的亮度
@@ -424,11 +539,15 @@ function drawHover(ctx, state) {
     }
   }
   if (ref < 0) return;
-  const rgb = [(ref >>> 16) & 255, (ref >>> 8) & 255, ref & 255];
+  const rgb = rgbFromPacked(ref);
   const frame = isLightColor(rgb)
     ? `rgba(0, 0, 0, ${HIGHLIGHT_FRAME_LIGHT})`
     : `rgba(255, 255, 255, ${HIGHLIGHT_FRAME_DARK})`;
   ctx.save();
+  // 只渲染在图案区域内，不覆盖四周行列号条
+  ctx.beginPath();
+  ctx.rect(originX, originY, width * cell, height * cell);
+  ctx.clip();
   ctx.lineWidth = hlw;
   ctx.strokeStyle = frame;
   ctx.strokeRect(bx0 + inset, by0 + inset, bw - inset * 2, bh - inset * 2);
@@ -441,14 +560,16 @@ function drawHover(ctx, state) {
   ctx.restore();
 }
 
-export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
+// 底图：单元格 + 行列号条 + 网格线 + 行列号数字 + 格内色号 + 图例（不含选区 / 高亮 / hover）
+export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts) {
   const cell = opts.cell || CELL;
   const outerPad = opts.outerPad ?? OUTER_PAD;
   const gridLines = opts.gridLines !== false;
   const hatch = opts.hatch !== false;
   const emptyStyle = opts.emptyStyle || 'default';
   const legend = opts.legend || [];
-  const metrics = canvasMetrics(width, height, cell, legend.length, outerPad);
+  const edge = opts.edgeNumbers ? cell : 0; // 工作区带四周 1 格行列号条，导出不带
+  const metrics = canvasMetrics(width, height, cell, legend.length, outerPad, edge);
   ctx.canvas.width = metrics.w;
   ctx.canvas.height = metrics.h;
   ctx.fillStyle = '#ffffff';
@@ -457,42 +578,56 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
   const ox = metrics.originX;
   const oy = metrics.originY;
 
-  // 单元格：外圈 5 格为透明边距，内部为图案
-  const totalCols = width + 2 * GRID_MARGIN_CELLS;
-  const totalRows = height + 2 * GRID_MARGIN_CELLS;
-  for (let gy = 0; gy < totalRows; gy++) {
-    const y0 = oy + gy * cell;
-    for (let gx = 0; gx < totalCols; gx++) {
-      const x0 = ox + gx * cell;
-      const px = gx - GRID_MARGIN_CELLS;
-      const py = gy - GRID_MARGIN_CELLS;
-      if (px >= 0 && py >= 0 && px < width && py < height) {
-        const p = py * width + px;
-        const v = displayIdx[p];
-        if (v >= 0) {
-          ctx.fillStyle = '#' + hex6(displayRgb[p]);
-          ctx.fillRect(x0, y0, cell, cell);
-        } else if (hatch) {
-          drawEmptyCell(ctx, x0, y0, cell, emptyStyle);
-        } else {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(x0, y0, cell, cell);
-        }
-      } else {
-        // 外侧透明格与橡皮清空后的空位底色一致
+  // 单元格：只画图案本身（外侧无透明边距）
+  for (let y = 0; y < height; y++) {
+    const y0 = oy + y * cell;
+    for (let x = 0; x < width; x++) {
+      const x0 = ox + x * cell;
+      const p = y * width + x;
+      const v = displayIdx[p];
+      if (v >= 0) {
+        ctx.fillStyle = '#' + hex6(displayRgb[p]);
+        ctx.fillRect(x0, y0, cell, cell);
+      } else if (hatch) {
         drawEmptyCell(ctx, x0, y0, cell, emptyStyle);
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x0, y0, cell, cell);
       }
     }
   }
 
+  // 行列号条底色铺在网格线之下
+  if (opts.edgeNumbers) {
+    fillEdgeStrips(ctx, width, height, ox, oy, cell);
+  }
+
   if (gridLines) {
-    ctx.strokeStyle = '#9A9A9A';
-    drawGridLines(ctx, ox, oy, metrics.gridW, metrics.gridH, cell);
+    drawGridLines(ctx, ox, oy, width, height, cell, opts.edgeNumbers ? 1 : 0);
+  }
+
+  if (opts.edgeNumbers) {
+    drawEdgeNumbers(ctx, width, height, ox, oy, cell);
   }
 
   if (opts.showCodes && opts.codes) {
     drawCodes(ctx, width, height, displayIdx, displayRgb, opts.codes, ox, oy, cell);
   }
+
+  if (legend.length && opts.showLegend !== false) {
+    // 图例放在图案与底部行列号条之下
+    drawLegend(ctx, legend, cell, metrics.gridW, oy + metrics.gridH + metrics.edge, outerPad);
+  }
+}
+
+// 覆盖层：选区虚线 / 色号高亮 / hover 边框 / 九宫格目标格浮起（叠加在底图之上）
+export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, opts) {
+  const cell = opts.cell || CELL;
+  const outerPad = opts.outerPad ?? OUTER_PAD;
+  const edge = opts.edgeNumbers ? cell : 0;
+  const metrics = canvasMetrics(width, height, cell, 0, outerPad, edge);
+  const ox = metrics.originX;
+  const oy = metrics.originY;
 
   drawSelection(ctx, opts.selected, width, height, ox, oy, cell, opts.zoom || 1);
 
@@ -507,13 +642,9 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
       for (const p of comp) {
         const x = p % width;
         const y = (p / width) | 0;
-        const c = displayRgb[p];
-        const r = (c >>> 16) & 255;
-        const g = (c >>> 8) & 255;
-        const b = c & 255;
-        const light = isLightColor([r, g, b]);
-        const x0 = ox + (x + GRID_MARGIN_CELLS) * cell;
-        const y0 = oy + (y + GRID_MARGIN_CELLS) * cell;
+        const light = isLightColor(rgbFromPacked(displayRgb[p]));
+        const x0 = ox + x * cell;
+        const y0 = oy + y * cell;
         ctx.fillStyle = light
           ? `rgba(0, 0, 0, ${HIGHLIGHT_WASH_LIGHT})`
           : `rgba(255, 255, 255, ${HIGHLIGHT_WASH_DARK})`;
@@ -548,14 +679,15 @@ export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
 
   // 九宫格改色目标格：浮起效果提示当前要改的格子
   if (toolState.pickerCell) {
-    const px = ox + (toolState.pickerCell.x + GRID_MARGIN_CELLS) * cell;
-    const py = oy + (toolState.pickerCell.y + GRID_MARGIN_CELLS) * cell;
+    const px = ox + toolState.pickerCell.x * cell;
+    const py = oy + toolState.pickerCell.y * cell;
     drawRaisedRect(ctx, px, py, cell, cell, Math.max(1, Math.round(cell * HOVER_STROKE_RATIO)), cell >= 14);
   }
+}
 
-  if (legend.length && opts.showLegend !== false) {
-    drawLegend(ctx, legend, cell, metrics.gridW, oy + metrics.gridH, outerPad);
-  }
+export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
+  drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts);
+  drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, opts);
 }
 
 export function clearCanvas(ctx) {

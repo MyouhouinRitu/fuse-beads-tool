@@ -1,6 +1,7 @@
 // DOM 桩行为测试：加载真实 main.js，验证色板即时更新、扁平事务、撤销/重做、滑块清空。
 // 运行：node tests/dom_behavior_test.mjs
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -98,6 +99,7 @@ const ctxStub = {
   set lineDashOffset(v) { this._lineDashOffset = v; },
   fillRect(x, y, w, h) { drawLog.fills.push({ style: this._fillStyle, x, y, w, h }); },
   beginPath() {}, moveTo() {}, lineTo() {}, ellipse() {},
+  rect() {}, clip() {},
   stroke() {
     drawLog.strokes.push({
       rect: false,
@@ -118,7 +120,8 @@ const ctxStub = {
     });
   },
   setLineDash(v) { this._lineDash = [...v]; },
-  fillText() {}, fill() {},
+  measureText(text) { return { width: String(text).length * 7 }; },
+  fillText(text, x, y) { drawLog.texts.push({ text: String(text), x, y, fillStyle: this._fillStyle }); }, fill() {},
   save() {
     this._savedDash = this._lineDash ? [...this._lineDash] : null;
     this._savedDashOffset = this._lineDashOffset;
@@ -131,8 +134,15 @@ const ctxStub = {
   drawImage() {}, setTransform() {}, clearRect() {},
 };
 
+// 预注册模板中真实存在的元素 id：getElementById 对未知 id 返回 null，
+// 与真实浏览器一致，让 main.js 的 assertElements 在缺 id 时立即失败（fail-fast）
+const templateHtml = fs.readFileSync(path.resolve('templates/index.html'), 'utf8');
+for (const m of templateHtml.matchAll(/id="([^"]+)"/g)) {
+  elsMap[m[1]] ||= new El(m[1]);
+}
+
 globalThis.document = {
-  getElementById: (id) => { elsMap[id] ||= new El(id); return elsMap[id]; },
+  getElementById: (id) => elsMap[id] || null,
   createElement: (tag) => { const e = new El(); e.tagName = String(tag).toUpperCase(); created.push(e); return e; },
   querySelectorAll: () => [],
   addEventListener: (type, fn) => { (windowListeners[type] ||= []).push(fn); },
@@ -142,7 +152,9 @@ globalThis.document = {
 
 globalThis.window = globalThis;
 globalThis.addEventListener = (type, fn) => { (windowListeners[type] ||= []).push(fn); };
-globalThis.requestAnimationFrame = (fn) => { fn(); return 1; };
+// 模拟 rAF：同步执行回调并传入「已到动画结束」的时间戳，
+// 使基于 rAF 的动画（如侧边栏位移补偿）在测试中一步完成
+globalThis.requestAnimationFrame = (fn) => { fn(Infinity); return 1; };
 globalThis.confirm = () => confirmResult;
 globalThis.prompt = () => null;
 globalThis.Image = class {
@@ -195,6 +207,7 @@ globalThis.fetch = async (url, options = {}) => {
 
 // ---------------- 加载 main.js ----------------
 
+globalThis.__FUSE_TEST__ = true; // 测试标记：允许 main.js 暴露 __app / __testHooks
 const mainUrl = pathToFileURL(path.resolve('static/js/main.js')).href;
 await import(mainUrl);
 await new Promise((r) => setTimeout(r, 80));
@@ -232,7 +245,7 @@ function canvasRectForCells() {
 }
 
 function mouseAt(cellX, cellY) {
-  return { clientX: (cellX + 5.5) * 26, clientY: (cellY + 5.5) * 26, button: 0, preventDefault() {} };
+  return { clientX: (cellX + 1.5) * 28, clientY: (cellY + 1.5) * 28, button: 0, preventDefault() {} };
 }
 
 // ---------------- 1. 色板配置修改：不即时更新图片与画笔，重新压缩后才应用 ----------------
@@ -425,10 +438,25 @@ function mouseAt(cellX, cellY) {
   hooks.saveTransaction();
   assert.ok(elsMap['dirty-indicator'].classList.contains('hidden'), '保存事务后应隐藏未保存提示');
 
+  elsMap['dlg-legend'].checked = true; // 桩默认未勾选，手动开启图例
   hooks.openExportDialog();
   await new Promise((r) => setTimeout(r, 60));
   assert.ok(elsMap['dlg-preview'].width > 0 && elsMap['dlg-preview'].height > 0, '导出对话框应显示实时预览');
+  assert.ok(drawLog.texts.some((t) => /^\S+ × \d+$/.test(t.text)),
+    `图例文字应为「色号 × 数量」格式，实际 ${JSON.stringify(drawLog.texts.map((t) => t.text))}`);
   console.log('[OK] 导出预览与「有未保存的修改」提示');
+}
+
+// ---------------- 画笔未选色：默认取调色板最暗色并进入画笔模式 ----------------
+{
+  seedProject();
+  App.tool = 'select';
+  App.brushColor = null;
+  elsMap['tool-brush'].emit('click');
+  assert.equal(App.brushColor, 2, '未选色按画笔应默认选调色板最暗色（蓝 #0000FF）');
+  assert.equal(App.tool, 'brush', '未选色按画笔也应进入画笔模式');
+  assert.ok(elsMap['brush-label'].textContent.includes('#0000FF'), '画笔标签应显示默认深色');
+  console.log('[OK] 画笔未选色：默认取调色板最暗色并进入画笔模式');
 }
 
 // ---------------- 8. 侧边栏折叠 / 展开 ----------------
@@ -478,7 +506,7 @@ function mouseAt(cellX, cellY) {
 // ---------------- 10. 同步换算：格放大 × 降采样系数，取消对比联动取消同步 ----------------
 {
   seedProject();
-  App.screenCell = 26;
+  App.screenCell = 28;
   // 拼豆网格 48 格，原图显示宽 96px：整张网格 ↔ 整张原图，1 格对应 2 个显示像素
   App.project.width = 48;
   App.project.height = 48;
@@ -488,12 +516,12 @@ function mouseAt(cellX, cellY) {
   App.zoom = 1;
 
   hooks.mirrorBeadToOrig();
-  assert.equal(App.origZoom, 13, '原图 zoom 应为 拼豆 zoom × 26 × (网格宽48/原图显示宽96)');
-  assert.equal(App.origPan.x, 230, '原图 pan.x 应包含 5 格边距偏移（100 + 5×26×1）');
-  assert.equal(App.origPan.y, 180, '原图 pan.y 应包含 5 格边距偏移（50 + 5×26×1）');
+  assert.equal(App.origZoom, 14, '原图 zoom 应为 拼豆 zoom × 28 × (网格宽48/原图显示宽96)');
+  assert.equal(App.origPan.x, 128, '原图 pan.x 应包含 1 格行列号条偏移（100 + 1×28×1）');
+  assert.equal(App.origPan.y, 78, '原图 pan.y 应包含 1 格行列号条偏移（50 + 1×28×1）');
 
-  App.origPan = { x: 230, y: 180 };
-  App.origZoom = 13;
+  App.origPan = { x: 128, y: 78 };
+  App.origZoom = 14;
   hooks.mirrorOrigToBead();
   assert.equal(App.zoom, 1, '反向换算应还原拼豆 zoom');
   assert.equal(App.pan.x, 100, '反向换算应还原拼豆 pan.x');
@@ -526,17 +554,17 @@ function mouseAt(cellX, cellY) {
   canvasRectForCells();
 
   // 选择模式：黑白相间虚线
-  const mm = elsMap['canvas-scroll'].listeners['mousemove'][0];
+  const mm = windowListeners['mousemove'][0];
   drawLog.strokes = [];
   mm(mouseAt(1, 1));
   assert.deepEqual(App.hoverCell, { x: 1, y: 1 }, '鼠标移动应记录指向的格子');
-  const rectStrokes = drawLog.strokes.filter((s) => s.rect);
+  const rectStrokes = drawLog.strokes.filter((s) => s.rect && s.dash);
   assert.equal(rectStrokes.length, 2, '选择模式 hover 应绘制两遍虚线边框（黑 + 白）');
   assert.equal(rectStrokes[0].style.toLowerCase(), '#000000', '第一遍应为黑色');
   assert.equal(rectStrokes[1].style.toLowerCase(), '#ffffff', '第二遍应为白色');
   assert.ok(rectStrokes[0].dash && rectStrokes[0].dash[0] > 0, '选择模式应使用虚线');
   assert.ok(rectStrokes[1].dashOffset > 0, '第二遍虚线应错开半个周期');
-  assert.ok(rectStrokes[0].x >= 156 && rectStrokes[0].y >= 156, 'hover 边框应位于指向格子的画布坐标');
+  assert.ok(rectStrokes[0].x >= 56 && rectStrokes[0].y >= 56, 'hover 边框应位于指向格子的画布坐标（含 1 格行列号条）');
 
   // 取色模式：3D 凸起效果（高光斜面 / 暗斜面 / 投影），不再使用虚线
   App.tool = 'picker';
@@ -547,14 +575,16 @@ function mouseAt(cellX, cellY) {
     s.style.includes('rgba(0, 0, 0, 0.45)') ||
     s.style.includes('rgba(0, 0, 0, 0.35)'));
   assert.ok(picker3D.length >= 3, '取色模式应绘制 3D 凸起（高光斜面 / 暗斜面 / 投影）');
-  assert.equal(drawLog.strokes.filter((s) => s.rect).length, 0, '取色模式不应再绘制虚线边框');
+  assert.equal(drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba(')).length, 0,
+    '取色模式不应再绘制虚线边框');
 
   // 画笔模式：每格颜色边框 + 外圈黑色细实线 + 右下阴影
   App.tool = 'brush';
   App.brushColor = 0; // 白色
   drawLog.strokes = [];
   hooks.renderAll();
-  const brushRects = drawLog.strokes.filter((s) => s.rect);
+  const brushRects = drawLog.strokes.filter((s) => s.rect
+    && (s.style.toLowerCase() === 'rgb(255, 255, 255)' || s.style.toLowerCase() === '#000000'));
   assert.equal(brushRects.length, 2, '尺寸 1 画笔应绘制每格颜色边框 + 外圈黑色细实线');
   assert.ok(brushRects.some((s) => s.style.toLowerCase() === 'rgb(255, 255, 255)'), '每格边框应为画笔颜色');
   assert.ok(brushRects.some((s) => s.style.toLowerCase() === '#000000'), '外圈应为黑色细实线');
@@ -574,7 +604,8 @@ function mouseAt(cellX, cellY) {
   App.hoverCell = { x: 0, y: 0 };
   drawLog.strokes = [];
   hooks.renderAll();
-  assert.equal(drawLog.strokes.filter((s) => s.rect).length, 0, '橡皮指向空位时不应绘制 hover 边框');
+  assert.equal(drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba(')).length, 0,
+    '橡皮指向空位时不应绘制 hover 边框');
 
   // 鼠标离开画布区应清除 hover
   App.hoverCell = { x: 1, y: 1 };
@@ -588,7 +619,7 @@ function mouseAt(cellX, cellY) {
   App.zoom = 0.5;
   drawLog.strokes = [];
   hooks.renderAll();
-  const zoomRects = drawLog.strokes.filter((s) => s.rect);
+  const zoomRects = drawLog.strokes.filter((s) => s.rect && s.dash);
   assert.equal(zoomRects[0].lineWidth, 1, '缩放 0.5 时画布线宽应保持格尺寸比例（1px 细线）');
   App.zoom = 1;
   App.hoverCell = null;
@@ -624,7 +655,7 @@ function mouseAt(cellX, cellY) {
   const frameStyle = 'rgba(0, 0, 0, 0.9)'; // 白色格（亮色）用深色描边
   const blockEdges = drawLog.strokes.filter((s) => s.style.includes(frameStyle));
   assert.equal(blockEdges.length, 12, '3x3 整块外轮廓应为 12 条边');
-  assert.equal(drawLog.strokes.filter((s) => s.rect).length, 0, '连通块内部不应再逐格描边');
+  assert.ok(blockEdges.every((s) => !s.rect), '高亮外轮廓应为线条绘制而非逐格描边');
 
   // 孤立单格 → 只有 4 条边
   App.project = { width: 3, height: 3, grid: Int16Array.from([0, -1, -1, -1, -1, -1, -1, -1, -1]) };
@@ -702,10 +733,10 @@ function mouseAt(cellX, cellY) {
   App.brushSize = 3;
   drawLog.strokes = [];
   hooks.renderAll();
-  const eraserFrame = drawLog.strokes.filter((s) => s.rect);
+  const eraserFrame = drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba('));
   assert.equal(eraserFrame.length, 1, '橡皮 hover 应绘制一条边框');
-  assert.equal(eraserFrame[0].w, 129, '橡皮 hover 边框宽度应保持完整 5×5（129px），不因角落形变');
-  assert.equal(eraserFrame[0].h, 129, '橡皮 hover 边框高度应保持完整 5×5');
+  assert.equal(eraserFrame[0].w, 139, '橡皮 hover 边框宽度应保持完整 5×5（139px），不因角落形变');
+  assert.equal(eraserFrame[0].h, 139, '橡皮 hover 边框高度应保持完整 5×5');
   App.hoverCell = null;
 
   // 画笔 hover 尺寸 3：5×5 共 25 个格子的颜色边框 + 1 条黑色外框（黑色最后绘制，压在最上）
@@ -829,6 +860,7 @@ function mouseAt(cellX, cellY) {
   App.selection.clear();
   App.selection.add(0);
   App.selection.add(1);
+  App.hoverCell = null; // 多选且无悬停格时 D 不应打开九宫格
   kd({ key: 'd', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
   assert.ok(elsMap['quick-picker'].classList.contains('hidden'), '多选时 D 键不应打开九宫格');
   App.selection.clear();
@@ -957,6 +989,19 @@ function mouseAt(cellX, cellY) {
   hooks.doUndo();
   assert.deepEqual(Array.from(App.project.grid), [0, 1, 0, 1], '撤销后应恢复原图');
   console.log('[OK] 批量填充：整块一次提交一步撤销');
+}
+
+// ---------------- 19. 边缘行列号（常驻，四个方向） ----------------
+{
+  seedProject();
+  App.selection.clear();
+  App.highlightColor = null;
+  drawLog.texts = [];
+  hooks.renderAll();
+  const digits = drawLog.texts.map((t) => t.text).filter((t) => /^\d$/.test(t));
+  assert.equal(digits.length, 8, '2x2 图案应绘制 8 个行列号（上下左右各 1-2）');
+  assert.ok(digits.includes('1') && digits.includes('2'), '行列号应包含 1 与 2');
+  console.log('[OK] 边缘行列号：常驻四个方向');
 }
 
 console.log('\nDOM 行为测试全部通过');

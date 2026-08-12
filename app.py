@@ -301,6 +301,7 @@ def api_export():
         codes=data.get("codes", []),
         show_codes=opt_bool(opts.get("showCodes"), True),
         show_legend=opt_bool(opts.get("legend"), True),
+        edge_numbers=opt_bool(opts.get("edgeNumbers"), False),
     )
     buf = io.BytesIO()
     if fmt == "png":
