@@ -81,9 +81,13 @@ def make_transparent_image(path):
 
 
 def main():
+    # 用临时数据目录启动，避免测试状态写入真实 data/（如 state.json）
+    data_dir = tempfile.mkdtemp(prefix="fuse_smoke_data_")
+    env = {**os.environ, "DATA_DIR": data_dir}
     proc = subprocess.Popen(
         [sys.executable, "app.py", "--port", "5001"],
         cwd=ROOT,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )

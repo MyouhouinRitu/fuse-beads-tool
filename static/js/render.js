@@ -1,4 +1,4 @@
-﻿import {
+import {
   CELL,
   TOOLS,
   CANVAS_EDGE_CELLS,
@@ -25,34 +25,36 @@
   EDGE_NUMBER_MIN_CELL,
   EDGE_NUMBER_FONT_RATIO,
   EDGE_NUMBER_BG,
+  LEGEND_ENTRY_W,
+  LEGEND_PAD_RATIO,
+  LEGEND_ROW_HEIGHT_CELLS,
+  LEGEND_ROW_GAP,
+  LEGEND_BOTTOM_GAP_RATIO,
+  LEGEND_TOP_OFFSET_RATIO,
+  LEGEND_FONT_RATIO,
+  LEGEND_FONT_MIN,
+  LEGEND_SWATCH_RATIO,
+  LEGEND_SWATCH_MIN,
+  LEGEND_ROW_EXTRA_H,
+  LEGEND_ROW_FONT_EXTRA,
+  LEGEND_TEXT_GAP,
+  LEGEND_TEXT_DESCENT,
+  LEGEND_SWATCH_BORDER,
+  LEGEND_TEXT_COLOR,
+  GRID_LINE_THIN_RATIO,
+  GRID_LINE_THICK_RATIO,
+  GRID_DASH_RATIO,
+  GRID_LINE_COLOR,
+  GRID_BOUNDARY_COLOR,
+  CODE_MIN_CELL,
+  CODE_FONT_RATIO,
+  CODE_FONT_MIN,
+  EMPTY_STYLES,
+  CROP_EDGE_COLOR,
+  CROP_EDGE_ACTIVE_COLOR,
 } from './constants.js';
 import { isLightColor } from './colors.js';
 
-// 图例每项预估宽度（以格为单位），用于分行的保守估算
-const LEGEND_ENTRY_W = 7.0;
-const LEGEND_PAD_RATIO = 0.9;        // 图例左右留白（格）
-const LEGEND_ROW_HEIGHT_CELLS = 2.0; // 图例每行高度（格）
-const LEGEND_ROW_GAP = 8;            // 图例行间距（像素）
-const LEGEND_BOTTOM_GAP_RATIO = 1.2; // 图例下方留白（格）
-const GRID_LINE_THIN_RATIO = 0.04;   // 细网格线宽（格）
-const GRID_LINE_THICK_RATIO = 0.10;  // 每 5 格加粗线宽（格）
-const GRID_DASH_RATIO = 0.5;         // 每 5 格虚线每段长度（格）
-const GRID_LINE_COLOR = '#9A9A9A';   // 格内灰色网格线
-const GRID_BOUNDARY_COLOR = '#000000'; // 图片边缘粗黑线
-const LEGEND_FONT_MIN = 12;
-const LEGEND_FONT_RATIO = 0.9;       // 图例字体大小（格）
-const LEGEND_SWATCH_MIN = 8;
-const LEGEND_SWATCH_RATIO = 1.1;     // 图例色块大小（格）
-const LEGEND_TOP_OFFSET_RATIO = 0.6; // 图例起始纵偏移（格）
-const LEGEND_ROW_EXTRA_H = 10;       // 图例行高在色块外追加的高度
-const LEGEND_ROW_FONT_EXTRA = 20;    // 图例行高在字体外追加的高度
-const LEGEND_TEXT_GAP = 8;           // 色块与文字间距
-const LEGEND_TEXT_DESCENT = 3;       // 文字基线偏移
-const LEGEND_SWATCH_BORDER = '#999999';
-const LEGEND_TEXT_COLOR = '#333333';
-const CODE_MIN_CELL = 8;             // 格尺寸小于该值时不在格内显示色号
-const CODE_FONT_MIN = 8;
-const CODE_FONT_RATIO = 0.5;         // 格内色号字号（格）
 const CODE_FALLBACK_RGB = [17, 17, 17]; // 空色时的文字对比底色
 
 function legendRows(count, gridW, cell) {
@@ -109,12 +111,6 @@ function textColor(r, g, b) {
   return isLightColor([r, g, b]) ? '#111111' : '#FFFFFF';
 }
 
-// 空位格（橡皮擦除后）使用同一底色与斜线
-const EMPTY_STYLES = {
-  default: { bg: '#ECECEC', line: '#C8C8C8' },
-  black: { bg: '#000000', line: '#C8C8C8' },
-  white: { bg: '#FFFFFF', line: '#C8C8C8' },
-};
 
 function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
   const s = EMPTY_STYLES[emptyStyle] || EMPTY_STYLES.default;
@@ -133,7 +129,7 @@ function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
 // 网格线规范：
 // - 图案边缘粗黑实线；格内细灰线；每 5 格粗灰虚线；每 10 格粗灰实线
 // - 行列号条内：通常细灰线、每 5 格粗灰实线（不用虚线）；外圈不画线
-function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0, zoom = 1) {
+function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0, zoom = 1, viewport = null) {
   const screenCell = cell * (zoom || 1);
   const thin = Math.max(1, Math.round(cell * GRID_LINE_THIN_RATIO));
   const thick = Math.max(2, Math.round(cell * GRID_LINE_THICK_RATIO));
@@ -190,8 +186,11 @@ function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0
   };
   const vGroups = new Map();
   const hGroups = new Map();
+  // 视口渲染时只画窗口内的线（窗口外由 canvas 裁剪，收紧循环避免大图逐帧全画）
+  const vkMin = viewport ? Math.max(0, viewport.x0 - 1 + edgeCells) : 0;
+  const vkMax = viewport ? Math.min(width + 2 * edgeCells, viewport.x1 + 1 + edgeCells) : width + 2 * edgeCells;
   ctx.save();
-  for (let k = 0; k <= width + 2 * edgeCells; k++) {
+  for (let k = vkMin; k <= vkMax; k++) {
     const kp = k - edgeCells;
     if (edgeCells && (kp === -1 || kp === width + 1)) continue; // 行列号外圈不画线
     const s = patternStyle(kp, width);
@@ -208,7 +207,9 @@ function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0
     }
   }
   flushGroups(vGroups); // 竖直实线先画，水平线后画压在上方（与旧实现逐段绘制顺序一致）
-  for (let k = 0; k <= height + 2 * edgeCells; k++) {
+  const hkMin = viewport ? Math.max(0, viewport.y0 - 1 + edgeCells) : 0;
+  const hkMax = viewport ? Math.min(height + 2 * edgeCells, viewport.y1 + 1 + edgeCells) : height + 2 * edgeCells;
+  for (let k = hkMin; k <= hkMax; k++) {
     const kp = k - edgeCells;
     if (edgeCells && (kp === -1 || kp === height + 1)) continue; // 行列号外圈不画线
     const s = patternStyle(kp, height);
@@ -238,20 +239,24 @@ function fillEdgeStrips(ctx, width, height, originX, originY, cell) {
 }
 
 // 边缘行列号数字：浅蓝底与分隔线由 fillEdgeStrips / drawGridLines 绘制，这里只写字
-function drawEdgeNumbers(ctx, width, height, originX, originY, cell) {
+function drawEdgeNumbers(ctx, width, height, originX, originY, cell, viewport = null) {
   if (cell < EDGE_NUMBER_MIN_CELL) return;
   const font = Math.max(8, Math.round(cell * EDGE_NUMBER_FONT_RATIO));
   ctx.font = `${font}px Consolas, "Courier New", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#000000';
+  const nx0 = viewport ? Math.max(0, viewport.x0) : 0;
+  const nx1 = viewport ? Math.min(width - 1, viewport.x1) : width - 1;
+  const ny0 = viewport ? Math.max(0, viewport.y0) : 0;
+  const ny1 = viewport ? Math.min(height - 1, viewport.y1) : height - 1;
   // 上 / 下列号（左到右递增）、左 / 右行号（上到下递增），与图案格对齐
-  for (let x = 0; x < width; x++) {
+  for (let x = nx0; x <= nx1; x++) {
     const cx = originX + x * cell + cell / 2;
     ctx.fillText(String(x + 1), cx, originY - cell / 2);
     ctx.fillText(String(x + 1), cx, originY + height * cell + cell / 2);
   }
-  for (let y = 0; y < height; y++) {
+  for (let y = ny0; y <= ny1; y++) {
     const cy = originY + y * cell + cell / 2;
     ctx.fillText(String(y + 1), originX - cell / 2, cy);
     ctx.fillText(String(y + 1), originX + width * cell + cell / 2, cy);
@@ -260,14 +265,18 @@ function drawEdgeNumbers(ctx, width, height, originX, originY, cell) {
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawCodes(ctx, width, height, displayIdx, displayRgb, codes, originX, originY, cell, zoom = 1) {
+function drawCodes(ctx, width, height, displayIdx, displayRgb, codes, originX, originY, cell, zoom = 1, viewport = null) {
   if (cell * (zoom || 1) < GRID_FINE_MIN_SCREEN_CELL) return;
   const font = Math.max(CODE_FONT_MIN, Math.round(cell * CODE_FONT_RATIO));
   ctx.font = `${font}px Consolas, "Courier New", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+  const cx0 = viewport ? Math.max(0, viewport.x0) : 0;
+  const cx1 = viewport ? Math.min(width - 1, viewport.x1) : width - 1;
+  const cy0 = viewport ? Math.max(0, viewport.y0) : 0;
+  const cy1 = viewport ? Math.min(height - 1, viewport.y1) : height - 1;
+  for (let y = cy0; y <= cy1; y++) {
+    for (let x = cx0; x <= cx1; x++) {
       const p = y * width + x;
       if (displayIdx[p] < 0) continue;
       const code = codes[p];
@@ -578,22 +587,39 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   const emptyStyle = opts.emptyStyle || 'default';
   const legend = opts.legend || [];
   const edge = opts.edgeNumbers ? cell : 0; // 工作区带四周 1 格行列号条，导出不带
-  const metrics = canvasMetrics(width, height, cell, legend.length, outerPad, edge);
-  ctx.canvas.width = metrics.w;
-  ctx.canvas.height = metrics.h;
+  // 视口渲染（放大镜等）：只画窗口范围；坐标为扩展坐标（图案格 0..w-1，行列号条 -1 / w），
+  // 窗口原点对齐画布原点；不传则渲染整幅图案
+  const viewport = opts.viewport || null;
+  let vw, vh, ox, oy;
+  let metrics = null;
+  if (viewport) {
+    vw = (viewport.x1 - viewport.x0 + 1) * cell;
+    vh = (viewport.y1 - viewport.y0 + 1) * cell;
+    ox = -viewport.x0 * cell;
+    oy = -viewport.y0 * cell;
+  } else {
+    metrics = canvasMetrics(width, height, cell, legend.length, outerPad, edge);
+    vw = metrics.w;
+    vh = metrics.h;
+    ox = metrics.originX;
+    oy = metrics.originY;
+  }
+  ctx.canvas.width = vw;
+  ctx.canvas.height = vh;
   if (opts.background) {
     // 导出预览等需要不透明底的场景：整幅铺底色（工作区不传，保持四角透明）
     ctx.fillStyle = opts.background;
-    ctx.fillRect(0, 0, metrics.w, metrics.h);
+    ctx.fillRect(0, 0, vw, vh);
   }
 
-  const ox = metrics.originX;
-  const oy = metrics.originY;
-
-  // 单元格：只画图案本身（外侧无透明边距）
-  for (let y = 0; y < height; y++) {
+  // 单元格：只画图案本身（外侧无透明边距）；视口模式只画窗口内的图案格
+  const cx0 = viewport ? Math.max(0, viewport.x0) : 0;
+  const cx1 = viewport ? Math.min(width - 1, viewport.x1) : width - 1;
+  const cy0 = viewport ? Math.max(0, viewport.y0) : 0;
+  const cy1 = viewport ? Math.min(height - 1, viewport.y1) : height - 1;
+  for (let y = cy0; y <= cy1; y++) {
     const y0 = oy + y * cell;
-    for (let x = 0; x < width; x++) {
+    for (let x = cx0; x <= cx1; x++) {
       const x0 = ox + x * cell;
       const p = y * width + x;
       const v = displayIdx[p];
@@ -615,18 +641,18 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   }
 
   if (gridLines) {
-    drawGridLines(ctx, ox, oy, width, height, cell, opts.edgeNumbers ? 1 : 0, opts.zoom || 1);
+    drawGridLines(ctx, ox, oy, width, height, cell, opts.edgeNumbers ? 1 : 0, opts.zoom || 1, viewport);
   }
 
   if (opts.edgeNumbers) {
-    drawEdgeNumbers(ctx, width, height, ox, oy, cell);
+    drawEdgeNumbers(ctx, width, height, ox, oy, cell, viewport);
   }
 
   if (opts.showCodes && opts.codes) {
-    drawCodes(ctx, width, height, displayIdx, displayRgb, opts.codes, ox, oy, cell, opts.zoom || 1);
+    drawCodes(ctx, width, height, displayIdx, displayRgb, opts.codes, ox, oy, cell, opts.zoom || 1, viewport);
   }
 
-  if (legend.length && opts.showLegend !== false) {
+  if (legend.length && opts.showLegend !== false && !viewport) {
     // 图例放在图案与底部行列号条之下
     drawLegend(ctx, legend, cell, metrics.gridW, oy + metrics.gridH + metrics.edge, outerPad);
   }
@@ -642,11 +668,17 @@ function drawCropOverlay(ctx, crop, activeEdge, cell, ox, oy, zoom, preview, wid
   const ry1 = oy + (crop.y1 + 1) * cell;
   ctx.save();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-  // 四角是透明像素：蒙版带避开四角，避免与压暗后的工作区背景叠成两层
-  ctx.fillRect(cell, 0, W - 2 * cell, ry0);              // 上（不含四角）
-  ctx.fillRect(cell, ry1, W - 2 * cell, H - ry1);        // 下（不含四角）
-  ctx.fillRect(0, cell, rx0, H - 2 * cell);              // 左（不含四角）
-  ctx.fillRect(rx1, cell, W - rx1, H - 2 * cell);        // 右（不含四角）
+  // 蒙版分 8 块绘制、互不重合：上/下带横跨图案区（不含画布四角）；
+  // 左/右带分三段——裁剪框上下沿之间整条盖满，之外只盖行列号条。
+  // 这样四个斜向区域不会重复压暗，四角保持透明避免与压暗后的工作区背景叠成两层
+  ctx.fillRect(cell, 0, W - 2 * cell, ry0);                       // 上
+  ctx.fillRect(cell, ry1, W - 2 * cell, H - ry1);                 // 下
+  ctx.fillRect(0, ry0, rx0, ry1 - ry0);                           // 左中（裁剪框上下沿之间）
+  ctx.fillRect(rx1, ry0, W - rx1, ry1 - ry0);                     // 右中
+  ctx.fillRect(0, cell, cell, Math.max(0, ry0 - cell));           // 左上行列号条段
+  ctx.fillRect(W - cell, cell, cell, Math.max(0, ry0 - cell));    // 右上行列号条段
+  ctx.fillRect(0, ry1, cell, Math.max(0, H - cell - ry1));        // 左下行列号条段
+  ctx.fillRect(W - cell, ry1, cell, Math.max(0, H - cell - ry1)); // 右下行列号条段
   ctx.lineWidth = Math.max(2, Math.round(2 / (zoom || 1)));
   const edges = [
     ['left', rx0, ry0, rx0, ry1],
@@ -655,7 +687,7 @@ function drawCropOverlay(ctx, crop, activeEdge, cell, ox, oy, zoom, preview, wid
     ['bottom', rx0, ry1, rx1, ry1],
   ];
   for (const [name, x0, y0, x1, y1] of edges) {
-    ctx.strokeStyle = name === activeEdge ? '#3b82f6' : '#ff3b30';
+    ctx.strokeStyle = name === activeEdge ? CROP_EDGE_ACTIVE_COLOR : CROP_EDGE_COLOR;
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
@@ -663,7 +695,7 @@ function drawCropOverlay(ctx, crop, activeEdge, cell, ox, oy, zoom, preview, wid
   }
   // 预览虚线：选中边后将移动到的平行格线（跨整个图案）
   if (preview) {
-    ctx.strokeStyle = '#ff3b30';
+    ctx.strokeStyle = CROP_EDGE_COLOR;
     ctx.setLineDash([6 / (zoom || 1), 5 / (zoom || 1)]);
     ctx.lineWidth = Math.max(1.5, Math.round(1.5 / (zoom || 1)));
     ctx.beginPath();

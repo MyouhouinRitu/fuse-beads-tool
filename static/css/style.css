@@ -1,3 +1,5 @@
+/* 布局尺寸（面板宽度/折叠宽度/动画时长/九宫格）与 static/js/constants.js 保持一致，
+   由 tests/constants_sync_test.mjs 强制执行 */
 :root {
   --bg: #f4f5f7;
   --panel: #ffffff;
@@ -436,22 +438,24 @@ body.crop-active #canvas-area { background: #8b8c8f; }
 }
 .crop-magnifier canvas { display: block; }
 
-#tree-list { flex: 1; min-height: 0; overflow-y: auto; }
-.tree-node {
+#history-list { flex: 1; min-height: 0; overflow-y: auto; }
+.history-item {
   margin: 2px 0;
   border: 1px solid transparent;
   border-radius: 6px;
   padding: 4px 6px;
   cursor: pointer;
 }
-.tree-node:hover { background: #f7f9fc; }
-.tree-node.current { background: #e5f0ff; border-color: #bfdbfe; }
-.tree-node .tn-head { display: flex; align-items: center; gap: 6px; }
-.tree-node .tn-label { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-node.current .tn-label { font-weight: 700; }
-.tree-node .tn-time { color: var(--muted); font-size: 11px; }
-.tree-node .tn-actions { display: flex; gap: 4px; margin-top: 3px; }
-.tree-node .tn-actions button { font-size: 12px; padding: 2px 8px; }
+.history-item:hover { background: #f7f9fc; }
+.history-item.current { background: #e5f0ff; border-color: #bfdbfe; }
+:root[data-theme="dark"] .history-item:hover { background: #2d3440; }
+:root[data-theme="dark"] .history-item.current { background: #2d3440; border-color: var(--primary); }
+.history-item .hi-head { display: flex; align-items: center; gap: 6px; }
+.history-item .hi-label { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item.current .hi-label { font-weight: 700; }
+.history-item .hi-time { color: var(--muted); font-size: 11px; }
+.history-item .hi-actions { display: flex; gap: 4px; margin-top: 3px; }
+.history-item .hi-actions button { font-size: 12px; padding: 2px 8px; }
 
 .dialog-mask {
   position: fixed; inset: 0; background: rgba(20, 24, 30, 0.45);
@@ -497,21 +501,49 @@ body.crop-active #canvas-area { background: #8b8c8f; }
   color: var(--text); border-radius: 6px; cursor: pointer; font-size: 13px; line-height: 1.4;
 }
 .dropdown-item:hover { background: rgba(59, 130, 246, 0.10); color: var(--primary); }
-.target-pixels-wrap { position: relative; display: inline-flex; align-items: center; }
+/* 统一下拉控件外观（颜色距离 / 目标像素量）：同一套尺寸与内边距；
+   颜色距离用背景箭头，目标像素量用独立箭头元素（输入区保持文本光标） */
+#sel-distance,
 #target-pixels {
-  -moz-appearance: textfield;
-  border-radius: 6px 0 0 6px;
-  width: 96px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 150px;
+  padding: 5px 28px 5px 8px;
+  border-radius: 6px;
+}
+#sel-distance {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 5 5-5z' fill='%238a919c'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 6px;
+  cursor: pointer;
+}
+#target-pixels { cursor: text; }
+.target-pixels-wrap { position: relative; display: inline-flex; align-items: center; }
+.target-pixels-arrow {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  width: 26px;
+  padding: 0;
+  border: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 5 5-5z' fill='%238a919c'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px 6px;
+  cursor: pointer;
+  user-select: none;
 }
 #target-pixels::-webkit-outer-spin-button,
 #target-pixels::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.target-pixels-btn {
-  padding: 5px 8px; border-left: none; border-radius: 0 6px 6px 0;
-  line-height: 1; cursor: pointer;
-}
-.target-pixels-btn:hover { border-color: var(--primary); color: var(--primary); }
 .target-pixels-menu { min-width: 130px; }
-:root[data-theme="dark"] .target-pixels-btn { background: #1b2026; }
+/* 夜间箭头统一变浅（放在基础规则之后覆盖） */
+:root[data-theme="dark"] #sel-distance,
+:root[data-theme="dark"] .target-pixels-arrow {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 5 5-5z' fill='%2397a1ad'/%3E%3C/svg%3E");
+}
 .doc-content {
   max-height: 60vh; overflow-y: auto; border: 1px solid var(--border);
   border-radius: 8px; padding: 14px 18px; line-height: 1.75; font-size: 13.5px;

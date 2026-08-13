@@ -33,7 +33,7 @@
       <label class="field">目标像素量
         <span class="target-pixels-wrap">
           <input type="number" id="target-pixels" min="100" max="80000" step="100" value="5000" title="图片压缩后的总像素量">
-          <button type="button" id="target-pixels-btn" class="target-pixels-btn" title="选择常用像素量">▾</button>
+          <span id="target-pixels-btn" class="target-pixels-arrow" role="button" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量"></span>
           <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden"></div>
         </span>
       </label>
@@ -211,8 +211,8 @@
             <button id="btn-save-state-side" class="primary" title="Ctrl+S / Cmd+S">保存当前状态</button>
             <button id="btn-clear-all" class="danger" title="清空画布并删除全部事务历史">清空所有状态</button>
           </div>
-          <div id="tree-list"></div>
-          <div id="tree-empty" class="muted">暂无历史记录</div>
+          <div id="history-list"></div>
+          <div id="history-empty" class="muted">暂无历史记录</div>
         </div>
       </div>
       <button id="right-panel-expand" class="panel-expand" type="button" title="展开事务历史">

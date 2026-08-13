@@ -17,7 +17,7 @@ const PORT = 5100 + Math.floor(Math.random() * 300); // 随机端口，避免与
 const BASE = `http://127.0.0.1:${PORT}`;
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fuse_ui_'));
 const IMG = path.join(TMP, 'ui_test.png');
-const STATE = path.join(ROOT, 'data', 'state.json');
+const STATE = path.join(TMP, 'state.json');
 const OP = 0; // 工作区不再保留外部白边（导出时才使用外部白边）
 const CELL = 28; // 默认格子大小（与 render.js CELL 一致）
 const MARGIN = 1 * CELL; // 图案外侧 1 格行列号条（原 5 格透明边距已移除）
@@ -64,6 +64,7 @@ img.save(${JSON.stringify(IMG)})
 
 const server = spawn(process.env.PYTHON || 'python', ['app.py', '--port', String(PORT)], {
   cwd: ROOT,
+  env: { ...process.env, DATA_DIR: TMP },
   stdio: ['ignore', logFd, logFd],
 });
 
@@ -163,7 +164,7 @@ async function main() {
       noRecordsTitle: ![...document.querySelectorAll('#right-panel .panel-title')].some((t) => t.textContent.trim() === '记录'),
       hasHistoryTitle: [...document.querySelectorAll('#right-panel .panel-title')].some((t) => t.textContent.trim() === '事务历史'),
       hasDirtyIndicator: !!document.querySelector('#right-panel #dirty-indicator'),
-      hasTreeList: !!document.querySelector('#right-panel #tree-list'),
+      hasHistoryList: !!document.querySelector('#right-panel #history-list'),
       hasExportEmptyStyle: !!document.getElementById('dlg-empty-style'),
       hasExportPreview: !!document.getElementById('dlg-preview'),
     };
@@ -171,7 +172,7 @@ async function main() {
   assert.ok(layout.outlineRemoved, '描边控件应已整体移除');
   assert.ok(layout.recordsBeforeAutosave && layout.autosaveBeforeExport, '记录应在自动保存左侧、自动保存应在导出左侧');
   assert.ok(layout.codesAfterZoom && layout.emptyAfterCodes, '显示色号/透明色应在画布工具栏缩放按钮右侧且顺序正确');
-  assert.ok(layout.noRecordsTitle && layout.hasHistoryTitle && layout.hasDirtyIndicator && layout.hasTreeList, '右侧面板应为单一事务历史块并带未保存提示');
+  assert.ok(layout.noRecordsTitle && layout.hasHistoryTitle && layout.hasDirtyIndicator && layout.hasHistoryList, '右侧面板应为单一事务历史块并带未保存提示');
   assert.ok(layout.hasExportEmptyStyle && layout.hasExportPreview, '导出对话框应包含独立透明色选项与预览');
   assert.ok(!(await page.textContent('#toast')).includes('重新压缩'), '首次打开网站不应弹出色板配置提示');
   console.log('[OK] 工具栏 / 画布工具栏 / 右侧面板布局');
@@ -380,7 +381,7 @@ async function main() {
   await page.keyboard.press('Control+y');
   await page.waitForTimeout(250);
   await near(await px(page, ccx(10), ccy(10)), [255, 255, 255], 10, '重做后应恢复白色');
-  assert.equal(await page.locator('#tree-list .tree-node').count(), 0, '撤销/重做不应产生事务');
+  assert.equal(await page.locator('#history-list .history-item').count(), 0, '撤销/重做不应产生事务');
   assert.ok((await page.textContent('#undo-info')).includes('1/20'), '撤销/重做后应保留这一步记录');
   assert.notEqual(await page.evaluate(() => getComputedStyle(document.querySelector('#dirty-indicator')).display), 'none',
     '编辑后应显示「有未保存的修改」提示');
@@ -559,14 +560,14 @@ async function main() {
   await page.waitForTimeout(250);
   await page.keyboard.press('Control+s');
   await page.waitForTimeout(250);
-  assert.equal(await page.locator('#tree-list .tree-node').count(), 2, '保存两次应有 2 个状态');
+  assert.equal(await page.locator('#history-list .history-item').count(), 2, '保存两次应有 2 个状态');
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dirty-indicator')).display), 'none',
     '保存事务后应隐藏「有未保存的修改」提示');
   page.once('dialog', (d) => d.accept());
-  await page.click('#tree-list .tree-node.current .tn-actions button:first-child');
+  await page.click('#history-list .history-item.current .hi-actions button:first-child');
   await page.waitForTimeout(400);
-  assert.equal(await page.locator('#tree-list .tree-node').count(), 1, '删除后应剩 1 个状态');
-  assert.match(await page.textContent('#tree-list .tn-label'), /状态 #1/, '当前应切回状态 #1');
+  assert.equal(await page.locator('#history-list .history-item').count(), 1, '删除后应剩 1 个状态');
+  assert.match(await page.textContent('#history-list .hi-label'), /状态 #1/, '当前应切回状态 #1');
   console.log('[OK] 事务历史保存 / 删除 / 切换');
 
   // 7. 导出 JPG：实时预览 + 图例开关生效
@@ -657,7 +658,7 @@ async function main() {
     `刷新后网格应保留擦除与涂色状态，实际 ${JSON.stringify(restoredGrid)}`);
   assert.ok(Math.abs(restoredHatch[0] - 236) < 18 && Math.abs(restoredHatch[1] - 236) < 18 && Math.abs(restoredHatch[2] - 236) < 18,
     `刷新后擦除的空位应保留，实际 ${restoredHatch}`);
-  assert.equal(await page.locator('#tree-list .tree-node').count(), 1, '刷新后历史应保留');
+  assert.equal(await page.locator('#history-list .history-item').count(), 1, '刷新后历史应保留');
   console.log('[OK] 自动保存与刷新恢复');
 
   // 8.5 刷新后原图缓存恢复：对比功能仍可用
@@ -684,10 +685,10 @@ async function main() {
   console.log('[OK] 配置新建与删除');
 
   // 10. 双副本：编辑后再次使用滑块 → 警告 + 清除上次滑块后的事务 + 从基副本重建
-  const treeBefore = await page.locator('#tree-list .tree-node').count();
+  const treeBefore = await page.locator('#history-list .history-item').count();
   await page.keyboard.press('Control+s'); // 保存一个“滑块之后”的事务
   await page.waitForTimeout(250);
-  assert.equal(await page.locator('#tree-list .tree-node').count(), treeBefore + 1, '应能保存出滑块后的新事务');
+  assert.equal(await page.locator('#history-list .history-item').count(), treeBefore + 1, '应能保存出滑块后的新事务');
   // 编辑一个像素（画笔涂色），使滑块处于“编辑后”状态
   await page.click('.tab[data-tab="edit"]');
   await page.click('#color-list .color-item:first-child');
@@ -700,8 +701,8 @@ async function main() {
     s.value = '2';
     s.dispatchEvent(new Event('input'));
   });
-  await page.waitForFunction(() => document.querySelectorAll('#tree-list .tree-node').length === 0, null, { timeout: 5000 });
-  assert.equal(await page.locator('#tree-list .tree-node').count(), 0,
+  await page.waitForFunction(() => document.querySelectorAll('#history-list .history-item').length === 0, null, { timeout: 5000 });
+  assert.equal(await page.locator('#history-list .history-item').count(), 0,
     '编辑后再次使用滑块应清除上次滑块之后的事务');
   assert.ok((await page.textContent('#used-colors')).includes('2 种颜色'),
     '滑块重建后应基于基副本显示合并色数');
@@ -788,7 +789,7 @@ img.save(${JSON.stringify(LARGE_IMG)})
   }
 
   // 截图留档
-  const shot = 'C:/Users/myouh/.codex/visualizations/2026/08/06/019fd4fd-4c9a-7042-9fe1-6e52067cbf05/ui_screenshot.png';
+  const shot = path.join(TMP, 'ui_screenshot.png');
   fs.mkdirSync(path.dirname(shot), { recursive: true });
   await page.screenshot({ path: shot, fullPage: false });
   console.log('截图:', shot);
@@ -816,7 +817,7 @@ main()
     try { if (fs.existsSync(STATE)) fs.unlinkSync(STATE); } catch (e) { /* ignore */ }
     try {
       // 清理测试过程中创建的临时配置，避免失败运行留下残留 CSV
-      for (const fn of fs.readdirSync(path.join(ROOT, 'data', 'configs'))) {
+      for (const fn of fs.readdirSync(path.join(TMP, 'configs'))) {
         if (/^(UI测试配置|UI调色板)/.test(fn)) {
           fs.unlinkSync(path.join(ROOT, 'data', 'configs', fn));
         }

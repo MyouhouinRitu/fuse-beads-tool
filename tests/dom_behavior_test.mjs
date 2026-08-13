@@ -42,7 +42,6 @@ class El {
     this.href = '';
     this.download = '';
     this.type = '';
-    this.className = '';
     this.files = [];
     this.clientWidth = 800;
     this.clientHeight = 600;
@@ -52,12 +51,26 @@ class El {
     this._rect = { left: 0, top: 0, width: 800, height: 600 };
   }
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+  // className 与 classList 双向同步（模拟真实 DOM）
+  get className() { return [...this.classList.set].join(' '); }
+  set className(v) {
+    this.classList.set = new Set(String(v).split(/\s+/).filter(Boolean));
+  }
   get innerHTML() { return this._innerHTML; }
   set innerHTML(v) {
     this._innerHTML = String(v);
     if (this._innerHTML === '') this.children = [];
   }
-  appendChild(c) { this.children.push(c); c.parentNode = this; return c; }
+  appendChild(c) {
+    // DocumentFragment：把子元素平铺进容器，模拟真实 DOM 行为
+    if (c.id === '__fragment__') {
+      for (const ch of [...c.children]) this.appendChild(ch);
+      return c;
+    }
+    this.children.push(c);
+    c.parentNode = this;
+    return c;
+  }
   append(...cs) { cs.forEach((c) => this.appendChild(c)); }
   removeChild(c) {
     const i = this.children.indexOf(c);
@@ -70,15 +83,71 @@ class El {
     return { ...r, right: r.left + r.width, bottom: r.top + r.height };
   }
   emit(type, event = {}) {
-    for (const fn of [...(this.listeners[type] || [])]) fn({ target: this, ...event });
+    // 模拟 DOM 事件冒泡：沿 parentNode 逐级触发监听器
+    let el = this;
+    while (el) {
+      for (const fn of [...(el.listeners[type] || [])]) fn({ target: this, currentTarget: el, ...event });
+      el = el.parentNode;
+    }
   }
   focus() {}
   blur() {}
+  closest(sel) {
+    let el = this;
+    while (el) {
+      if (matchesSelector(el, sel)) return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  querySelector(sel) {
+    const walk = (el) => {
+      if (el !== this && matchesSelector(el, sel)) return el;
+      for (const c of el.children || []) {
+        const r = walk(c);
+        if (r) return r;
+      }
+      return null;
+    };
+    return walk(this);
+  }
   getContext() {
     const ctx = Object.create(ctxStub);
     Object.defineProperty(ctx, 'canvas', { get: () => this, configurable: true });
     return ctx;
   }
+}
+
+// 极简选择器匹配：仅覆盖测试用到的 class / tag / #id / [attr]（data-* 映射到 dataset）
+function matchesSelector(el, sel) {
+  let rest = sel.trim();
+  let tag = null;
+  const tagM = rest.match(/^[a-zA-Z][\w-]*/);
+  if (tagM) { tag = tagM[0].toLowerCase(); rest = rest.slice(tagM[0].length); }
+  const classes = [];
+  const ids = [];
+  const attrs = [];
+  for (;;) {
+    const idM = rest.match(/^#([\w-]+)/);
+    if (idM) { ids.push(idM[1]); rest = rest.slice(idM[0].length); continue; }
+    const clsM = rest.match(/^\.([\w-]+)/);
+    if (clsM) { classes.push(clsM[1]); rest = rest.slice(clsM[0].length); continue; }
+    const attrM = rest.match(/^\[([\w-]+)(?:="([^"]*)")?\]/);
+    if (attrM) { attrs.push([attrM[1], attrM[2] ?? null]); rest = rest.slice(attrM[0].length); continue; }
+    break;
+  }
+  if (rest.trim() !== '') throw new Error('stub 不支持的 selector: ' + sel);
+  if (tag && el.tagName.toLowerCase() !== tag) return false;
+  for (const id of ids) if (el.id !== id) return false;
+  for (const c of classes) if (!el.classList.contains(c)) return false;
+  for (const [name, val] of attrs) {
+    let v = null;
+    const dsName = name.startsWith('data-') ? name.slice(5) : name;
+    if (el.dataset && el.dataset[dsName] !== undefined) v = String(el.dataset[dsName]);
+    else if (el[name] !== undefined) v = String(el[name]);
+    if (v === null || (val !== null && v !== val)) return false;
+  }
+  return true;
 }
 
 const drawLog = { fills: [], strokes: [], texts: [] };
@@ -145,6 +214,7 @@ globalThis.document = {
   documentElement: { dataset: {} },
   getElementById: (id) => elsMap[id] || null,
   createElement: (tag) => { const e = new El(); e.tagName = String(tag).toUpperCase(); created.push(e); return e; },
+  createDocumentFragment: () => new El('__fragment__'),
   querySelectorAll: () => [],
   addEventListener: (type, fn) => { (windowListeners[type] ||= []).push(fn); },
   body: new El('body'),
@@ -227,6 +297,9 @@ assert.ok(App && hooks, '应暴露调试句柄');
 elsMap['doc-dialog'].classList.add('hidden');
 elsMap['fix-menu'].classList.add('hidden');
 elsMap['target-pixels-menu'].classList.add('hidden');
+elsMap['export-dialog'].classList.add('hidden');
+elsMap['login-mask'].classList.add('hidden');
+elsMap['quick-picker'].classList.add('hidden');
 
 const palette3 = configColors.cfg.map((c) => ({ ...c }));
 function seedProject() {
@@ -300,15 +373,15 @@ function mouseAt(cellX, cellY) {
 
   // 删除非当前事务：仅删除该节点，当前节点不变
   const firstId = App.history.items[0].id;
-  hooks.doDeleteNode(firstId);
+  hooks.deleteHistoryItem(firstId);
   assert.equal(App.history.items.length, 1, '删除应只移除一个事务节点');
   assert.equal(App.history.items[0].id, App.history.currentId, '删除非当前节点后当前节点不变');
 
   // 删除当前事务：切到相邻节点
-  hooks.doDeleteNode(App.history.currentId);
+  hooks.deleteHistoryItem(App.history.currentId);
   assert.equal(App.history.items.length, 0, '删除当前节点后历史清空');
   assert.equal(App.history.currentId, null);
-  assert.equal(elsMap['tree-list'].children.length, 0, '历史面板应显示空状态');
+  assert.equal(elsMap['history-list'].children.length, 0, '历史面板应显示空状态');
   console.log('[OK] 扁平事务：保存、只删单个节点、切换当前节点');
 }
 
@@ -456,6 +529,7 @@ function mouseAt(cellX, cellY) {
   assert.ok(elsMap['dlg-preview'].width > 0 && elsMap['dlg-preview'].height > 0, '导出对话框应显示实时预览');
   assert.ok(drawLog.texts.some((t) => /^\S+ × \d+$/.test(t.text)),
     `图例文字应为「色号 × 数量」格式，实际 ${JSON.stringify(drawLog.texts.map((t) => t.text))}`);
+  elsMap['export-dialog'].classList.add('hidden'); // 关闭弹窗，避免影响后续 Escape 测试
   console.log('[OK] 导出预览与「有未保存的修改」提示');
 }
 
@@ -504,13 +578,13 @@ function mouseAt(cellX, cellY) {
   App.originalImage = null;
   elsMap['chk-compare'].checked = true;
   elsMap['chk-compare'].emit('change');
-  assert.equal(App.compareEnabled, false, '无原图时不应开启对比');
+  assert.equal(App.settings.compare, false, '无原图时不应开启对比');
   assert.equal(elsMap['chk-compare'].checked, false, '无原图时勾选对比应被回退');
 
   elsMap['chk-sync-pan'].checked = true;
   elsMap['chk-sync-pan'].emit('change');
-  assert.equal(App.compareEnabled, false, '无原图时同步拖拽不应自动开启对比');
-  assert.equal(App.syncPan, false, '无原图时同步拖拽不应生效');
+  assert.equal(App.settings.compare, false, '无原图时同步拖拽不应自动开启对比');
+  assert.equal(App.settings.syncPan, false, '无原图时同步拖拽不应生效');
   assert.equal(elsMap['chk-sync-pan'].checked, false, '无原图时勾选同步应被回退');
   console.log('[OK] 对比原图 / 同步拖拽守卫');
 }
@@ -541,17 +615,15 @@ function mouseAt(cellX, cellY) {
 
   // 取消对比原图 → 同步拖拽应一并取消
   App.originalImage = { naturalWidth: 48, naturalHeight: 48 };
-  App.compareEnabled = true;
   App.settings.compare = true;
-  App.syncPan = true;
   App.settings.syncPan = true;
   elsMap['chk-compare'].checked = true;
   elsMap['chk-sync-pan'].checked = true;
   elsMap['chk-compare'].checked = false;
   elsMap['chk-compare'].emit('change');
-  assert.equal(App.syncPan, false, '取消对比后同步拖拽应一并取消');
+  assert.equal(App.settings.syncPan, false, '取消对比后同步拖拽应一并取消');
   assert.equal(elsMap['chk-sync-pan'].checked, false, '取消对比后同步勾选框应被取消');
-  assert.equal(App.compareEnabled, false, '取消对比后对比状态应关闭');
+  assert.equal(App.settings.compare, false, '取消对比后对比状态应关闭');
   console.log('[OK] 同步换算含网格/原图比例 / 取消对比联动取消同步');
 }
 
@@ -693,7 +765,7 @@ function mouseAt(cellX, cellY) {
 // ---------------- 14. 画笔 / 橡皮尺寸：拖动条显示与矩形涂色 ----------------
 {
   seedProject();
-  App.brushSize = 1;
+  App.settings.brushSize = 1;
   App.selection.clear();
   App.highlightColor = null;
 
@@ -708,7 +780,7 @@ function mouseAt(cellX, cellY) {
   // 拖动条输入 → 更新画笔尺寸并持久化
   elsMap['brush-size'].value = '4';
   elsMap['brush-size'].emit('input');
-  assert.equal(App.brushSize, 4, '拖动条输入应更新画笔尺寸');
+  assert.equal(App.settings.brushSize, 4, '拖动条输入应更新画笔尺寸');
   assert.equal(App.settings.brushSize, 4, '画笔尺寸应同步到设置以便持久化');
   assert.equal(elsMap['brush-size-value'].textContent, '4', '拖动条数值标签应同步');
 
@@ -717,7 +789,7 @@ function mouseAt(cellX, cellY) {
   App.baseGrid = App.project.grid.slice();
   App.tool = 'brush';
   App.brushColor = 2;
-  App.brushSize = 3;
+  App.settings.brushSize = 3;
   App.strokeBuffer = [];
   hooks.paintStamp({ x: 2, y: 2 });
   assert.equal(Array.from(App.project.grid).filter((v) => v === 2).length, 25, '尺寸 3 在 (2,2) 应涂满 5x5（25 格）');
@@ -742,7 +814,7 @@ function mouseAt(cellX, cellY) {
   // 橡皮 hover：尺寸 3 在角落 (0,0) 时，边框与 X 仍按完整 5×5 绘制（不因裁剪形变）
   App.tool = 'eraser';
   App.hoverCell = { x: 0, y: 0 };
-  App.brushSize = 3;
+  App.settings.brushSize = 3;
   drawLog.strokes = [];
   hooks.renderAll();
   const eraserFrame = drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba('));
@@ -755,7 +827,7 @@ function mouseAt(cellX, cellY) {
   App.tool = 'brush';
   App.brushColor = 0; // 白色
   App.hoverCell = { x: 2, y: 2 };
-  App.brushSize = 3;
+  App.settings.brushSize = 3;
   drawLog.strokes = [];
   hooks.renderAll();
   const brushLattice = drawLog.strokes.filter((s) => s.rect);
@@ -765,7 +837,7 @@ function mouseAt(cellX, cellY) {
   assert.equal(blackRects.length, 1, '应绘制 1 条黑色外框');
   assert.equal(brushLattice[brushLattice.length - 1].style.toLowerCase(), '#000000', '黑色外框应最后绘制');
   App.hoverCell = null;
-  App.brushSize = 1;
+  App.settings.brushSize = 1;
   hooks.setTool('select');
   console.log('[OK] 画笔 / 橡皮尺寸：拖动条显示与矩形涂色');
 }
@@ -775,8 +847,8 @@ function mouseAt(cellX, cellY) {
   seedProject();
   App.selection.clear();
   App.highlightColor = null;
-  App.sameColorSelect = false;
-  App.brushSize = 1;
+  App.settings.sameColorSelect = false;
+  App.settings.brushSize = 1;
   hooks.setTool('brush');
   assert.ok(elsMap['selection-controls'].classList.contains('hidden'), '画笔模式应隐藏同色选区与选中高亮');
   hooks.setTool('select');
@@ -813,10 +885,10 @@ function mouseAt(cellX, cellY) {
   mm({ ...mouseAt(1, 1) });
   mu({});
   assert.equal(App.selection.size, 4, '拖拽应选中 2x2 矩形');
-  assert.equal(App.dragSelect, null, '拖拽结束后应清除实时预览');
+  assert.equal(App.dragPreview, null, '拖拽结束后应清除实时预览');
 
   // 同色选区：单击选四方向连通块（网格 [0,1,0,1]：白色 (0,0)(0,1) 相连、红色 (1,0)(1,1) 相连）
-  App.sameColorSelect = true;
+  App.settings.sameColorSelect = true;
   App.selection.clear();
   md(mouseAt(0, 0));
   mu({});
@@ -831,8 +903,8 @@ function mouseAt(cellX, cellY) {
   mm({ ...mouseAt(1, 1) });
   mu({});
   assert.equal(App.selection.size, 4, '同色选区勾选时拖拽不应改变选择');
-  assert.equal(App.dragSelect, null, '同色选区勾选时不应出现拖拽预览');
-  App.sameColorSelect = false;
+  assert.equal(App.dragPreview, null, '同色选区勾选时不应出现拖拽预览');
+  App.settings.sameColorSelect = false;
 
   // ESC 清除选择
   kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
@@ -896,7 +968,7 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.highlightColor, null, '选中后应取消高亮');
   assert.equal(App.highlightTimer, null, '取消高亮后应停止闪烁定时器');
 
-  App.sameColorSelect = false;
+  App.settings.sameColorSelect = false;
   App.selection.clear();
   console.log('[OK] 选择模式：单击 / 矩形 / 同色 / Shift / 填充 / 取色 / 九宫格 / 高亮转选区');
 }
@@ -1229,6 +1301,23 @@ function mouseAt(cellX, cellY) {
   mdOut({ button: 0, clientX: -100, clientY: -100, target: elsMap['canvas'], shiftKey: false, preventDefault() {} });
   assert.equal(App.cropActiveEdge, null, '点击图片之外应取消边选择');
 
+  // 拖拽移动边：按下命中边 → 拖动 → 松开
+  App.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
+  App.cropActiveEdge = null;
+  App.cropPreview = null;
+  const mdDrag = elsMap['canvas-scroll'].listeners['mousedown'][0];
+  const mmDrag = windowListeners['mousemove'][0];
+  const muDrag = windowListeners['mouseup'][0];
+  const dragY = 1.5 * cellSz * scale2;
+  mdDrag({ button: 0, clientX: edgeX, clientY: dragY, target: elsMap['canvas'], shiftKey: false, preventDefault() {} });
+  assert.equal(App.cropActiveEdge, 'left', '按下左边缘应选中该边');
+  assert.equal(globalThis.__dragState.cropEdge, 'left', '按下左边缘应进入拖拽状态');
+  mmDrag({ clientX: 2 * cellSz * scale2, clientY: dragY, button: 0 });
+  assert.equal(App.crop.x0, 1, '拖拽应把左边移动到格线');
+  muDrag({});
+  assert.equal(App.cropActiveEdge, null, '拖拽结束应取消边选中');
+  assert.equal(App.cropPreview, null, '拖拽结束后预览应清空');
+
   // 放大镜：低缩放显示、正常缩放隐藏
   hooks.setTool('crop');
   App.screenCell = 8;
@@ -1236,7 +1325,7 @@ function mouseAt(cellX, cellY) {
   App.hoverCell = { x: 0, y: 0 };
   hooks.updateCropMagnifier({ clientX: 100, clientY: 100 });
   assert.ok(!elsMap['crop-magnifier'].classList.contains('hidden'), '低缩放时应显示放大镜');
-  assert.equal(elsMap['crop-magnifier-canvas'].width, 10 * 20, '放大镜应为 10×10，每格 20px');
+  assert.equal(elsMap['crop-magnifier-canvas'].width, 11 * 20, '放大镜应为 11×11，每格 20px');
   App.zoom = 2;
   hooks.updateCropMagnifier({ clientX: 100, clientY: 100 });
   assert.ok(elsMap['crop-magnifier'].classList.contains('hidden'), '正常缩放应隐藏放大镜');
@@ -1284,7 +1373,7 @@ function mouseAt(cellX, cellY) {
 {
   elsMap['target-pixels-menu'].classList.add('hidden');
   elsMap['target-pixels-btn'].emit('click');
-  assert.ok(!elsMap['target-pixels-menu'].classList.contains('hidden'), '点击下拉按钮应展开菜单');
+  assert.ok(!elsMap['target-pixels-menu'].classList.contains('hidden'), '点击箭头应展开菜单');
   assert.equal(elsMap['target-pixels-menu'].children.length, 4, '应渲染 4 个预设项');
   const opt = elsMap['target-pixels-menu'].children[0];
   assert.equal(opt.title, '初次尝试拼豆的儿童建议不超过 500', '预设项应带悬浮提示');
@@ -1292,6 +1381,14 @@ function mouseAt(cellX, cellY) {
   opt.emit('click');
   assert.equal(elsMap['target-pixels'].value, '500', '点击预设应写入输入框');
   assert.ok(elsMap['target-pixels-menu'].classList.contains('hidden'), '选择后应关闭菜单');
+
+  // 箭头可再次展开；输入框文本区不弹菜单，仅直接编辑数值
+  elsMap['target-pixels-menu'].classList.add('hidden');
+  elsMap['target-pixels'].emit('mousedown', { button: 0 });
+  assert.ok(elsMap['target-pixels-menu'].classList.contains('hidden'), '点击输入框文本区不应展开菜单');
+  elsMap['target-pixels'].value = '1234';
+  elsMap['target-pixels'].emit('input');
+  assert.equal(elsMap['target-pixels'].value, '1234', '输入框应仍可直接输入数值');
   console.log('[OK] 目标像素量下拉预设');
 }
 

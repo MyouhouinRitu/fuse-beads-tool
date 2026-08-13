@@ -342,7 +342,8 @@ def create_app(data_dir: str | None = None) -> Flask:
     """创建 Flask 应用（工厂模式）：可注入数据目录，便于测试隔离。"""
     global DATA_DIR, CONFIG_DIR, STATE_FILE, APP_TOKEN, APP_SECRET
 
-    DATA_DIR = data_dir or os.path.join(BASE_DIR, "data")
+    # 测试等场景可通过 DATA_DIR 环境变量隔离数据目录，避免污染真实数据
+    DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(BASE_DIR, "data")
     CONFIG_DIR = os.path.join(DATA_DIR, "configs")
     STATE_FILE = os.path.join(DATA_DIR, "state.json")
     APP_TOKEN = os.environ.get("APP_TOKEN", "").strip()

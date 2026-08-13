@@ -12,7 +12,11 @@ export function hexToRgb(hex) {
 
 // 感知亮度判断：≥ 阈值视为亮色（用于文字、描边等对比色选择）
 export function isLightColor(rgb) {
-  return (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 >= LUMINANCE_THRESHOLD;
+  return luminance(rgb) >= LUMINANCE_THRESHOLD;
+}
+
+export function luminance(rgb) {
+  return (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
 }
 
 function srgbToLinear(v) {

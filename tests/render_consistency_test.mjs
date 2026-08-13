@@ -34,7 +34,11 @@ for (let y = 0; y < H; y++) {
   }
 }
 
-const server = spawn('python', ['app.py', '--port', String(PORT)], { cwd: ROOT, stdio: 'ignore' });
+const server = spawn('python', ['app.py', '--port', String(PORT)], {
+  cwd: ROOT,
+  env: { ...process.env, DATA_DIR: TMP },
+  stdio: 'ignore',
+});
 const errors = [];
 const watchdog = setTimeout(() => { log('看门狗触发，强制退出'); process.exit(2); }, 120000);
 let browser = null;

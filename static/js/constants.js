@@ -1,6 +1,8 @@
 // 全局常量配置：把散落各处的魔法数字集中到这里统一命名，避免理解错误。
-// 注意：部分数值与 static/css/style.css 的样式保持一致（如侧边栏宽度、工具栏高度），
-// 改动时需要同步更新。
+// 跨语言同步约束（不只靠注释约定，由 tests/constants_sync_test.mjs 强制执行）：
+// - 布局参数（面板宽度、折叠宽度、动画时长、九宫格尺寸）与 static/css/style.css 保持一致；
+// - 渲染参数（图例/网格线/色号/空位样式/导出默认值）与 bead/export.py 保持一致；
+// - 修改任一侧后需运行该测试确认未漂移。
 
 // ---------- 画布 / 渲染 ----------
 export const CELL = 28;                       // 每格拼豆在画布上的像素尺寸
@@ -10,7 +12,7 @@ export const DEFAULT_TARGET_PIXELS = 5000;    // 「目标像素量」输入框�
 export const TARGET_PIXELS_MAX = 80000;       // 「目标像素量」上限
 export const TARGET_PIXEL_PRESETS = [
   { value: 500, tip: '初次尝试拼豆的儿童建议不超过 500' },
-  { value: 2500, tip: '初次尝试拼豆的大人建议不超过 2500' },
+  { value: 2500, tip: '初次尝试拼豆的成人建议不超过 2500' },
   { value: 5000, tip: '有一定经验的成年人建议不超过 5000' },
   { value: 10000, tip: '10000 的豆量通常需要消耗 1-2 天时间' },
 ];
@@ -26,11 +28,20 @@ export const TOOLS = {
   CROP: 'crop',
 };
 
+// ---------- 通用交互阈值 ----------
+export const DRAG_THRESHOLD_PX = 4; // 判定为拖拽的最小位移（屏幕像素）
+
 // ---------- 裁剪工具 ----------
 export const CROP_MAGNIFIER_MIN_SCREEN_CELL = 14; // 格屏宽低于该值时启用放大镜（参考 hover 隐藏阈值）
-export const CROP_MAGNIFIER_SIZE = 10;            // 放大镜窗口边长（格，10×10）
+export const CROP_MAGNIFIER_SIZE = 11;            // 放大镜窗口边长（格，11×11，奇数使悬停格居中）
 export const CROP_MAGNIFIER_SCALE = 2.5;          // 放大镜放大倍率
 export const CROP_EDGE_HIT_PX = 8;                // 边缘命中阈值（屏幕像素）
+export const CROP_EDGE_COLOR = '#ff3b30';         // 裁剪边框（未选中）
+export const CROP_EDGE_ACTIVE_COLOR = '#3b82f6';  // 裁剪边框（选中/拖拽边）
+export const CROP_MAGNIFIER_MIN_CELL = 16;        // 放大镜每格最小尺寸（像素）
+export const CROP_MAGNIFIER_GAP = 16;             // 放大镜与鼠标的间距（像素）
+export const CROP_MAGNIFIER_WINDOW_MARGIN = 8;    // 放大镜与窗口边缘的最小间距（像素）
+export const CROP_MAGNIFIER_OUTSIDE = { light: '#e8eaee', dark: '#3a424c' }; // 放大镜图案外底色（日/夜）
 
 // ---------- 网格细节缩放阈值（格屏宽 = 格尺寸 × 缩放） ----------
 export const GRID_FINE_MIN_SCREEN_CELL = 8;   // 低于该值时隐藏格内细线与色号
@@ -44,7 +55,7 @@ export const ZOOM_MAX = 8;
 export const FIT_ZOOM_CAP = 1.5;              // 「适应窗口」的最大缩放
 export const VIEWPORT_PADDING = 24;           // 适应窗口时四周预留的像素
 export const ZOOM_WHEEL_FACTOR = 1.15;        // 滚轮缩放倍率
-export const ZOOM_BUTTON_FACTOR = 1.25;       // +/− 按钮缩放倍率
+export const ZOOM_BUTTON_FACTOR = 1.25;       // +/- 按钮缩放倍率
 
 // ---------- 颜色明暗判断 ----------
 export const LUMINANCE_THRESHOLD = 150;       // 感知亮度阈值：≥ 该值视为亮色
@@ -68,10 +79,10 @@ export const HOVER_DASH_MIN = 3;               // 虚线每段最小长度（画
 export const SELECTION_MIN_SCREEN_STROKE = 2;  // 选区线宽至少的屏幕像素
 export const SELECTION_MIN_SCREEN_DASH = 4;    // 选区虚线段至少的屏幕像素
 
-// ---------- 3D 凸起效果（取色 / 画笔 / 九宫格目标格） ----------
+// ---------- 3D 凸起效果（取色/画笔/九宫格目标格） ----------
 export const RAISED_SHADOW_ALPHA = 0.35;       // 右下投影透明度
-export const RAISED_BEVEL_LIGHT_ALPHA = 0.85;  // 上 / 左高光斜面透明度
-export const RAISED_BEVEL_DARK_ALPHA = 0.45;   // 下 / 右暗斜面透明度
+export const RAISED_BEVEL_LIGHT_ALPHA = 0.85;  // 上/左高光斜面透明度
+export const RAISED_BEVEL_DARK_ALPHA = 0.45;   // 下/右暗斜面透明度
 export const RAISED_GLOSS_ALPHA = 0.45;        // 左上高光点透明度
 
 // ---------- 边缘行列号 ----------
@@ -91,14 +102,51 @@ export const QUICK_PICKER_HEIGHT = 250;       // 九宫格弹出框预估高度�
 export const QUICK_PICKER_EDGE_MARGIN = 8;    // 九宫格与窗口边缘的最小间距
 export const QUICK_PICKER_OFFSET_CELLS = 1.5; // 九宫格相对像素的纵向偏移（格）
 
-// ---------- 导出预览 ----------
+// ---------- 导出 ----------
 export const EXPORT_CELL_MIN = 5;
 export const EXPORT_CELL_MAX = 100;
-export const EXPORT_CELL_DEFAULT = 28;        // 导出「每格大小」输入为空时的默认值
+export const EXPORT_CELL_DEFAULT = 28;        // 导出「每格大小」输入为空的默认值
 export const EXPORT_PAD_MAX = 200;
 export const EXPORT_PREVIEW_CELL = 8;         // 导出预览的格子像素
 export const EXPORT_PREVIEW_MAX_W = 290;      // 预览画布最大宽
 export const EXPORT_PREVIEW_MAX_H = 250;      // 预览画布最大高
+export const EXPORT_QUALITY = 95;             // 导出 JPG 默认质量（与 bead/export.py DEFAULT_QUALITY 一致）
+export const EXPORT_COMPLETE_DELAY_MS = 900;  // 导出完成后停留显示时长
+
+// ---------- 渲染参数（与 bead/export.py 保持一致，由 constants_sync_test 增强约束） ----------
+// 图例布局
+export const LEGEND_ENTRY_W = 7.0;           // 图例每项预估宽度（以格为单位），用于分行的保守估算
+export const LEGEND_PAD_RATIO = 0.9;         // 图例左右留白（格）
+export const LEGEND_ROW_HEIGHT_CELLS = 2.0;  // 图例每行高度（格）
+export const LEGEND_ROW_GAP = 8;             // 图例行间距（像素）
+export const LEGEND_BOTTOM_GAP_RATIO = 1.2;  // 图例下方留白（格）
+export const LEGEND_TOP_OFFSET_RATIO = 0.6;  // 图例起始纵偏移（格）
+export const LEGEND_FONT_RATIO = 0.9;        // 图例字体大小（格）
+export const LEGEND_FONT_MIN = 12;           // 图例字号下限（PIL 侧共用 FONT_MIN=8，见 sync 测试例外表）
+export const LEGEND_SWATCH_RATIO = 1.1;      // 图例色块大小（格）
+export const LEGEND_SWATCH_MIN = 8;          // 图例色块下限
+export const LEGEND_ROW_EXTRA_H = 10;        // 图例行高在色块外追加的高度
+export const LEGEND_ROW_FONT_EXTRA = 20;     // 图例行高在字体外追加的高度
+export const LEGEND_TEXT_GAP = 8;            // 色块与文字间距
+export const LEGEND_TEXT_DESCENT = 3;        // 文字基线偏移（PIL 侧为 2，见 sync 测试例外表）
+export const LEGEND_SWATCH_BORDER = '#999999';
+export const LEGEND_TEXT_COLOR = '#333333';
+// 网格线
+export const GRID_LINE_THIN_RATIO = 0.04;    // 细网格线宽（格）
+export const GRID_LINE_THICK_RATIO = 0.10;   // 每 5 格加粗线宽（格）
+export const GRID_DASH_RATIO = 0.5;          // 每 5 格虚线每段长度（格）
+export const GRID_LINE_COLOR = '#9A9A9A';    // 格内灰色网格线
+export const GRID_BOUNDARY_COLOR = '#000000'; // 图片边缘粗黑线
+// 格内色号
+export const CODE_MIN_CELL = 8;              // 格尺寸小于该值时不在格内显示色号
+export const CODE_FONT_RATIO = 0.5;          // 格内色号字号（格）
+export const CODE_FONT_MIN = 8;              // 格内色号字号下限
+// 空位格（橡皮擦除后）使用同一底色与斜线
+export const EMPTY_STYLES = {
+  default: { bg: '#ECECEC', line: '#C8C8C8' },
+  black: { bg: '#000000', line: '#C8C8C8' },
+  white: { bg: '#FFFFFF', line: '#C8C8C8' },
+};
 
 // ---------- 定时 / 节流（毫秒） ----------
 export const TOAST_DURATION_MS = 2600;
@@ -117,3 +165,6 @@ export const PANEL_FULL_WIDTH = {             // 展开宽度（与 CSS 中 asid
 };
 export const PANEL_IDS = ['left-panel', 'color-highlight-panel', 'right-panel'];
 export const PANEL_STORAGE_KEY = 'fuse-beads.panel-collapsed';
+
+// ---------- 主题 ----------
+export const THEME_STORAGE_KEY = 'fuse-theme';

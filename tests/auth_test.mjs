@@ -1,15 +1,16 @@
-﻿import { createRequire } from 'module';
+import { createRequire } from 'module';
 import { spawn, execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
-const { chromium } = require('C:/Users/myouh/AppData/Local/Temp/pwauth/node_modules/playwright');
-const ROOT = 'C:/Users/myouh/Documents/fuse-beads-tool';
-const STATE = path.join(ROOT, 'data', 'state.json');
+const pwPath = process.env.PLAYWRIGHT_PATH || 'C:/Users/myouh/AppData/Local/Temp/pwauth/node_modules/playwright';
+const { chromium } = require(pwPath);
+const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')));
 const TOKEN = 'test-token-123';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fuse_auth_'));
+const STATE = path.join(TMP, 'state.json');
 const IMG = path.join(TMP, 't.png');
 const code = `
 from PIL import Image
@@ -23,7 +24,7 @@ img.save(${JSON.stringify(IMG)})
 execFileSync('python', ['-c', code]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function startServer(port, extraEnv = {}) {
-  const env = { ...process.env, APP_TOKEN: TOKEN, PORT: String(port), ...extraEnv };
+  const env = { ...process.env, APP_TOKEN: TOKEN, PORT: String(port), DATA_DIR: TMP, ...extraEnv };
   return spawn('python', ['app.py'], { cwd: ROOT, env, stdio: 'ignore' });
 }
 async function waitReady(port, tries = 60) {
