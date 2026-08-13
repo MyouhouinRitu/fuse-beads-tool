@@ -9,7 +9,7 @@ from PIL import Image, ImageFilter, ImageOps
 
 # 目标像素量上下限：与前端 #target-pixels 输入框的 min/max 保持一致
 MIN_TARGET_PIXELS = 100
-HARD_CAP_PIXELS = 120000
+HARD_CAP_PIXELS = 80000
 
 # 锐化参数（UnsharpMask）
 SHARPEN_RADIUS = 2

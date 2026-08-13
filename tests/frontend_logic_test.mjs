@@ -11,6 +11,8 @@ import {
   undoStep,
   redoStep,
   applyStepToGrid,
+  recordStructuralStep,
+  applyStructuralStep,
   MAX_UNDO_STEPS,
 } from '../static/js/history.js';
 
@@ -166,6 +168,48 @@ import {
   assert.equal(u2.length, MAX_UNDO_STEPS, '撤销栈不应超过 20 步');
   assert.equal(u2[0].changes[0].from, 5, '应丢弃最旧的 5 步');
   console.log('[OK] 单步撤销/重做：增量记录、重做清空、20 步上限');
+}
+
+// ---- 结构型步骤（裁剪）：撤销/重做与增量叠加 ----
+{
+  const undoStack = [];
+  const redoStack = [];
+  const before = {
+    width: 4,
+    height: 3,
+    grid: Int16Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    baseGrid: Int16Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+  };
+  const after = {
+    width: 2,
+    height: 2,
+    grid: Int16Array.from([5, 6, 9, 10]),
+    baseGrid: Int16Array.from([5, 6, 9, 10]),
+  };
+  recordStructuralStep(undoStack, redoStack, before, after);
+  assert.equal(undoStack.length, 1, '结构型步骤应独占撤销栈');
+  assert.ok(undoStack[0].structural && undoStack[0].type === 'crop', '步骤应标记为结构型裁剪');
+
+  const holder = {};
+  applyStructuralStep(holder, undoStack[0], 'undo');
+  assert.equal(holder.width, 4, '撤销应恢复宽度');
+  assert.equal(holder.height, 3, '撤销应恢复高度');
+  assert.deepEqual(Array.from(holder.grid), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], '撤销应恢复网格');
+
+  undoStep(undoStack, redoStack);
+  applyStructuralStep(holder, redoStack[0], 'redo');
+  assert.equal(holder.width, 2, '重做应恢复裁剪后宽度');
+  assert.deepEqual(Array.from(holder.grid), [5, 6, 9, 10], '重做应恢复裁剪后网格');
+  assert.deepEqual(Array.from(holder.baseGrid), [5, 6, 9, 10], '基副本应随裁剪同步');
+
+  // 重做后裁剪步骤回到撤销栈，可继续叠加增量步骤（坐标以新尺寸为准）
+  redoStep(undoStack, redoStack);
+  recordStep(undoStack, redoStack, [{ x: 0, y: 0, from: 5, to: 0 }]);
+  assert.equal(undoStack.length, 2, '裁剪后增量步骤可叠加');
+  const popped = undoStep(undoStack, redoStack);
+  assert.ok(popped && !popped.structural, '撤销应先取增量步骤');
+  assert.equal(undoStack.length, 1, '撤销增量步骤后回到裁剪步骤');
+  console.log('[OK] 结构型步骤：裁剪撤销/重做与增量叠加');
 }
 
 console.log('\n前端逻辑测试全部通过');

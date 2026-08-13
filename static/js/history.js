@@ -103,3 +103,34 @@ export function applyStepToGrid(grid, width, changes, mode) {
     grid[ch.y * width + ch.x] = mode === 'undo' ? ch.from : ch.to;
   }
 }
+
+// ---------------- 结构型步骤（裁剪等改变画布尺寸的操作） ----------------
+
+// 结构型步骤的快照：包含尺寸、网格与滑块基副本（基副本随裁剪同步变化，撤销时需一并还原）
+function snapshotOf(projectLike) {
+  return {
+    width: projectLike.width,
+    height: projectLike.height,
+    grid: Array.from(projectLike.grid),
+    baseGrid: projectLike.baseGrid ? Array.from(projectLike.baseGrid) : Array.from(projectLike.grid),
+  };
+}
+
+// 记录一步结构型操作（如裁剪）：尺寸变化后旧的坐标增量步骤全部失效，
+// 因此清空撤销/重做栈后仅保留本步骤；之后新的增量步骤再叠加在本步骤之上。
+export function recordStructuralStep(undoStack, redoStack, before, after, type = 'crop') {
+  const step = { structural: true, type, before: snapshotOf(before), after: snapshotOf(after) };
+  undoStack.length = 0;
+  redoStack.length = 0;
+  undoStack.push(step);
+  return step;
+}
+
+// 把结构型步骤应用到目标对象（{ width, height, grid, baseGrid }）；mode: 'undo' | 'redo'
+export function applyStructuralStep(target, step, mode) {
+  const snap = mode === 'undo' ? step.before : step.after;
+  target.width = snap.width;
+  target.height = snap.height;
+  target.grid = Int16Array.from(snap.grid);
+  target.baseGrid = Int16Array.from(snap.baseGrid || snap.grid);
+}

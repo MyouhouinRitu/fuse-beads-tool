@@ -6,15 +6,36 @@
   <title>拼豆工具</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/style.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('fuse-theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
 </head>
 <body>
   <header class="toolbar">
-    <div class="brand">拼豆工具</div>
+    <div class="tb-row title-row">
+      <div class="brand">拼豆工具</div>
+      <span class="spacer"></span>
+      <button id="btn-theme" title="切换日间 / 夜间模式">🌙 夜间模式</button>
+    </div>
     <div class="tb-row">
       <button id="btn-import" class="primary">导入图片</button>
       <input type="file" id="file-input" accept="image/*" hidden>
       <label class="field">目标像素量
-        <input type="number" id="target-pixels" min="100" max="120000" step="100" value="40000" title="图片压缩后的总像素量">
+        <span class="target-pixels-wrap">
+          <input type="number" id="target-pixels" min="100" max="80000" step="100" value="5000" title="图片压缩后的总像素量">
+          <button type="button" id="target-pixels-btn" class="target-pixels-btn" title="选择常用像素量">▾</button>
+          <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden"></div>
+        </span>
       </label>
       <label class="chk"><input type="checkbox" id="chk-sharpen" checked>锐化</label>
       <label class="field">颜色距离
@@ -25,6 +46,13 @@
       </label>
       <button id="btn-recompress" title="按当前设置重新压缩并重新生成图案">重新压缩</button>
       <span class="spacer"></span>
+      <div class="dropdown" id="fix-dropdown">
+        <button id="btn-fix-menu" title="查看常见使用问题的修复说明">使用问题修复 <span class="caret">▾</span></button>
+        <div id="fix-menu" class="dropdown-menu hidden">
+          <button id="fix-item-gesture" class="dropdown-item">右键在界面上只画线不拖拽</button>
+        </div>
+      </div>
+      <span class="tb-divider"></span>
       <button id="btn-undo" disabled title="撤销上一步修改（Ctrl+Z）">撤销</button>
       <button id="btn-redo" disabled title="重做已撤销的修改（Ctrl+Y）">重做</button>
       <span id="undo-info" class="muted" title="当前单步记录数量（最多 20 步）">单步记录：0/20</span>
@@ -40,7 +68,7 @@
       </label>
       <span id="used-colors" class="muted"></span>
       <span class="spacer"></span>
-      <span class="hint">右键拖拽平移 · 滚轮缩放 · 左键单击/拖拽选择区域 · Shift 追加多选 · D 键九宫格改色（单选格优先，否则悬停格）· ESC 清除选择/返回选择模式 · Ctrl+S 保存状态 · Ctrl+Z 撤销 · Ctrl+Y 重做</span>
+      <span class="hint">右键拖拽平移 · 滚轮缩放 · 左键单击/拖拽选择区域 · Shift 追加多选 · D 键九宫格改色（单选格优先，否则悬停格）· Q/W/E/R 切换画笔/取色/橡皮/裁剪 · Delete 清除选中格为空位 · ESC 清除选择/返回选择模式 · Ctrl+S 保存状态 · Ctrl+Z 撤销 · Ctrl+Y 重做</span>
     </div>
   </header>
 
@@ -82,6 +110,7 @@
               <button id="tool-brush" class="tool" title="用当前颜色涂色（ESC 返回选择模式）">画笔</button>
               <button id="tool-picker" class="tool" title="点击像素取色（ESC 返回选择模式）">取色</button>
               <button id="tool-eraser" class="tool" title="擦除格子（空位）">橡皮</button>
+              <button id="tool-crop" class="tool" title="裁剪图案（R 键；ESC 返回选择模式）">裁剪</button>
             </div>
             <div class="mode-line">
               当前模式：<span id="mode-label" class="mode-label">选择模式</span>
@@ -91,6 +120,10 @@
                 </label>
                 <button id="select-highlight" type="button" class="tool-mini"
                   title="选中当前高亮色号的全部像素并取消高亮显示" disabled>选中高亮</button>
+              </span>
+              <span id="crop-controls" class="selection-controls hidden">
+                <button id="btn-auto-crop" type="button" class="tool-mini" title="自动收缩到非空格的包围盒">自动裁剪</button>
+                <button id="btn-apply-crop" type="button" class="primary tool-mini" title="应用裁剪并退出裁剪模式">应用</button>
               </span>
               <label class="field brush-size-field hidden" id="brush-size-wrap"
                 title="画笔 / 橡皮的矩形边长 = 2 × 数值 − 1（仅画笔与橡皮模式显示）">
@@ -144,6 +177,7 @@
         </div>
         <div id="empty-hint">请先导入一张图片<br>导入后会自动转换为拼豆图案</div>
       </div>
+      <div id="crop-magnifier" class="crop-magnifier hidden"><canvas id="crop-magnifier-canvas"></canvas></div>
       <div id="quick-picker" class="hidden"></div>
     </section>
 
@@ -187,6 +221,18 @@
       </button>
     </aside>
   </main>
+
+  <div id="doc-dialog" class="dialog-mask hidden">
+    <div class="dialog dialog-wide">
+      <h3>使用问题修复</h3>
+      <div class="dialog-body">
+        <div id="doc-content" class="doc-content"></div>
+      </div>
+      <div class="dialog-actions">
+        <button id="doc-close" class="primary">关闭</button>
+      </div>
+    </div>
+  </div>
 
   <div id="export-dialog" class="dialog-mask hidden">
     <div class="dialog dialog-wide">

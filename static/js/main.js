@@ -16,6 +16,8 @@ import {
   CANVAS_EDGE_CELLS,
   ORIG_MAX_DIM,
   DEFAULT_TARGET_PIXELS,
+  TARGET_PIXELS_MAX,
+  TARGET_PIXEL_PRESETS,
   SCREEN_CELL_MIN,
   SCREEN_CELL_MAX_DIM,
   SCREEN_CELL_MAX_AREA,
@@ -32,6 +34,12 @@ import {
   QUICK_PICKER_HEIGHT,
   QUICK_PICKER_EDGE_MARGIN,
   QUICK_PICKER_OFFSET_CELLS,
+  CROP_MAGNIFIER_MIN_SCREEN_CELL,
+  CROP_MAGNIFIER_SIZE,
+  CROP_MAGNIFIER_SCALE,
+  CROP_EDGE_HIT_PX,
+  GRID_FINE_MIN_SCREEN_CELL,
+  GRID_THICK_MIN_SCREEN_CELL,
   EXPORT_CELL_MIN,
   EXPORT_CELL_MAX,
   EXPORT_CELL_DEFAULT,
@@ -60,6 +68,8 @@ import {
   undoStep,
   redoStep,
   applyStepToGrid,
+  recordStructuralStep,
+  applyStructuralStep,
   MAX_UNDO_STEPS,
 } from './history.js';
 
@@ -70,11 +80,14 @@ const els = {
   fileInput: $('file-input'),
   btnImport: $('btn-import'),
   targetPixels: $('target-pixels'),
+  targetPixelsBtn: $('target-pixels-btn'),
+  targetPixelsMenu: $('target-pixels-menu'),
   btnRecompress: $('btn-recompress'),
   chkSharpen: $('chk-sharpen'),
   chkCodes: $('chk-codes'),
   selDistance: $('sel-distance'),
   btnExport: $('btn-export'),
+  btnTheme: $('btn-theme'),
   btnSaveStateSide: $('btn-save-state-side'),
   btnClearAll: $('btn-clear-all'),
   btnLogout: $('btn-logout'),
@@ -95,10 +108,14 @@ const els = {
   toolBrush: $('tool-brush'),
   toolPicker: $('tool-picker'),
   toolEraser: $('tool-eraser'),
+  toolCrop: $('tool-crop'),
   modeLabel: $('mode-label'),
   selectionControls: $('selection-controls'),
   sameColorChk: $('same-color-select'),
   selectHighlightBtn: $('select-highlight'),
+  cropControls: $('crop-controls'),
+  btnAutoCrop: $('btn-auto-crop'),
+  btnApplyCrop: $('btn-apply-crop'),
   brushSize: $('brush-size'),
   brushSizeValue: $('brush-size-value'),
   brushSizeWrap: $('brush-size-wrap'),
@@ -107,6 +124,8 @@ const els = {
   colorList: $('color-list'),
   canvas: $('canvas'),
   canvasScroll: $('canvas-scroll'),
+  cropMagnifier: $('crop-magnifier'),
+  cropMagnifierCanvas: $('crop-magnifier-canvas'),
   canvasOriginal: $('canvas-original'),
   compareOriginal: $('compare-original'),
   beadPane: $('bead-pane'),
@@ -125,6 +144,12 @@ const els = {
   btnUndo: $('btn-undo'),
   btnRedo: $('btn-redo'),
   undoInfo: $('undo-info'),
+  btnFixMenu: $('btn-fix-menu'),
+  fixMenu: $('fix-menu'),
+  fixItemGesture: $('fix-item-gesture'),
+  docDialog: $('doc-dialog'),
+  docContent: $('doc-content'),
+  docClose: $('doc-close'),
   exportDialog: $('export-dialog'),
   dlgCell: $('dlg-cell-size'),
   dlgGrid: $('dlg-grid-lines'),
@@ -174,6 +199,9 @@ const App = {
   brushColor: null,    // 未选择颜色
   brushSize: 1,        // 画笔 / 橡皮矩形边长的一半（边长 = 2 × brushSize − 1）
   tool: TOOLS.SELECT,  // select（选择）/ brush（画笔）/ eraser（橡皮）/ picker（取色）
+  crop: null,          // 裁剪矩形 {x0,y0,x1,y1}（含端点）
+  cropActiveEdge: null, // 当前选中/拖拽的边：left/right/top/bottom
+  cropPreview: null,   // 裁剪预览虚线 {horizontal, pos}（选中边时将移动到的格线）
   selection: new Set(), // 当前选中的像素格索引集合（p = y*width + x）
   dragSelect: null,     // 矩形拖选中的实时预览范围 {x0,y0,x1,y1}
   sameColorSelect: false, // 同色选区：单击只选四方向相连的同色像素
@@ -212,12 +240,15 @@ const App = {
 let renderQueued = false;
 let canvasRenderQueued = false;
 let toastTimer = null;
+let cropLastMouse = null; // 裁剪模式最近一次鼠标位置（缩放后重绘放大镜用）
+let baseDetailKey = null; // 底图细节层级（细线/色号、粗线是否隐藏），跨阈值时重建底图
 let authResolve = null;
 let batchingFill = false; // 批量填充时暂缓逐格重绘/自动保存，结束后统一提交
 // 渲染选区缓存：selection / dragSelect 引用不变则复用，避免大选区每次重绘都复制
 let renderSelectionCache = { sel: null, drag: null, value: null };
 const dragState = {
   active: false,
+  cropEdge: null,      // 裁剪模式当前拖拽的边
   orig: false,
   moved: false,
   panning: false,
@@ -803,15 +834,20 @@ function clearHistoryRecords() {
   App.strokeBuffer = null;
 }
 
-// 项目内容重建后统一重置编辑状态：选区/拖拽预览/色号高亮/九宫格与单步记录，并视为无未保存修改
-function resetProjectEditingState() {
+// 清空与网格坐标相关的编辑状态（保留撤销栈；结构型撤销/重做时使用）
+function clearProjectEditingState() {
   App.selection = new Set();
   App.dragSelect = null;
   App.highlightColor = null;
-  App.undoStack = [];
-  App.redoStack = [];
   App.strokeBuffer = null;
   closeQuickPicker();
+}
+
+// 项目内容重建后统一重置编辑状态：选区/拖拽预览/色号高亮/九宫格与单步记录，并视为无未保存修改
+function resetProjectEditingState() {
+  clearProjectEditingState();
+  App.undoStack = [];
+  App.redoStack = [];
   setDirty(false);
 }
 
@@ -884,7 +920,25 @@ function renderBaseLayer() {
     edgeNumbers: true, // 工作区始终显示四周行列号条
     showCodes: App.settings.showCodes,
     codes: buildCodes(),
+    zoom: App.zoom,
   });
+  baseDetailKey = baseDetailFlags();
+}
+
+// 底图细节层级：细线/色号（阈值 8）与粗虚线/实线（阈值 4）是否隐藏
+function baseDetailFlags() {
+  const s = App.screenCell * App.zoom;
+  return (s < GRID_FINE_MIN_SCREEN_CELL ? 1 : 0) | (s < GRID_THICK_MIN_SCREEN_CELL ? 2 : 0);
+}
+
+// 缩放跨越细节阈值时重建底图（细线/色号、粗虚线/实线随缩放隐藏）
+function syncBaseLayerDetail() {
+  const key = baseDetailFlags();
+  if (baseDetailKey !== null && baseDetailKey !== key) {
+    renderBaseLayer();
+    composeCanvas();
+  }
+  baseDetailKey = key;
 }
 
 // 把底图 + 覆盖层（选区 / 高亮 / hover / 九宫格目标格）合成到主画布
@@ -899,6 +953,7 @@ function composeCanvas() {
   // 尺寸未变时不清空画布，直接覆盖绘制（底图覆盖整块画布）
   if (ctx.canvas.width !== metrics.w) ctx.canvas.width = metrics.w;
   if (ctx.canvas.height !== metrics.h) ctx.canvas.height = metrics.h;
+  ctx.clearRect(0, 0, metrics.w, metrics.h); // 清掉上一帧残留（如裁剪蒙版留在四角的像素）
   ctx.drawImage(baseCanvas, 0, 0);
   drawPatternOverlay(ctx, project.width, project.height, display.idx, display.rgb, {
     cell: App.screenCell,
@@ -908,8 +963,11 @@ function composeCanvas() {
     selected,
     highlightColor: App.highlightColor,
     highlightBlink: App.highlightBlink,
+    crop: App.crop,
+    cropActiveEdge: App.cropActiveEdge,
+    cropPreview: dragState.cropEdge ? null : App.cropPreview,
     toolState: {
-      hover: App.hoverCell,
+      hover: App.tool === TOOLS.CROP ? null : App.hoverCell,
       tool: App.tool,
       brushSize: App.brushSize,
       pickerCell: App.pickerCell ? { x: App.pickerCell.x, y: App.pickerCell.y } : null,
@@ -977,6 +1035,8 @@ function zoomFit() {
   App.zoom = fit.zoom;
   App.pan = fit.pan;
   applyTransform();
+  refreshCropMagnifier();
+  syncBaseLayerDetail();
   if (App.syncPan && App.originalImage) {
     mirrorBeadToOrig();
     applyOriginalTransform();
@@ -995,6 +1055,8 @@ function zoomAt(clientX, clientY, factor) {
   applyTransform();
   // 缩放后立即重绘覆盖层，让 hover 边框的隐藏阈值随缩放即时生效（底图不受缩放影响）
   composeCanvas();
+  syncBaseLayerDetail();
+  refreshCropMagnifier();
   if (App.syncPan && App.originalImage) {
     mirrorBeadToOrig();
     applyOriginalTransform();
@@ -1194,6 +1256,27 @@ function darkestPaletteIndex() {
   return best;
 }
 
+// 画笔未选色时取调色板最暗色；调色板为空时提示并返回 false
+function ensureBrushColor() {
+  if (App.brushColor != null) return true;
+  const dark = darkestPaletteIndex();
+  if (dark == null) {
+    toast('调色板为空，请先导入颜色配置');
+    return false;
+  }
+  App.brushColor = dark;
+  updateBrush();
+  renderBrushColorList();
+  renderAll();
+  return true;
+}
+
+// 快捷键 / 按钮共用：切换到指定工具（画笔未选色时先取最暗色）
+function switchToolShortcut(tool) {
+  if (tool === TOOLS.BRUSH && !ensureBrushColor()) return;
+  setTool(tool);
+}
+
 // 模式相关控件：画笔/橡皮显示尺寸拖动条；选择模式显示同色选区与选中高亮颜色
 function updateModeControls() {
   const size = String(App.brushSize);
@@ -1201,6 +1284,7 @@ function updateModeControls() {
   if (els.brushSizeValue.textContent !== size) els.brushSizeValue.textContent = size;
   els.brushSizeWrap.classList.toggle('hidden', App.tool !== TOOLS.BRUSH && App.tool !== TOOLS.ERASER);
   els.selectionControls.classList.toggle('hidden', App.tool !== TOOLS.SELECT);
+  els.cropControls.classList.toggle('hidden', App.tool !== TOOLS.CROP);
   const disabled = App.highlightColor == null;
   if (els.selectHighlightBtn.disabled !== disabled) els.selectHighlightBtn.disabled = disabled;
 }
@@ -1288,7 +1372,7 @@ async function processUpload({ confirmHistory = true } = {}) {
   if (!App.originalFile) return;
   if (confirmHistory && !confirmClearRecords('导入图片将清空全部事务历史与撤销记录。是否继续？')) return;
   try {
-    const target = parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS;
+    const target = Math.min(TARGET_PIXELS_MAX, parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS);
     const res = await api.uploadImage(App.originalFile, target, els.chkSharpen.checked);
     const img = new Image();
     img.src = 'data:image/png;base64,' + res.pngBase64;
@@ -1471,18 +1555,58 @@ function fillSelectionWithBrush() {
   scheduleAutosave();
 }
 
-// ---------------- 单步撤销 / 重做 ----------------
-
-function doUndo() {
-  if (!App.project) return;
-  const step = undoStep(App.undoStack, App.redoStack);
-  if (!step) return;
-  applyStepToGrid(App.project.grid, App.project.width, step.changes, 'undo');
+// Delete 键：把选中格清除为空位，整块记一步撤销（不改变选择与模式）
+function clearSelectionToEmpty() {
+  if (!App.project || !App.selection.size) return;
+  const { grid, width } = App.project;
+  const changes = [];
+  for (const p of App.selection) {
+    if (grid[p] < 0) continue; // 已是空位
+    changes.push({ x: p % width, y: (p / width) | 0, from: grid[p], to: -1 });
+    grid[p] = -1;
+  }
+  if (!changes.length) return;
+  recordStep(App.undoStack, App.redoStack, changes);
   setDirty(true);
   App.editedSinceSlider = true;
   renderHistoryUI();
   scheduleRender();
   scheduleAutosave();
+  toast(`已清除 ${changes.length} 格为空位`);
+}
+
+// ---------------- 单步撤销 / 重做 ----------------
+
+// 裁剪等结构型操作的统一记录入口：旧增量步骤因坐标失效会被清空
+function recordCropStep(before, after) {
+  return recordStructuralStep(App.undoStack, App.redoStack, before, after, 'crop');
+}
+
+// 应用一步撤销 / 重做（兼容普通增量步骤与结构型步骤）
+function applyUndoRedoStep(step, mode) {
+  if (step.structural) {
+    const holder = { width: 0, height: 0, grid: null, baseGrid: null };
+    applyStructuralStep(holder, step, mode);
+    App.project = { width: holder.width, height: holder.height, grid: holder.grid };
+    App.baseGrid = holder.baseGrid;
+    App.sliderN = null;
+    App.editedSinceSlider = false;
+    clearProjectEditingState();
+    zoomFit(); // 尺寸变化后适应窗口
+  } else {
+    applyStepToGrid(App.project.grid, App.project.width, step.changes, mode);
+  }
+  setDirty(true);
+  renderHistoryUI();
+  scheduleRender();
+  scheduleAutosave();
+}
+
+function doUndo() {
+  if (!App.project) return;
+  const step = undoStep(App.undoStack, App.redoStack);
+  if (!step) return;
+  applyUndoRedoStep(step, 'undo');
   toast(`已撤销（剩余 ${App.undoStack.length} 步）`);
 }
 
@@ -1490,12 +1614,7 @@ function doRedo() {
   if (!App.project) return;
   const step = redoStep(App.undoStack, App.redoStack);
   if (!step) return;
-  applyStepToGrid(App.project.grid, App.project.width, step.changes, 'redo');
-  setDirty(true);
-  App.editedSinceSlider = true;
-  renderHistoryUI();
-  scheduleRender();
-  scheduleAutosave();
+  applyUndoRedoStep(step, 'redo');
   toast(`已重做（剩余 ${App.redoStack.length} 步）`);
 }
 
@@ -1917,6 +2036,7 @@ function renderExportPreview() {
     codes: buildCodes(),
     legend: showLegend ? legend : [],
     showLegend,
+    background: '#ffffff', // 导出预览以白底呈现（图例 / 外白边区域不透明）
   });
   const pv = els.dlgPreview;
   const scale = Math.min(EXPORT_PREVIEW_MAX_W / off.width, EXPORT_PREVIEW_MAX_H / off.height, 1);
@@ -1965,13 +2085,120 @@ async function doExport() {
   }
 }
 
+// ---------------- 使用问题修复（下拉菜单 + 文档弹窗） ----------------
+
+const FIX_DOCS = {
+  'right-drag-gesture-fix': '/static/docs/right-drag-gesture-fix.md',
+};
+
+// 极简 Markdown 渲染：仅覆盖文档用到的标题 / 列表 / 引用 / 加粗 / 行内代码 / 代码块
+function renderMarkdown(md) {
+  const esc = (s) => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = (s) => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  let html = '';
+  let list = null;
+  let inCode = false;
+  const codeBuf = [];
+  const closeList = () => {
+    if (list) { html += `</${list}>`; list = null; }
+  };
+  for (const raw of String(md).split(/\r?\n/)) {
+    if (/^```/.test(raw)) {
+      if (inCode) { html += '<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>'; codeBuf.length = 0; inCode = false; }
+      else inCode = true;
+      continue;
+    }
+    if (inCode) { codeBuf.push(raw); continue; }
+    const h = raw.match(/^(#{1,4})\s+(.*)/);
+    if (h) {
+      closeList();
+      const level = h[1].length;
+      html += `<h${level}>${inline(h[2])}</h${level}>`;
+      continue;
+    }
+    const quote = raw.match(/^\s*>\s?(.*)/);
+    if (quote) {
+      closeList();
+      if (quote[1].trim() !== '') html += `<blockquote><p>${inline(quote[1])}</p></blockquote>`;
+      continue;
+    }
+    const ul = raw.match(/^\s*[-*]\s+(.*)/);
+    if (ul) {
+      if (list !== 'ul') { closeList(); html += '<ul>'; list = 'ul'; }
+      html += `<li>${inline(ul[1])}</li>`;
+      continue;
+    }
+    const ol = raw.match(/^\s*\d+[.、]\s+(.*)/);
+    if (ol) {
+      if (list !== 'ol') { closeList(); html += '<ol>'; list = 'ol'; }
+      html += `<li>${inline(ol[1])}</li>`;
+      continue;
+    }
+    closeList();
+    if (raw.trim() === '') continue;
+    html += `<p>${inline(raw)}</p>`;
+  }
+  if (inCode) html += '<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>';
+  closeList();
+  return html;
+}
+
+async function openFixDoc(key) {
+  const url = FIX_DOCS[key];
+  if (!url) return;
+  let text;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    text = await res.text();
+  } catch (err) {
+    els.docContent.textContent = '文档加载失败：' + err.message;
+    els.docDialog.classList.remove('hidden');
+    return;
+  }
+  els.docContent.innerHTML = renderMarkdown(text);
+  els.docDialog.classList.remove('hidden');
+}
+
+function closeFixDoc() {
+  els.docDialog.classList.add('hidden');
+}
+
+// ---------------- 日间 / 夜间模式 ----------------
+
+const THEME_STORAGE_KEY = 'fuse-theme';
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  els.btnTheme.textContent = theme === 'dark' ? '☀ 日间模式' : '🌙 夜间模式';
+  els.btnTheme.title = theme === 'dark' ? '当前为夜间模式，点击切换为日间' : '当前为日间模式，点击切换为夜间';
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (e) {
+    // localStorage 不可用时（如隐私模式）忽略，仅本次会话生效
+  }
+  if (App.project) redrawCanvas(); // 工作区四角颜色随主题重绘
+  refreshCropMagnifier();
+}
+
+function toggleTheme() {
+  applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+}
+
 // ---------------- 自动保存与恢复 ----------------
 
 function buildStatePayload() {
   return {
     settings: {
       ...App.settings,
-      targetPixels: parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS,
+      targetPixels: Math.min(TARGET_PIXELS_MAX, parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS),
     },
     project: App.project ? {
       width: App.project.width,
@@ -2130,6 +2357,7 @@ function startLeftDrag(e, cell) {
 function resetDragState() {
   App.dragSelect = null;
   dragState.active = false;
+  dragState.cropEdge = null;
   dragState.orig = false;
   dragState.moved = false;
   dragState.panning = false;
@@ -2200,6 +2428,11 @@ function updateDragMove(e) {
     applyTransform();
     return;
   }
+  if (dragState.cropEdge) {
+    // 裁剪模式：拖拽移动选中的边
+    updateCropEdgeDrag(e);
+    return;
+  }
   if (App.tool === TOOLS.SELECT && dragState.moved && dragState.selectionAnchor && !App.sameColorSelect) {
     // 矩形拖选实时预览（裁剪到图案边界）
     const cell = cellFromEvent(e);
@@ -2221,8 +2454,12 @@ function updateDragMove(e) {
 
 // 统一的 mousemove 入口：先更新 hover，再处理拖拽
 function onWindowMouseMove(e) {
+  if (App.tool === TOOLS.CROP) cropLastMouse = { clientX: e.clientX, clientY: e.clientY };
   updateHoverCell(e);
   updateDragMove(e);
+  updateCropCursor(e);
+  updateCropPreview(e);
+  updateCropMagnifier(e);
 }
 
 function onWindowMouseUp() {
@@ -2242,6 +2479,12 @@ function onWindowMouseUp() {
     if (App.strokeBuffer.length) recordStep(App.undoStack, App.redoStack, App.strokeBuffer);
     App.strokeBuffer = null;
     renderHistoryUI();
+  }
+  if (dragState.cropEdge && dragState.moved) {
+    // 拖拽结束：默认取消选中该边（单击移动到格线则保持选中）
+    App.cropActiveEdge = null;
+    App.cropPreview = null;
+    scheduleRender();
   }
   resetDragState();
 }
@@ -2265,6 +2508,11 @@ function onCanvasScrollMouseDown(e) {
   e.preventDefault();
   if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
   startLeftDrag(e, cell);
+  if (App.tool === TOOLS.CROP) {
+    // 裁剪模式：选中/拖拽边，或按平行格线移动已选中的边
+    handleCropMouseDown(e);
+    return;
+  }
   if (App.tool === TOOLS.SELECT) {
     // 选择模式：左键单击/拖拽选择区域（同色选区勾选时拖拽无效，仅单击）
     if (cell) {
@@ -2307,6 +2555,7 @@ function onCanvasScrollMouseLeave() {
     App.hoverCell = null;
     scheduleCanvasRender();
   }
+  hideCropMagnifier();
 }
 
 function onCanvasWheel(e) {
@@ -2326,8 +2575,32 @@ function onCompareWheel(e) {
 
 // ---------------- 事件绑定 ----------------
 
+// 渲染「目标像素量」下拉预设项（带悬浮提示）
+function renderTargetPixelOptions() {
+  const menu = els.targetPixelsMenu;
+  menu.innerHTML = '';
+  TARGET_PIXEL_PRESETS.forEach((p) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dropdown-item';
+    btn.dataset.value = String(p.value);
+    btn.title = p.tip;
+    btn.textContent = String(p.value);
+    btn.addEventListener('click', () => {
+      els.targetPixels.value = String(p.value);
+      els.targetPixelsMenu.classList.add('hidden');
+    });
+    menu.appendChild(btn);
+  });
+}
+
 function bindEvents() {
   bindPanelToggles();
+  renderTargetPixelOptions();
+  els.targetPixelsBtn.addEventListener('click', (e) => {
+    if (e.stopPropagation) e.stopPropagation();
+    els.targetPixelsMenu.classList.toggle('hidden');
+  });
 
   els.btnLogin.addEventListener('click', tryLogin);
   els.loginToken.addEventListener('keydown', (e) => {
@@ -2395,6 +2668,20 @@ function bindEvents() {
   els.btnClearAll.addEventListener('click', clearAll);
   els.btnUndo.addEventListener('click', doUndo);
   els.btnRedo.addEventListener('click', doRedo);
+  els.btnFixMenu.addEventListener('click', (e) => {
+    if (e.stopPropagation) e.stopPropagation();
+    els.fixMenu.classList.toggle('hidden');
+  });
+  els.fixItemGesture.addEventListener('click', () => {
+    els.fixMenu.classList.add('hidden');
+    openFixDoc('right-drag-gesture-fix');
+  });
+  els.docClose.addEventListener('click', closeFixDoc);
+  els.btnTheme.addEventListener('click', toggleTheme);
+  document.addEventListener('click', () => {
+    els.fixMenu.classList.add('hidden');
+    els.targetPixelsMenu.classList.add('hidden');
+  });
 
   els.configSelect.addEventListener('change', () => {
     const name = els.configSelect.value;
@@ -2463,20 +2750,15 @@ function bindEvents() {
     ['toolBrush', TOOLS.BRUSH],
     ['toolEraser', TOOLS.ERASER],
     ['toolPicker', TOOLS.PICKER],
+    ['toolCrop', TOOLS.CROP],
   ]) {
     els[btnKey].addEventListener('click', () => {
-      if (tool === TOOLS.BRUSH && App.brushColor == null) {
-        // 未选色时默认取调色板中最暗的颜色，避免被拦在画笔模式之外
-        const dark = darkestPaletteIndex();
-        if (dark == null) { toast('调色板为空，请先导入颜色配置'); return; }
-        App.brushColor = dark;
-        updateBrush();
-        renderBrushColorList();
-        renderAll();
-      }
+      if (tool === TOOLS.BRUSH && !ensureBrushColor()) return;
       setTool(App.tool === tool ? TOOLS.SELECT : tool);
     });
   }
+  els.btnAutoCrop.addEventListener('click', autoCrop);
+  els.btnApplyCrop.addEventListener('click', applyCrop);
   els.sameColorChk.addEventListener('change', () => {
     App.sameColorSelect = els.sameColorChk.checked;
     App.settings.sameColorSelect = App.sameColorSelect;
@@ -2544,6 +2826,23 @@ function bindEvents() {
     const t = e.target;
     const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
     const mod = e.ctrlKey || e.metaKey;
+    if (e.key === 'Escape') {
+      if (!els.docDialog.classList.contains('hidden')) {
+        closeFixDoc();
+        e.preventDefault();
+        return;
+      }
+      if (!els.fixMenu.classList.contains('hidden')) {
+        els.fixMenu.classList.add('hidden');
+        e.preventDefault();
+        return;
+      }
+      if (!els.targetPixelsMenu.classList.contains('hidden')) {
+        els.targetPixelsMenu.classList.add('hidden');
+        e.preventDefault();
+        return;
+      }
+    }
     // Ctrl+S 与 Ctrl+Z/Y 同样遵循焦点守卫：输入框内不拦截浏览器快捷键
     if (mod && e.key.toLowerCase() === 's' && !inField) {
       e.preventDefault();
@@ -2572,6 +2871,11 @@ function bindEvents() {
       }
       return;
     }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'q') { e.preventDefault(); switchToolShortcut(TOOLS.BRUSH); return; }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'w') { e.preventDefault(); switchToolShortcut(TOOLS.PICKER); return; }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'e') { e.preventDefault(); switchToolShortcut(TOOLS.ERASER); return; }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'r') { e.preventDefault(); switchToolShortcut(TOOLS.CROP); return; }
+    if (e.key === 'Delete') { e.preventDefault(); clearSelectionToEmpty(); return; }
     if (e.key.toLowerCase() === 'd' && App.tool === TOOLS.SELECT && App.project && !dragState.active) {
       // 单选一格时作用于选中格，否则作用于当前悬停格（拖拽中忽略）
       let target = null;
@@ -2593,26 +2897,414 @@ function bindEvents() {
   });
 }
 
+// ---------------- 裁剪工具 ----------------
+
+// 进入裁剪模式：初始矩形 = 整张图
+function initCropRect() {
+  if (!App.project) return;
+  App.crop = { x0: 0, y0: 0, x1: App.project.width - 1, y1: App.project.height - 1 };
+  App.cropActiveEdge = null;
+  App.cropPreview = null;
+}
+
+function hideCropMagnifier() {
+  if (!els.cropMagnifier.classList.contains('hidden')) els.cropMagnifier.classList.add('hidden');
+}
+
+// 事件坐标 → 画布内连续格坐标（horizontal=true 取横向 x，否则取纵向 y）
+function cropPosFromEvent(e, horizontal) {
+  const rect = els.canvas.getBoundingClientRect();
+  const scale = rect.width / els.canvas.width;
+  const cell = App.screenCell;
+  const px = (e.clientX - rect.left) / scale;
+  const py = (e.clientY - rect.top) / scale;
+  return (horizontal ? px : py) / cell - CANVAS_EDGE_CELLS;
+}
+
+// 命中检测：鼠标是否靠近某条边（屏幕像素阈值内）
+function cropEdgeAt(e) {
+  if (!App.project || !App.crop) return null;
+  const rect = els.canvas.getBoundingClientRect();
+  const scale = rect.width / els.canvas.width;
+  const cell = App.screenCell;
+  const px = (e.clientX - rect.left) / scale;
+  const py = (e.clientY - rect.top) / scale;
+  const ox = CANVAS_EDGE_CELLS * cell;
+  const c = App.crop;
+  const rx0 = ox + c.x0 * cell;
+  const ry0 = ox + c.y0 * cell;
+  const rx1 = ox + (c.x1 + 1) * cell;
+  const ry1 = ox + (c.y1 + 1) * cell;
+  const t = CROP_EDGE_HIT_PX / scale;
+  const cands = [];
+  if (py >= ry0 - t && py <= ry1 + t) {
+    cands.push(['left', Math.abs(px - rx0)], ['right', Math.abs(px - rx1)]);
+  }
+  if (px >= rx0 - t && px <= rx1 + t) {
+    cands.push(['top', Math.abs(py - ry0)], ['bottom', Math.abs(py - ry1)]);
+  }
+  let best = null;
+  let bestD = t;
+  for (const [edge, d] of cands) {
+    if (d <= bestD) { best = edge; bestD = d; }
+  }
+  return best;
+}
+
+// 移动一条边到指定格线位置（自动裁剪到图片边界，且保证最小 1 格）
+function moveCropEdgeTo(edge, pos) {
+  if (!App.project || !App.crop) return;
+  const c = App.crop;
+  const w = App.project.width;
+  const h = App.project.height;
+  const v = Math.round(pos);
+  if (edge === 'left') c.x0 = clampInt(v, 0, c.x1);
+  else if (edge === 'right') c.x1 = clampInt(v - 1, c.x0, w - 1);
+  else if (edge === 'top') c.y0 = clampInt(v, 0, c.y1);
+  else if (edge === 'bottom') c.y1 = clampInt(v - 1, c.y0, h - 1);
+  scheduleRender();
+}
+
+// 已选中一条边时，把点击位置换算成与之平行的格线索引
+function cropLineFromEvent(e) {
+  if (!App.cropActiveEdge) return null;
+  const horizontal = App.cropActiveEdge === 'left' || App.cropActiveEdge === 'right';
+  return Math.round(cropPosFromEvent(e, horizontal));
+}
+
+// 是否在图案 + 行列号条区域内（此范围内可选中/拖拽红边；再往外才算「图片之外」）
+function isInCropArea(e) {
+  if (!App.project) return false;
+  const rect = els.canvas.getBoundingClientRect();
+  const scale = rect.width / els.canvas.width;
+  const cell = App.screenCell;
+  const px = (e.clientX - rect.left) / scale;
+  const py = (e.clientY - rect.top) / scale;
+  const totalW = (App.project.width + 2 * CANVAS_EDGE_CELLS) * cell;
+  const totalH = (App.project.height + 2 * CANVAS_EDGE_CELLS) * cell;
+  return px >= -2 && py >= -2 && px <= totalW + 2 && py <= totalH + 2;
+}
+
+function handleCropMouseDown(e) {
+  if (!App.project || !App.crop) return;
+  if (!isInCropArea(e)) {
+    // 图片之外：取消当前边选择，不修改位置
+    if (App.cropActiveEdge != null) {
+      App.cropActiveEdge = null;
+      App.cropPreview = null;
+      scheduleRender();
+    }
+    return;
+  }
+  // 1) 点中某条边：选中并进入拖拽
+  const edge = cropEdgeAt(e);
+  if (edge) {
+    App.cropActiveEdge = edge;
+    dragState.cropEdge = edge;
+    App.cropPreview = null;
+    scheduleRender();
+    return;
+  }
+  // 2) 已选中边：点击平行格线 → 移动该边
+  if (App.cropActiveEdge) {
+    const line = cropLineFromEvent(e);
+    if (line != null) moveCropEdgeTo(App.cropActiveEdge, line);
+    return;
+  }
+  // 3) 未选中边且点击空白：不做操作
+}
+
+// 拖拽移动选中的边
+function updateCropEdgeDrag(e) {
+  const edge = dragState.cropEdge;
+  if (!edge || !App.crop) return;
+  const horizontal = edge === 'left' || edge === 'right';
+  moveCropEdgeTo(edge, cropPosFromEvent(e, horizontal));
+}
+
+// 裁剪模式鼠标：边命中或已选中边时显示调整光标（上下/左右双箭头）
+function updateCropCursor(e) {
+  if (App.tool !== TOOLS.CROP || !App.project || !App.crop) {
+    els.canvas.style.cursor = '';
+    return;
+  }
+  if (dragState.cropEdge) {
+    els.canvas.style.cursor = dragState.cropEdge === 'left' || dragState.cropEdge === 'right' ? 'ew-resize' : 'ns-resize';
+    return;
+  }
+  const edge = cropEdgeAt(e) || App.cropActiveEdge;
+  els.canvas.style.cursor = edge ? (edge === 'left' || edge === 'right' ? 'ew-resize' : 'ns-resize') : '';
+}
+
+// 裁剪预览：选中边且鼠标在图案内时，记录该边将移动到的平行格线（红虚线预览）
+function updateCropPreview(e) {
+  const active = App.tool === TOOLS.CROP && App.project && App.crop
+    && App.cropActiveEdge && !dragState.cropEdge && isInCropArea(e);
+  if (!active) return; // 图片之外：保留当前预览位置，不更新也不清除
+  const horizontal = App.cropActiveEdge === 'left' || App.cropActiveEdge === 'right';
+  const pos = Math.round(cropPosFromEvent(e, horizontal));
+  const maxPos = horizontal ? App.project.width : App.project.height;
+  const clamped = clampInt(pos, 0, maxPos);
+  if (!App.cropPreview || App.cropPreview.horizontal !== horizontal || App.cropPreview.pos !== clamped) {
+    App.cropPreview = { horizontal, pos: clamped };
+    scheduleRender();
+  }
+}
+
+// 自动裁剪：外框收缩到非空格的包围盒（再缩一行/一列就会出现空格）
+function autoCrop() {
+  if (!App.project || App.tool !== TOOLS.CROP || !App.crop) return;
+  const { grid, width, height } = App.project;
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (grid[y * width + x] >= 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) { toast('图案全为空位，无法自动裁剪'); return; }
+  App.crop = { x0: minX, y0: minY, x1: maxX, y1: maxY };
+  App.cropActiveEdge = null;
+  hideCropMagnifier();
+  scheduleRender();
+}
+
+// 应用裁剪：记录结构型撤销步骤 + 裁剪前事务快照，然后切换尺寸
+function applyCrop() {
+  if (!App.project || App.tool !== TOOLS.CROP || !App.crop) return;
+  const { x0, y0, x1, y1 } = App.crop;
+  const w = x1 - x0 + 1;
+  const h = y1 - y0 + 1;
+  if (w <= 0 || h <= 0 || x0 < 0 || y0 < 0 || x1 >= App.project.width || y1 >= App.project.height) return;
+  if (w === App.project.width && h === App.project.height) {
+    toast('未做任何裁剪');
+    setTool(TOOLS.SELECT);
+    return;
+  }
+  const before = {
+    width: App.project.width,
+    height: App.project.height,
+    grid: App.project.grid.slice(),
+    baseGrid: App.baseGrid.slice(),
+  };
+  const newGrid = new Int16Array(w * h);
+  const newBase = new Int16Array(w * h);
+  const srcW = App.project.width;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const sp = (y0 + y) * srcW + (x0 + x);
+      newGrid[y * w + x] = App.project.grid[sp];
+      newBase[y * w + x] = App.baseGrid[sp];
+    }
+  }
+  const after = { width: w, height: h, grid: newGrid, baseGrid: newBase };
+  // 事务历史：保存裁剪前的快照，随时可切回
+  const snapshot = {
+    grid: Array.from(before.grid),
+    width: before.width,
+    height: before.height,
+    paletteName: App.configName,
+    palette: App.appliedPalette.map((c) => ({ ...c })),
+    maxColors: App.maxColors,
+  };
+  const item = createTransaction(App.history, snapshot);
+  item.label = `裁剪前 ${before.width}×${before.height}`;
+  // 单步撤销：结构型步骤（旧增量步骤因坐标失效被清空）
+  recordCropStep(before, after);
+  // 应用
+  App.project = { width: w, height: h, grid: newGrid };
+  App.baseGrid = newBase;
+  App.sliderN = null;
+  App.editedSinceSlider = false;
+  App.maxColors = Math.max(2, C.countUsedColors(newGrid, w, h));
+  clearProjectEditingState();
+  setTool(TOOLS.SELECT);
+  renderHistoryUI();
+  renderAll();
+  zoomFit();
+  setDirty(true);
+  scheduleAutosave();
+  toast(`已裁剪为 ${w} × ${h}`);
+}
+
+// 放大镜：低缩放下显示鼠标悬停位置 10×10 的放大视图
+function drawCropMagnifier() {
+  const canvas = els.cropMagnifierCanvas;
+  const n = CROP_MAGNIFIER_SIZE;
+  // 放大后每格尺寸 = 当前屏幕格宽 × 倍率（至少 16px，保证可见）
+  const cell = Math.max(16, Math.round(App.screenCell * App.zoom * CROP_MAGNIFIER_SCALE));
+  canvas.width = n * cell;
+  canvas.height = n * cell;
+  const ctx2 = canvas.getContext('2d');
+  const { grid, width, height } = App.project;
+  const hx = App.hoverCell.x;
+  const hy = App.hoverCell.y;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const outsideColor = dark ? '#3a424c' : '#e8eaee';
+  // 始终以鼠标悬停格为中心（不夹紧到图案边界），边缘处可看到行列号条与外部区域
+  const off = Math.floor((n - 1) / 2);
+  const x0 = hx - off;
+  const y0 = hy - off;
+  ctx2.textAlign = 'center';
+  ctx2.textBaseline = 'middle';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const gx = x0 + c;
+      const gy = y0 + r;
+      const px0 = c * cell;
+      const py0 = r * cell;
+      if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
+        // 图案内：豆色 / 空位
+        const v = grid[gy * width + gx];
+        if (v >= 0) {
+          ctx2.fillStyle = App.appliedPalette[v] ? App.appliedPalette[v].hex : '#ffffff';
+          ctx2.fillRect(px0, py0, cell, cell);
+        } else {
+          ctx2.fillStyle = '#e8eaee';
+          ctx2.fillRect(px0, py0, cell, cell);
+          ctx2.strokeStyle = '#9aa4b0';
+          ctx2.beginPath();
+          ctx2.moveTo(px0, py0 + cell);
+          ctx2.lineTo(px0 + cell, py0);
+          ctx2.stroke();
+        }
+        ctx2.strokeStyle = '#c9ced6';
+        ctx2.lineWidth = 1;
+        ctx2.strokeRect(px0 + 0.5, py0 + 0.5, cell - 1, cell - 1);
+      } else if (((gx === -1 || gx === width) && gy >= 0 && gy < height)
+        || ((gy === -1 || gy === height) && gx >= 0 && gx < width)) {
+        // 行列号条：仅环绕图案的一圈（超出图案的行列不再延伸）
+        ctx2.fillStyle = '#d6e6f7';
+        ctx2.fillRect(px0, py0, cell, cell);
+        let label = '';
+        if (gy >= 0 && gy < height && (gx === -1 || gx === width)) label = String(gy + 1);
+        if (gx >= 0 && gx < width && (gy === -1 || gy === height)) label = String(gx + 1);
+        if (label) {
+          ctx2.fillStyle = '#000000';
+          ctx2.font = `${Math.max(8, Math.round(cell * 0.5))}px Consolas, monospace`;
+          ctx2.fillText(label, px0 + cell / 2, py0 + cell / 2);
+        }
+      } else {
+        // 图案之外（含四角）：夜间用 UI 灰色，日间用浅灰
+        ctx2.fillStyle = outsideColor;
+        ctx2.fillRect(px0, py0, cell, cell);
+      }
+    }
+  }
+  // 裁剪元素：红实线 / 选中边蓝实线 / 预览红虚线（放大镜内同样显示，不画中心格方框）
+  if (App.crop) {
+    const cx0 = (App.crop.x0 - x0) * cell;
+    const cy0 = (App.crop.y0 - y0) * cell;
+    const cx1 = (App.crop.x1 + 1 - x0) * cell;
+    const cy1 = (App.crop.y1 + 1 - y0) * cell;
+    ctx2.lineWidth = 2;
+    const edges = [
+      ['left', cx0, cy0, cx0, cy1],
+      ['right', cx1, cy0, cx1, cy1],
+      ['top', cx0, cy0, cx1, cy0],
+      ['bottom', cx0, cy1, cx1, cy1],
+    ];
+    for (const [name, ex0, ey0, ex1, ey1] of edges) {
+      ctx2.strokeStyle = name === App.cropActiveEdge ? '#3b82f6' : '#ff3b30';
+      ctx2.beginPath();
+      ctx2.moveTo(ex0, ey0);
+      ctx2.lineTo(ex1, ey1);
+      ctx2.stroke();
+    }
+    if (App.cropPreview && !dragState.cropEdge) {
+      ctx2.strokeStyle = '#ff3b30';
+      ctx2.setLineDash([6, 5]);
+      const p = (App.cropPreview.pos - (App.cropPreview.horizontal ? x0 : y0)) * cell;
+      ctx2.beginPath();
+      if (App.cropPreview.horizontal) {
+        ctx2.moveTo(p, 0);
+        ctx2.lineTo(p, n * cell);
+      } else {
+        ctx2.moveTo(0, p);
+        ctx2.lineTo(n * cell, p);
+      }
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    }
+  }
+}
+
+function positionCropMagnifier(e) {
+  const el = els.cropMagnifier;
+  const w = el.offsetWidth || 300;
+  const h = el.offsetHeight || 300;
+  const pad = 16;
+  let left = e.clientX + pad;
+  let top = e.clientY + pad;
+  if (left + w > (window.innerWidth || 0) - 8) left = e.clientX - w - pad;
+  if (top + h > (window.innerHeight || 0) - 8) top = e.clientY - h - pad;
+  el.style.left = left + 'px';
+  el.style.top = top + 'px';
+}
+
+function updateCropMagnifier(e) {
+  const el = els.cropMagnifier;
+  if (App.tool !== TOOLS.CROP || !App.project || !App.hoverCell
+    || App.screenCell * App.zoom >= CROP_MAGNIFIER_MIN_SCREEN_CELL) {
+    hideCropMagnifier();
+    return;
+  }
+  drawCropMagnifier();
+  positionCropMagnifier(e);
+  el.classList.remove('hidden');
+}
+
+// 缩放 / 主题变化后重新评估放大镜是否显示并重绘
+function refreshCropMagnifier() {
+  if (cropLastMouse) updateCropMagnifier(cropLastMouse);
+  else hideCropMagnifier();
+}
+
 function setTool(t) {
   if (App.tool === t) return;
+  if (t === TOOLS.CROP && !App.project) {
+    toast('请先导入图片');
+    return;
+  }
+  // 离开裁剪模式：丢弃未应用的裁剪
+  if (App.tool === TOOLS.CROP && t !== TOOLS.CROP) {
+    App.crop = null;
+    App.cropActiveEdge = null;
+    App.cropPreview = null;
+    hideCropMagnifier();
+  }
   App.tool = t;
   els.toolBrush.classList.toggle('active', t === TOOLS.BRUSH);
   els.toolPicker.classList.toggle('active', t === TOOLS.PICKER);
   els.toolEraser.classList.toggle('active', t === TOOLS.ERASER);
+  els.toolCrop.classList.toggle('active', t === TOOLS.CROP);
   els.canvas.classList.toggle('mode-brush', t === TOOLS.BRUSH);
   els.canvas.classList.toggle('mode-picker', t === TOOLS.PICKER);
   els.canvas.classList.toggle('mode-eraser', t === TOOLS.ERASER);
+  els.canvas.classList.toggle('mode-crop', t === TOOLS.CROP);
   if (t === TOOLS.BRUSH || t === TOOLS.ERASER) {
     // 画笔 / 橡皮模式下选区没有意义，进入时清空；色号高亮保留
     App.selection = new Set();
     App.dragSelect = null;
   }
+  if (t === TOOLS.CROP) {
+    // 裁剪模式：清空选区，初始矩形 = 整图
+    App.selection = new Set();
+    App.dragSelect = null;
+    initCropRect();
+  }
+  document.body.classList.toggle('crop-active', t === TOOLS.CROP);
   // 切换工具后立即重绘，让 hover 边框样式随之更新
   redrawCanvas();
   updateModeControls();
   els.modeLabel.textContent = t === TOOLS.BRUSH ? '画笔模式'
     : t === TOOLS.ERASER ? '橡皮模式'
-      : t === TOOLS.PICKER ? '取色模式' : '选择模式';
+      : t === TOOLS.PICKER ? '取色模式'
+        : t === TOOLS.CROP ? '裁剪模式' : '选择模式';
 }
 
 // ---------------- 启动 ----------------
@@ -2628,6 +3320,7 @@ function assertElements() {
 async function init() {
   assertElements();
   applyPanelPrefs();
+  applyTheme(currentTheme());
   bindEvents();
   await ensureAuth();
   try {
@@ -2656,6 +3349,7 @@ const exposeTestHooks = (
 );
 if (exposeTestHooks) {
   window.__app = App;
+  window.__dragState = dragState;
 
   // 自动化测试用：暴露需要直接驱动的内部函数
   window.__testHooks = {
@@ -2669,6 +3363,16 @@ if (exposeTestHooks) {
     applyQuickColor,
     doUndo,
     doRedo,
+    openFixDoc,
+    closeFixDoc,
+    toggleTheme,
+    recordCropStep,
+    moveCropEdgeTo,
+    updateCropCursor,
+    updateCropPreview,
+    autoCrop,
+    applyCrop,
+    updateCropMagnifier,
     applySlider,
     saveTransaction,
     switchNode,

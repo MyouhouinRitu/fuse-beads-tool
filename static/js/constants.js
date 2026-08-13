@@ -6,7 +6,14 @@
 export const CELL = 28;                       // 每格拼豆在画布上的像素尺寸
 export const CANVAS_EDGE_CELLS = 1;           // 画布四周行列号条的格数（图案外侧 1 格）
 export const OUTER_PAD = 20;                  // 导出时图案外侧纯白边距（像素）
-export const DEFAULT_TARGET_PIXELS = 40000;   // 「目标像素量」输入框默认值
+export const DEFAULT_TARGET_PIXELS = 5000;    // 「目标像素量」输入框默认值
+export const TARGET_PIXELS_MAX = 80000;       // 「目标像素量」上限
+export const TARGET_PIXEL_PRESETS = [
+  { value: 500, tip: '初次尝试拼豆的儿童建议不超过 500' },
+  { value: 2500, tip: '初次尝试拼豆的大人建议不超过 2500' },
+  { value: 5000, tip: '有一定经验的成年人建议不超过 5000' },
+  { value: 10000, tip: '10000 的豆量通常需要消耗 1-2 天时间' },
+];
 export const BRUSH_SIZE_MIN = 1;              // 画笔 / 橡皮最小尺寸
 export const BRUSH_SIZE_MAX = 10;             // 画笔 / 橡皮最大尺寸（与模板中滑块 max 一致）
 
@@ -16,7 +23,18 @@ export const TOOLS = {
   BRUSH: 'brush',
   ERASER: 'eraser',
   PICKER: 'picker',
+  CROP: 'crop',
 };
+
+// ---------- 裁剪工具 ----------
+export const CROP_MAGNIFIER_MIN_SCREEN_CELL = 14; // 格屏宽低于该值时启用放大镜（参考 hover 隐藏阈值）
+export const CROP_MAGNIFIER_SIZE = 10;            // 放大镜窗口边长（格，10×10）
+export const CROP_MAGNIFIER_SCALE = 2.5;          // 放大镜放大倍率
+export const CROP_EDGE_HIT_PX = 8;                // 边缘命中阈值（屏幕像素）
+
+// ---------- 网格细节缩放阈值（格屏宽 = 格尺寸 × 缩放） ----------
+export const GRID_FINE_MIN_SCREEN_CELL = 8;   // 低于该值时隐藏格内细线与色号
+export const GRID_THICK_MIN_SCREEN_CELL = 4;  // 低于该值时隐藏每 5/10 格粗虚线/实线
 
 export const SCREEN_CELL_MIN = 2;             // 超大图案自动缩小格时的最小格尺寸
 export const SCREEN_CELL_MAX_DIM = 28000;     // 画布允许的最大边长（像素）

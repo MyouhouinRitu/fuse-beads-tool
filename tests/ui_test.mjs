@@ -143,7 +143,9 @@ async function main() {
 
   // 1.2 工具栏与右侧面板布局：无描边；显示色号/透明色在画布工具栏；记录+自动保存位于导出左侧；事务历史带未保存提示
   const layout = await page.evaluate(() => {
-    const firstRow = document.querySelectorAll('header .tb-row')[0];
+    // 第一行是标题行（品牌 + 主题切换），主工具按钮行需按内容定位
+    const firstRow = [...document.querySelectorAll('header .tb-row')]
+      .find((row) => row.querySelector('#btn-undo')) || document.querySelectorAll('header .tb-row')[1];
     const headerOrder = ['btn-undo', 'btn-redo', 'undo-info', 'autosave-indicator', 'btn-export'].map((id) => {
       const el = document.getElementById(id);
       return el ? Array.from(firstRow.children).indexOf(el) : -1;

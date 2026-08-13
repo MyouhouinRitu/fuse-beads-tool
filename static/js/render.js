@@ -14,6 +14,8 @@
   HOVER_BRUSH_STROKE_RATIO,
   HOVER_DASH_RATIO,
   HOVER_DASH_MIN,
+  GRID_FINE_MIN_SCREEN_CELL,
+  GRID_THICK_MIN_SCREEN_CELL,
   SELECTION_MIN_SCREEN_STROKE,
   SELECTION_MIN_SCREEN_DASH,
   RAISED_SHADOW_ALPHA,
@@ -131,7 +133,8 @@ function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
 // 网格线规范：
 // - 图案边缘粗黑实线；格内细灰线；每 5 格粗灰虚线；每 10 格粗灰实线
 // - 行列号条内：通常细灰线、每 5 格粗灰实线（不用虚线）；外圈不画线
-function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0) {
+function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0, zoom = 1) {
+  const screenCell = cell * (zoom || 1);
   const thin = Math.max(1, Math.round(cell * GRID_LINE_THIN_RATIO));
   const thick = Math.max(2, Math.round(cell * GRID_LINE_THICK_RATIO));
   const dash = Math.max(3, Math.round(cell * GRID_DASH_RATIO));
@@ -141,13 +144,17 @@ function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0
   const spanH = (height + 2 * edgeCells) * cell;
   const patternStyle = (kp, total) => {
     if (kp === 0 || kp === total) return { lw: thick, color: GRID_BOUNDARY_COLOR, dashed: false };
+    if (screenCell < GRID_THICK_MIN_SCREEN_CELL) return null;
     if (kp % 10 === 0) return { lw: thick, color: GRID_LINE_COLOR, dashed: false };
     if (kp % 5 === 0) return { lw: thick, color: GRID_LINE_COLOR, dashed: true };
+    if (screenCell < GRID_FINE_MIN_SCREEN_CELL) return null;
     return { lw: thin, color: GRID_LINE_COLOR, dashed: false };
   };
   const edgeStyle = (kp, total) => {
     if (kp === 0 || kp === total) return { lw: thick, color: GRID_BOUNDARY_COLOR, dashed: false };
+    if (screenCell < GRID_THICK_MIN_SCREEN_CELL) return null;
     if (kp % 5 === 0) return { lw: thick, color: GRID_LINE_COLOR, dashed: false };
+    if (screenCell < GRID_FINE_MIN_SCREEN_CELL) return null;
     return { lw: thin, color: GRID_LINE_COLOR, dashed: false };
   };
   // 相同样式的实线合并成一条路径批量绘制；虚线逐段绘制，保证每段虚线段相位一致
@@ -189,13 +196,14 @@ function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0
     if (edgeCells && (kp === -1 || kp === width + 1)) continue; // 行列号外圈不画线
     const s = patternStyle(kp, width);
     const se = edgeStyle(kp, width);
+    if (!s && !se) continue;
     let x = x0 + k * cell;
     if (!edgeCells && (k === 0 || k === width)) x += (k === 0 ? s.lw : -s.lw) / 2; // 无行列号时边缘防裁剪
     if (edgeCells) {
-      if (kp !== 0 && kp !== width) strokeSeg(vGroups, x, y0, x, y0 + cell, se);  // 顶部行列号条（两端帽不画）
-      strokeSeg(vGroups, x, y0 + cell, x, y0 + cell + height * cell, s);          // 图案
-      if (kp !== 0 && kp !== width) strokeSeg(vGroups, x, y0 + cell + height * cell, x, y0 + spanH, se); // 底部行列号条（两端帽不画）
-    } else {
+      if (kp !== 0 && kp !== width && se) strokeSeg(vGroups, x, y0, x, y0 + cell, se);  // 顶部行列号条（两端帽不画）
+      if (s) strokeSeg(vGroups, x, y0 + cell, x, y0 + cell + height * cell, s);          // 图案
+      if (kp !== 0 && kp !== width && se) strokeSeg(vGroups, x, y0 + cell + height * cell, x, y0 + spanH, se); // 底部行列号条（两端帽不画）
+    } else if (s) {
       strokeSeg(vGroups, x, y0, x, y0 + spanH, s);
     }
   }
@@ -205,13 +213,14 @@ function drawGridLines(ctx, originX, originY, width, height, cell, edgeCells = 0
     if (edgeCells && (kp === -1 || kp === height + 1)) continue; // 行列号外圈不画线
     const s = patternStyle(kp, height);
     const se = edgeStyle(kp, height);
+    if (!s && !se) continue;
     let y = y0 + k * cell;
     if (!edgeCells && (k === 0 || k === height)) y += (k === 0 ? s.lw : -s.lw) / 2; // 无行列号时边缘防裁剪
     if (edgeCells) {
-      if (kp !== 0 && kp !== height) strokeSeg(hGroups, x0, y, x0 + cell, y, se); // 左侧行列号条（两端帽不画）
-      strokeSeg(hGroups, x0 + cell, y, x0 + cell + width * cell, y, s);           // 图案
-      if (kp !== 0 && kp !== height) strokeSeg(hGroups, x0 + cell + width * cell, y, x0 + spanW, y, se); // 右侧行列号条（两端帽不画）
-    } else {
+      if (kp !== 0 && kp !== height && se) strokeSeg(hGroups, x0, y, x0 + cell, y, se); // 左侧行列号条（两端帽不画）
+      if (s) strokeSeg(hGroups, x0 + cell, y, x0 + cell + width * cell, y, s);           // 图案
+      if (kp !== 0 && kp !== height && se) strokeSeg(hGroups, x0 + cell + width * cell, y, x0 + spanW, y, se); // 右侧行列号条（两端帽不画）
+    } else if (s) {
       strokeSeg(hGroups, x0, y, x0 + spanW, y, s);
     }
   }
@@ -251,8 +260,8 @@ function drawEdgeNumbers(ctx, width, height, originX, originY, cell) {
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawCodes(ctx, width, height, displayIdx, displayRgb, codes, originX, originY, cell) {
-  if (cell < CODE_MIN_CELL) return;
+function drawCodes(ctx, width, height, displayIdx, displayRgb, codes, originX, originY, cell, zoom = 1) {
+  if (cell * (zoom || 1) < GRID_FINE_MIN_SCREEN_CELL) return;
   const font = Math.max(CODE_FONT_MIN, Math.round(cell * CODE_FONT_RATIO));
   ctx.font = `${font}px Consolas, "Courier New", monospace`;
   ctx.textAlign = 'center';
@@ -572,8 +581,11 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   const metrics = canvasMetrics(width, height, cell, legend.length, outerPad, edge);
   ctx.canvas.width = metrics.w;
   ctx.canvas.height = metrics.h;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, metrics.w, metrics.h);
+  if (opts.background) {
+    // 导出预览等需要不透明底的场景：整幅铺底色（工作区不传，保持四角透明）
+    ctx.fillStyle = opts.background;
+    ctx.fillRect(0, 0, metrics.w, metrics.h);
+  }
 
   const ox = metrics.originX;
   const oy = metrics.originY;
@@ -603,7 +615,7 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   }
 
   if (gridLines) {
-    drawGridLines(ctx, ox, oy, width, height, cell, opts.edgeNumbers ? 1 : 0);
+    drawGridLines(ctx, ox, oy, width, height, cell, opts.edgeNumbers ? 1 : 0, opts.zoom || 1);
   }
 
   if (opts.edgeNumbers) {
@@ -611,7 +623,7 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   }
 
   if (opts.showCodes && opts.codes) {
-    drawCodes(ctx, width, height, displayIdx, displayRgb, opts.codes, ox, oy, cell);
+    drawCodes(ctx, width, height, displayIdx, displayRgb, opts.codes, ox, oy, cell, opts.zoom || 1);
   }
 
   if (legend.length && opts.showLegend !== false) {
@@ -620,7 +632,55 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   }
 }
 
-// 覆盖层：选区虚线 / 色号高亮 / hover 边框 / 九宫格目标格浮起（叠加在底图之上）
+// 裁剪模式覆盖层：矩形外部 40% 黑色蒙版 + 纯色边框（选中/拖拽边蓝色，其余红色）+ 预览红虚线
+function drawCropOverlay(ctx, crop, activeEdge, cell, ox, oy, zoom, preview, width, height) {
+  const W = ctx.canvas.width;
+  const H = ctx.canvas.height;
+  const rx0 = ox + crop.x0 * cell;
+  const ry0 = oy + crop.y0 * cell;
+  const rx1 = ox + (crop.x1 + 1) * cell;
+  const ry1 = oy + (crop.y1 + 1) * cell;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  // 四角是透明像素：蒙版带避开四角，避免与压暗后的工作区背景叠成两层
+  ctx.fillRect(cell, 0, W - 2 * cell, ry0);              // 上（不含四角）
+  ctx.fillRect(cell, ry1, W - 2 * cell, H - ry1);        // 下（不含四角）
+  ctx.fillRect(0, cell, rx0, H - 2 * cell);              // 左（不含四角）
+  ctx.fillRect(rx1, cell, W - rx1, H - 2 * cell);        // 右（不含四角）
+  ctx.lineWidth = Math.max(2, Math.round(2 / (zoom || 1)));
+  const edges = [
+    ['left', rx0, ry0, rx0, ry1],
+    ['right', rx1, ry0, rx1, ry1],
+    ['top', rx0, ry0, rx1, ry0],
+    ['bottom', rx0, ry1, rx1, ry1],
+  ];
+  for (const [name, x0, y0, x1, y1] of edges) {
+    ctx.strokeStyle = name === activeEdge ? '#3b82f6' : '#ff3b30';
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+  }
+  // 预览虚线：选中边后将移动到的平行格线（跨整个图案）
+  if (preview) {
+    ctx.strokeStyle = '#ff3b30';
+    ctx.setLineDash([6 / (zoom || 1), 5 / (zoom || 1)]);
+    ctx.lineWidth = Math.max(1.5, Math.round(1.5 / (zoom || 1)));
+    ctx.beginPath();
+    if (preview.horizontal) {
+      ctx.moveTo(ox + preview.pos * cell, oy);
+      ctx.lineTo(ox + preview.pos * cell, oy + height * cell);
+    } else {
+      ctx.moveTo(ox, oy + preview.pos * cell);
+      ctx.lineTo(ox + width * cell, oy + preview.pos * cell);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+// 覆盖层：选区虚线 / 色号高亮 / 裁剪蒙版与边框 / hover 边框 / 九宫格目标格浮起（叠加在底图之上）
 export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, opts) {
   const cell = opts.cell || CELL;
   const outerPad = opts.outerPad ?? OUTER_PAD;
@@ -655,6 +715,11 @@ export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, o
     for (const comp of components) {
       drawHighlightOutline(ctx, comp, width, height, displayIdx, displayRgb, ox, oy, cell, hlw);
     }
+  }
+
+  // 裁剪模式：蒙版 + 边框（高亮之上、hover 之下）
+  if (opts.crop) {
+    drawCropOverlay(ctx, opts.crop, opts.cropActiveEdge || null, cell, ox, oy, opts.zoom || 1, opts.cropPreview || null, width, height);
   }
 
   // 鼠标指向像素的 hover 边框画在最上层（高亮之上），保证任意模式下都可见

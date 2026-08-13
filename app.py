@@ -36,7 +36,7 @@ DEFAULT_CONFIG_NAME = "mard-221-alfonse-doudou"
 # ---------------- 常量配置 ----------------
 DEFAULT_PORT = 5000
 WAITRESS_THREADS = 8
-DEFAULT_TARGET_PIXELS = 40000  # 与 static/js/constants.js DEFAULT_TARGET_PIXELS 保持一致
+DEFAULT_TARGET_PIXELS = 5000  # 与 static/js/constants.js DEFAULT_TARGET_PIXELS 保持一致
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024  # 上传体积上限（字节）
 
 # 运行时配置：由 create_app() 初始化（便于测试注入临时数据目录）

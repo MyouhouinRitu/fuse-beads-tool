@@ -18,6 +18,41 @@
   --panel-collapsed-width: 32px;
 }
 
+/* 夜间模式：覆盖基础变量与少量硬编码浅色；画布与九宫格色板保持白底以保证颜色观感 */
+:root[data-theme="dark"] {
+  --bg: #161a1f;
+  --panel: #22272e;
+  --border: #39424d;
+  --text: #e4e7ea;
+  --muted: #97a1ad;
+  --primary: #5b93f7;
+  --primary-dark: #4f8df9;
+  --danger: #f26d6d;
+  --danger-bg: #4b2729;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+:root[data-theme="dark"] button { background: #2a313a; }
+:root[data-theme="dark"] button:hover { background: #333c48; border-color: #4a5563; }
+:root[data-theme="dark"] button.danger { border-color: #a34b4b; }
+:root[data-theme="dark"] input[type="number"],
+:root[data-theme="dark"] input[type="text"],
+:root[data-theme="dark"] select { background: #1b2026; }
+:root[data-theme="dark"] input[type="number"]:focus,
+:root[data-theme="dark"] input[type="text"]:focus,
+:root[data-theme="dark"] select:focus { outline-color: #3b6fd4; }
+:root[data-theme="dark"] .panel-head:hover { background: #2d3440; }
+:root[data-theme="dark"] .dialog { background: var(--panel); }
+:root[data-theme="dark"] .dlg-busy { background: rgba(30, 34, 40, 0.92); }
+:root[data-theme="dark"] .dlg-progress { background: #3a424c; }
+:root[data-theme="dark"] .doc-content { background: #1b2026; }
+:root[data-theme="dark"] .doc-content pre,
+:root[data-theme="dark"] .doc-content code { background: #14181d; }
+:root[data-theme="dark"] .doc-content blockquote { background: rgba(91, 147, 247, 0.12); }
+:root[data-theme="dark"] .dlg-preview-wrap { background: #1b2026; }
+:root[data-theme="dark"] .dropdown-item:hover { background: rgba(91, 147, 247, 0.12); }
+:root[data-theme="dark"] .crop-magnifier { background: #3a424c; border-color: #4a5563; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #4a5563; }
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -233,7 +268,12 @@ aside {
 .tool { flex: 1; }
 .tool.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 .tool.active:hover { background: var(--primary-dark); }
-.mode-line { font-size: 13px; color: var(--muted); }
+.mode-line {
+  font-size: 13px; color: var(--muted);
+  min-height: 34px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+}
+.selection-controls, .brush-size-field, #crop-controls { display: inline-flex; align-items: center; }
 .mode-label { color: var(--primary); font-weight: 600; }
 .selection-controls { margin-left: 12px; white-space: nowrap; }
 .selection-controls:not(.hidden) { display: inline-flex; align-items: center; gap: 8px; }
@@ -298,6 +338,10 @@ aside {
   position: relative;
   background: #e8eaee;
 }
+/* 裁剪模式：工作区背景也压上 40% 黑（与画布蒙版观感一致），仅裁剪矩形内的图片保持清晰 */
+body.crop-active #canvas-area { background: #8b8c8f; }
+:root[data-theme="dark"] body.crop-active #canvas-area { background: #1a1d22; }
+:root[data-theme="dark"] #canvas-area { background: #2c3138; }
 #canvas-toolbar {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 10px; background: var(--panel);
@@ -329,7 +373,7 @@ aside {
 }
 #canvas {
   display: block;
-  background: #fff;
+  background: transparent; /* 行列号四角透明，露出工作区背景 */
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
   transform-origin: 0 0;
   cursor: default; /* 选择模式平时为普通光标，按下时（:active）才显示拖拽 */
@@ -384,6 +428,14 @@ aside {
 }
 #quick-picker .qp-cancel { grid-column: 1 / -1; height: 28px; font-size: 12px; }
 
+.crop-magnifier {
+  position: fixed; z-index: 150; pointer-events: none;
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  background: #fff; padding: 4px;
+}
+.crop-magnifier canvas { display: block; }
+
 #tree-list { flex: 1; min-height: 0; overflow-y: auto; }
 .tree-node {
   margin: 2px 0;
@@ -432,6 +484,48 @@ aside {
 .dialog-body { display: flex; flex-direction: column; gap: 10px; }
 .dialog-body .field { justify-content: space-between; }
 #export-dialog .dialog-body { flex-direction: row; }
+.dropdown { position: relative; display: inline-flex; }
+.dropdown .caret { font-size: 10px; margin-left: 4px; }
+.dropdown-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 220;
+  min-width: 250px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  padding: 4px; display: flex; flex-direction: column;
+}
+.dropdown-item {
+  text-align: left; padding: 9px 10px; border: none; background: transparent;
+  color: var(--text); border-radius: 6px; cursor: pointer; font-size: 13px; line-height: 1.4;
+}
+.dropdown-item:hover { background: rgba(59, 130, 246, 0.10); color: var(--primary); }
+.target-pixels-wrap { position: relative; display: inline-flex; align-items: center; }
+#target-pixels {
+  -moz-appearance: textfield;
+  border-radius: 6px 0 0 6px;
+  width: 96px;
+}
+#target-pixels::-webkit-outer-spin-button,
+#target-pixels::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.target-pixels-btn {
+  padding: 5px 8px; border-left: none; border-radius: 0 6px 6px 0;
+  line-height: 1; cursor: pointer;
+}
+.target-pixels-btn:hover { border-color: var(--primary); color: var(--primary); }
+.target-pixels-menu { min-width: 130px; }
+:root[data-theme="dark"] .target-pixels-btn { background: #1b2026; }
+.doc-content {
+  max-height: 60vh; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 18px; line-height: 1.75; font-size: 13.5px;
+  background: #fff; color: var(--text);
+}
+.doc-content h1 { font-size: 17px; margin: 4px 0 10px; }
+.doc-content h2 { font-size: 15px; margin: 16px 0 6px; }
+.doc-content h3 { font-size: 14px; margin: 12px 0 4px; }
+.doc-content p { margin: 6px 0; }
+.doc-content ul, .doc-content ol { margin: 6px 0; padding-left: 22px; }
+.doc-content li { margin: 3px 0; }
+.doc-content pre { background: #f4f5f7; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+.doc-content code { background: #f4f5f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.doc-content blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--primary); background: rgba(59, 130, 246, 0.06); border-radius: 4px; }
 .dlg-preview-wrap {
   width: 300px; height: 260px; flex-shrink: 0;
   border: 1px solid var(--border); border-radius: 8px; background: #fff;
