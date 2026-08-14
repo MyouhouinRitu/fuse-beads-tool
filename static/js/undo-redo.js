@@ -1,9 +1,10 @@
-// 单步撤销/重做：兼容普通增量步骤与结构性步骤（如裁剪）。
+// 单步撤销 / 重做入口：兼容普通增量步骤与结构性步骤（如裁剪）。
 
 import { scheduleAutosave } from './autosave.js';
 import { clearProjectEditingState } from './canvas.js';
-import { applyStepToGrid, applyStructuralStep, redoStep, undoStep } from './history.js';
+import { applyStructuralStep, redoStep, undoStep } from './history.js';
 import { renderHistoryUI } from './history-ui.js';
+import { applyGridChanges } from './mutations.js';
 import { scheduleRender } from './render-queue.js';
 import { App, setDirty } from './state.js';
 import { toast } from './utils.js';
@@ -21,7 +22,12 @@ function applyUndoRedoStep(step, mode) {
     clearProjectEditingState();
     fitViewportToCanvas(); // 尺寸变化后适应窗口
   } else {
-    applyStepToGrid(App.project.grid, App.project.width, step.changes, mode);
+    const changes = step.changes.map((ch) => ({
+      x: ch.x,
+      y: ch.y,
+      to: mode === 'undo' ? ch.from : ch.to,
+    }));
+    applyGridChanges(changes);
   }
   setDirty(true);
   renderHistoryUI();

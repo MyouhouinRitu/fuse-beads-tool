@@ -12,6 +12,7 @@ import {
   TOOLS,
 } from './constants.js';
 import { els } from './els.js';
+import { interactionState } from './interaction.js';
 import { closeQuickPicker } from './quick-picker.js';
 import { canvasMetrics, clearCanvas, drawPatternBase, drawPatternOverlay } from './render.js';
 import { App, dragState, setDirty } from './state.js';
@@ -63,7 +64,7 @@ export function buildDisplayData() {
     }
     idx[p] = v;
     const c = App.appliedPalette[v] ? C.hexToRgb(App.appliedPalette[v].hex) : [255, 255, 255];
-    rgb[p] = (c[0] << 16) | (c[1] << 8) | c[2];
+    rgb[p] = C.packRgb(c);
   }
   return { idx, rgb };
 }
@@ -75,9 +76,14 @@ export function buildLegend(counts) {
       legend.push({ hex: c.hex, code: codeOf(c), count: counts[i] });
     }
   });
-  // 按豆数从多到少排序，数量相同按编号
-  legend.sort((a, b) => b.count - a.count || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
-  return legend;
+  return sortLegend(legend);
+}
+
+// 图例 / 导出共用排序：按豆数从多到少，数量相同按色号
+export function sortLegend(entries) {
+  return entries
+    .filter((e) => e.count > 0)
+    .sort((a, b) => b.count - a.count || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
 }
 
 export function buildCodes() {
@@ -131,18 +137,18 @@ export function syncBaseLayerDetail() {
 function buildRenderSelection() {
   if (
     renderSelectionCache.sel === App.selection &&
-    renderSelectionCache.drag === App.dragPreview &&
+    renderSelectionCache.drag === interactionState.dragPreview &&
     renderSelectionCache.size === App.selection.size
   ) {
     return renderSelectionCache.value;
   }
   const value = new Set(App.selection);
-  if (App.dragPreview) {
-    for (const p of rectCells(App.dragPreview)) value.add(p);
+  if (interactionState.dragPreview) {
+    for (const p of rectCells(interactionState.dragPreview)) value.add(p);
   }
   renderSelectionCache = {
     sel: App.selection,
-    drag: App.dragPreview,
+    drag: interactionState.dragPreview,
     size: App.selection.size,
     value,
   };
@@ -175,16 +181,18 @@ export function composeCanvas() {
     edgeNumbers: true,
     zoom: App.zoom,
     selected,
-    highlightColor: App.highlightColor,
-    highlightBlink: App.highlightBlink,
-    crop: App.crop,
-    cropActiveEdge: App.cropActiveEdge,
-    cropPreview: dragState.cropEdge ? null : App.cropPreview,
+    highlightColor: interactionState.highlightColor,
+    highlightBlink: interactionState.highlightBlink,
+    crop: interactionState.crop,
+    cropActiveEdge: interactionState.cropActiveEdge,
+    cropPreview: dragState.cropEdge ? null : interactionState.cropPreview,
     toolState: {
-      hover: App.tool === TOOLS.CROP ? null : App.hoverCell,
+      hover: App.tool === TOOLS.CROP ? null : interactionState.hoverCell,
       tool: App.tool,
       brushSize: App.settings.brushSize,
-      pickerCell: App.pickerCell ? { x: App.pickerCell.x, y: App.pickerCell.y } : null,
+      pickerCell: interactionState.pickerCell
+        ? { x: interactionState.pickerCell.x, y: interactionState.pickerCell.y }
+        : null,
       brushRgb:
         App.brushColor != null && App.appliedPalette[App.brushColor]
           ? C.hexToRgb(App.appliedPalette[App.brushColor].hex)
@@ -203,17 +211,17 @@ export function redrawCanvas() {
 
 // 颜色清单高亮闪烁：高亮时按周期隐现，反色不明显也能看清选中色号
 export function syncHighlightBlink() {
-  const active = App.highlightColor != null && App.project;
+  const active = interactionState.highlightColor != null && App.project;
   if (!active) {
     clearInterval(App.highlightTimer);
     App.highlightTimer = null;
-    App.highlightBlink = true;
+    interactionState.highlightBlink = true;
     return;
   }
   // 定时器已在运行时直接复用，避免鼠标移动触发的重绘反复重置闪烁相位
   if (App.highlightTimer) return;
   App.highlightTimer = setInterval(() => {
-    App.highlightBlink = !App.highlightBlink;
+    interactionState.highlightBlink = !interactionState.highlightBlink;
     composeCanvas();
   }, HIGHLIGHT_BLINK_MS);
 }
@@ -233,9 +241,9 @@ export function mergeGrid(source, palette, useLab, n) {
 // 清空与网格坐标相关的编辑状态（保留撤销栈；结构性撤销/重做时使用）
 export function clearProjectEditingState() {
   App.selection = new Set();
-  App.dragPreview = null;
-  App.highlightColor = null;
-  App.strokeBuffer = null;
+  interactionState.dragPreview = null;
+  interactionState.highlightColor = null;
+  interactionState.strokeBuffer = null;
   closeQuickPicker();
 }
 

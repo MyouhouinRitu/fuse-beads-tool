@@ -98,13 +98,16 @@ export function downloadUrl(url, filename) {
   a.remove();
 }
 
-export function downloadDataUrl(dataUrl, filename) {
-  downloadUrl(dataUrl, filename);
-}
-
 // 颜色条目的通用文案：色号 / 完整标题
 export function codeOf(c) {
   return (c && (c.code || String(c.index))) || '';
+}
+
+// 文件名去扩展名并去首尾空白（用于项目显示名）
+export function fileNameStem(name) {
+  return String(name || '')
+    .replace(/\.[^.]+$/, '')
+    .trim();
 }
 
 export function titleOf(c) {

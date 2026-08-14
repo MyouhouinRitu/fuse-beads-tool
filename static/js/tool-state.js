@@ -2,6 +2,7 @@
 
 import { TOOLS, WAND_SENSITIVITY_DEFAULT } from './constants.js';
 import { els } from './els.js';
+import { interactionState } from './interaction.js';
 import { scheduleCanvasRender } from './render-queue.js';
 import { App } from './state.js';
 import { hideCropMagnifier, toast } from './utils.js';
@@ -35,16 +36,16 @@ export function updateModeControls() {
   els.wandSensitivityWrap.classList.toggle('hidden', App.tool !== TOOLS.WAND);
   els.selectionControls.classList.toggle('hidden', App.tool !== TOOLS.SELECT);
   els.cropControls.classList.toggle('hidden', App.tool !== TOOLS.CROP);
-  const disabled = App.highlightColor == null;
+  const disabled = interactionState.highlightColor == null;
   if (els.selectHighlightBtn.disabled !== disabled) els.selectHighlightBtn.disabled = disabled;
 }
 
 // 进入裁剪模式时初始化矩形 = 整张图
 function initCropRect() {
   if (!App.project) return;
-  App.crop = { x0: 0, y0: 0, x1: App.project.width - 1, y1: App.project.height - 1 };
-  App.cropActiveEdge = null;
-  App.cropPreview = null;
+  interactionState.crop = { x0: 0, y0: 0, x1: App.project.width - 1, y1: App.project.height - 1 };
+  interactionState.cropActiveEdge = null;
+  interactionState.cropPreview = null;
 }
 
 export function setTool(t) {
@@ -55,9 +56,9 @@ export function setTool(t) {
   }
   // 离开裁剪模式：丢弃未应用的裁剪
   if (App.tool === TOOLS.CROP && t !== TOOLS.CROP) {
-    App.crop = null;
-    App.cropActiveEdge = null;
-    App.cropPreview = null;
+    interactionState.crop = null;
+    interactionState.cropActiveEdge = null;
+    interactionState.cropPreview = null;
     hideCropMagnifier();
   }
   App.tool = t;
@@ -68,12 +69,12 @@ export function setTool(t) {
   if (t === TOOLS.BRUSH || t === TOOLS.ERASER) {
     // 画笔/橡皮模式下选区没有意义，进入时清空；色号高亮保留
     App.selection = new Set();
-    App.dragPreview = null;
+    interactionState.dragPreview = null;
   }
   if (t === TOOLS.CROP) {
     // 裁剪模式：清空选区，初始矩形 = 整图
     App.selection = new Set();
-    App.dragPreview = null;
+    interactionState.dragPreview = null;
     initCropRect();
   }
   document.body.classList.toggle('crop-active', t === TOOLS.CROP);

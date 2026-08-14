@@ -9,6 +9,43 @@ import { getTargetPixels } from './utils.js';
 
 export const STATE_SCHEMA_VERSION = 1;
 
+function buildViewportPayload() {
+  return {
+    zoom: App.zoom,
+    pan: { ...App.pan },
+    origZoom: App.origZoom,
+    origPan: { ...App.origPan },
+  };
+}
+
+function buildProjectPayload() {
+  return App.project
+    ? {
+        width: App.project.width,
+        height: App.project.height,
+        grid: Array.from(App.project.grid),
+        baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
+        sliderN: App.sliderN,
+        editedSinceSlider: App.editedSinceSlider,
+        paletteName: App.configName,
+        palette: App.appliedPalette.map((c) => ({ ...c })),
+        paletteHash: paletteHash(App.appliedPalette),
+        maxColors: App.maxColors,
+      }
+    : null;
+}
+
+function buildOriginalPayload() {
+  return App.originalId
+    ? {
+        id: App.originalId,
+        name: App.originalName,
+        sha256: App.originalSha256,
+        size: App.originalSize,
+      }
+    : null;
+}
+
 export function buildStatePayload() {
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
@@ -17,12 +54,7 @@ export function buildStatePayload() {
       ...App.settings,
       targetPixels: getTargetPixels(),
     },
-    viewport: {
-      zoom: App.zoom,
-      pan: { ...App.pan },
-      origZoom: App.origZoom,
-      origPan: { ...App.origPan },
-    },
+    viewport: buildViewportPayload(),
     editor: {
       tool: App.tool,
       brushColor: App.brushColor,
@@ -31,33 +63,13 @@ export function buildStatePayload() {
     },
     projectDirty: App.projectDirty,
     projectName: App.projectName,
-    project: App.project
-      ? {
-          width: App.project.width,
-          height: App.project.height,
-          grid: Array.from(App.project.grid),
-          baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
-          sliderN: App.sliderN,
-          editedSinceSlider: App.editedSinceSlider,
-          paletteName: App.configName,
-          palette: App.appliedPalette.map((c) => ({ ...c })),
-          paletteHash: paletteHash(App.appliedPalette),
-          maxColors: App.maxColors,
-        }
-      : null,
+    project: buildProjectPayload(),
     undo: {
       undoStack: App.undoStack,
       redoStack: App.redoStack,
     },
     history: App.history,
-    original: App.originalId
-      ? {
-          id: App.originalId,
-          name: App.originalName,
-          sha256: App.originalSha256,
-          size: App.originalSize,
-        }
-      : null,
+    original: buildOriginalPayload(),
   };
 }
 
@@ -65,12 +77,7 @@ export function buildProjectDocument() {
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
     savedAt: Date.now(),
-    viewport: {
-      zoom: App.zoom,
-      pan: { ...App.pan },
-      origZoom: App.origZoom,
-      origPan: { ...App.origPan },
-    },
+    viewport: buildViewportPayload(),
     settings: {
       targetPixels: getTargetPixels(),
       useLab: App.settings.useLab,
@@ -83,29 +90,9 @@ export function buildProjectDocument() {
       sameColorSelect: App.settings.sameColorSelect,
       wandSensitivity: App.settings.wandSensitivity,
     },
-    project: App.project
-      ? {
-          width: App.project.width,
-          height: App.project.height,
-          grid: Array.from(App.project.grid),
-          baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
-          sliderN: App.sliderN,
-          editedSinceSlider: App.editedSinceSlider,
-          paletteName: App.configName,
-          palette: App.appliedPalette.map((c) => ({ ...c })),
-          paletteHash: paletteHash(App.appliedPalette),
-          maxColors: App.maxColors,
-        }
-      : null,
+    project: buildProjectPayload(),
     history: App.history,
-    original: App.originalId
-      ? {
-          id: App.originalId,
-          name: App.originalName,
-          sha256: App.originalSha256,
-          size: App.originalSize,
-        }
-      : null,
+    original: buildOriginalPayload(),
   };
 }
 

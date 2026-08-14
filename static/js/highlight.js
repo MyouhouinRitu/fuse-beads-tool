@@ -3,6 +3,7 @@
 import * as canvas from './canvas.js';
 import * as C from './colors.js';
 import { els } from './els.js';
+import { interactionState } from './interaction.js';
 import { scheduleCanvasRender } from './render-queue.js';
 import { App } from './state.js';
 import { updateModeControls } from './tool-state.js';
@@ -16,7 +17,7 @@ export function bindHighlightList() {
     if (!item) return;
     const i = Number(item.dataset.index);
     // 单选：再次点击取消，选择其它色号则替换
-    App.highlightColor = App.highlightColor === i ? null : i;
+    interactionState.highlightColor = interactionState.highlightColor === i ? null : i;
     canvas.syncHighlightBlink();
     renderHighlightColorList();
     scheduleCanvasRender();
@@ -41,7 +42,7 @@ export function renderHighlightColorList(counts) {
   );
   for (const { c, i, count } of entries) {
     const item = document.createElement('div');
-    item.className = `hc-item${App.highlightColor === i ? ' active' : ''}`;
+    item.className = `hc-item${interactionState.highlightColor === i ? ' active' : ''}`;
     item.dataset.index = String(i);
     item.title = `${titleOf(c)} ×${count}`;
     const sw = document.createElement('span');

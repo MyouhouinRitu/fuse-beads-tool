@@ -392,6 +392,7 @@ await new Promise((r) => setTimeout(r, 80));
 
 const App = globalThis.__app;
 const hooks = globalThis.__testHooks;
+const interactionState = globalThis.__interactionState;
 assert.ok(App && hooks, '应暴露调试句柄');
 // 模板中带 hidden 类的元素在桩环境里默认是空 classList，这里补上与真实 HTML 一致的初始状态
 elsMap['doc-dialog'].classList.add('hidden');
@@ -413,7 +414,7 @@ function seedProject() {
   App.history = { items: [], currentId: null, nextId: 1 };
   App.undoStack = [];
   App.redoStack = [];
-  App.strokeBuffer = null;
+  interactionState.strokeBuffer = null;
 }
 
 function fillStyles() {
@@ -591,7 +592,7 @@ function mouseAt(cellX, cellY) {
   assert.ok(btns.length > 0, '九宫格应有候选按钮');
 
   // 悬停候选 → 实时预览（不进撤销栈）
-  const target = App.pickerCandidates[0].i;
+  const target = interactionState.pickerCandidates[0].i;
   btns[0].emit('mouseover');
   assert.equal(grid[0], target, '悬停候选应立即预览颜色');
   assert.equal(App.undoStack.length, 0, '预览不应进入撤销栈');
@@ -623,10 +624,10 @@ function mouseAt(cellX, cellY) {
   seedProject();
   App.tool = 'brush';
   App.brushColor = 1;
-  App.strokeBuffer = [];
+  interactionState.strokeBuffer = [];
   hooks.paintCell(0, 0);
-  App.undoStack.push({ changes: App.strokeBuffer });
-  App.strokeBuffer = null;
+  App.undoStack.push({ changes: interactionState.strokeBuffer });
+  interactionState.strokeBuffer = null;
   assert.equal(App.undoStack.length, 1, '前置：应存在一步撤销记录');
   assert.equal(App.project.grid[0], 1, '前置：应先涂色');
   hooks.doUndo();
@@ -650,12 +651,12 @@ function mouseAt(cellX, cellY) {
 {
   seedProject();
   hooks.saveTransaction();
-  App.strokeBuffer = [];
+  interactionState.strokeBuffer = [];
   App.tool = 'brush';
   App.brushColor = 1;
   hooks.paintCell(0, 0);
-  App.undoStack.push({ changes: App.strokeBuffer });
-  App.strokeBuffer = null;
+  App.undoStack.push({ changes: interactionState.strokeBuffer });
+  interactionState.strokeBuffer = null;
   assert.ok(App.history.items.length > 0 && App.undoStack.length > 0, '前置：存在事务与撤销记录');
 
   confirmResult = false;
@@ -984,9 +985,9 @@ function mouseAt(cellX, cellY) {
 {
   seedProject();
   App.tool = 'select';
-  App.hoverCell = null;
+  interactionState.hoverCell = null;
   App.selection.clear();
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   hooks.renderAll();
   canvasRectForCells();
 
@@ -994,7 +995,7 @@ function mouseAt(cellX, cellY) {
   const mm = windowListeners.mousemove[0];
   drawLog.strokes = [];
   mm(mouseAt(1, 1));
-  assert.deepEqual(App.hoverCell, { x: 1, y: 1 }, '鼠标移动应记录指向的格子');
+  assert.deepEqual(interactionState.hoverCell, { x: 1, y: 1 }, '鼠标移动应记录指向的格子');
   const rectStrokes = drawLog.strokes.filter((s) => s.rect && s.dash);
   assert.equal(rectStrokes.length, 2, '选择模式 hover 应绘制两遍虚线边框（黑 + 白）');
   assert.equal(rectStrokes[0].style.toLowerCase(), '#000000', '第一遍应为黑色');
@@ -1049,16 +1050,16 @@ function mouseAt(cellX, cellY) {
 
   // 橡皮模式：非空位画边框 + X，空位不画
   App.tool = 'eraser';
-  App.hoverCell = null;
+  interactionState.hoverCell = null;
   drawLog.strokes = [];
   hooks.renderAll();
   const baseCount = drawLog.strokes.length;
-  App.hoverCell = { x: 0, y: 0 }; // grid[0] = 白色
+  interactionState.hoverCell = { x: 0, y: 0 }; // grid[0] = 白色
   hooks.renderAll();
   const added = drawLog.strokes.length - baseCount;
   assert.ok(added >= 3, `橡皮 hover 应绘制边框 + 两条对角线，实际增加 ${added} 条线`);
   App.project.grid[0] = -1; // 变空位
-  App.hoverCell = { x: 0, y: 0 };
+  interactionState.hoverCell = { x: 0, y: 0 };
   drawLog.strokes = [];
   hooks.renderAll();
   assert.equal(
@@ -1068,35 +1069,35 @@ function mouseAt(cellX, cellY) {
   );
 
   // 鼠标离开画布区应清除 hover
-  App.hoverCell = { x: 1, y: 1 };
+  interactionState.hoverCell = { x: 1, y: 1 };
   const leave = elsMap['canvas-scroll'].listeners.mouseleave[0];
   leave({});
-  assert.equal(App.hoverCell, null, '鼠标离开画布区应清除 hover');
+  assert.equal(interactionState.hoverCell, null, '鼠标离开画布区应清除 hover');
 
   // hover 线宽随缩放等比变化：画布线宽只由格尺寸决定，屏幕粗细交给 CSS 缩放
   App.tool = 'select';
-  App.hoverCell = { x: 1, y: 1 };
+  interactionState.hoverCell = { x: 1, y: 1 };
   App.zoom = 0.5;
   drawLog.strokes = [];
   hooks.renderAll();
   const zoomRects = drawLog.strokes.filter((s) => s.rect && s.dash);
   assert.equal(zoomRects[0].lineWidth, 1, '缩放 0.5 时画布线宽应保持格尺寸比例（1px 细线）');
   App.zoom = 1;
-  App.hoverCell = null;
+  interactionState.hoverCell = null;
   console.log('[OK] 鼠标 hover 边框：选择 / 画笔 / 取色 / 橡皮');
 }
 
 // ---------------- 12. 颜色清单高亮闪烁：重绘不应重置定时器 ----------------
 {
   seedProject();
-  App.highlightColor = 0;
-  App.highlightBlink = true;
+  interactionState.highlightColor = 0;
+  interactionState.highlightBlink = true;
   hooks.renderAll();
   const timer1 = App.highlightTimer;
   assert.ok(timer1, '设置高亮后应启动闪烁定时器');
   hooks.renderAll(); // 模拟鼠标移动触发的重绘
   assert.equal(App.highlightTimer, timer1, '重复渲染不应重置闪烁定时器（否则闪烁会暂停）');
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   hooks.renderAll();
   assert.equal(App.highlightTimer, null, '取消高亮后应停止闪烁定时器');
   console.log('[OK] 颜色清单高亮闪烁定时器不被重绘重置');
@@ -1105,16 +1106,20 @@ function mouseAt(cellX, cellY) {
 // ---------------- 12.5 点击颜色清单：应启动闪烁定时器，再次点击取消 ----------------
 {
   seedProject();
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   App.highlightTimer = null;
   hooks.renderAll();
   assert.equal(App.highlightTimer, null, '未点击前不应有闪烁定时器');
   const item = elsMap['highlight-color-list'].children[0];
   item.emit('click');
-  assert.equal(App.highlightColor, Number(item.dataset.index), '点击颜色清单应选中该色号');
+  assert.equal(
+    interactionState.highlightColor,
+    Number(item.dataset.index),
+    '点击颜色清单应选中该色号',
+  );
   assert.ok(App.highlightTimer, '点击颜色清单应启动闪烁定时器');
   item.emit('click');
-  assert.equal(App.highlightColor, null, '再次点击应取消高亮');
+  assert.equal(interactionState.highlightColor, null, '再次点击应取消高亮');
   assert.equal(App.highlightTimer, null, '取消高亮后应停止闪烁定时器');
   console.log('[OK] 点击颜色清单：启动/停止闪烁定时器');
 }
@@ -1125,8 +1130,8 @@ function mouseAt(cellX, cellY) {
   // 3x3 全同色 → 一个连通块：外轮廓 12 条边，块内不再逐格描边
   App.project = { width: 3, height: 3, grid: Int16Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0]) };
   App.baseGrid = App.project.grid.slice();
-  App.highlightColor = 0;
-  App.highlightBlink = true;
+  interactionState.highlightColor = 0;
+  interactionState.highlightBlink = true;
   drawLog.strokes = [];
   hooks.renderAll();
   const frameStyle = 'rgba(0, 0, 0, 0.9)'; // 白色格（亮色）用深色描边
@@ -1153,7 +1158,7 @@ function mouseAt(cellX, cellY) {
   const mixedEdges = drawLog.strokes.filter((s) => s.style.includes(frameStyle));
   assert.equal(mixedEdges.length, 10, '水平相邻块（6 边）+ 对角孤立格（4 边）应共 10 条边');
 
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   hooks.renderAll();
   console.log('[OK] 色号高亮连通块：外轮廓合并、内部不描边');
 }
@@ -1163,7 +1168,7 @@ function mouseAt(cellX, cellY) {
   seedProject();
   App.settings.brushSize = 1;
   App.selection.clear();
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
 
   // 拖动条仅在画笔 / 橡皮模式显示
   hooks.setTool('brush');
@@ -1186,38 +1191,38 @@ function mouseAt(cellX, cellY) {
   App.tool = 'brush';
   App.brushColor = 2;
   App.settings.brushSize = 3;
-  App.strokeBuffer = [];
+  interactionState.strokeBuffer = [];
   hooks.paintStamp({ x: 2, y: 2 });
   assert.equal(
     Array.from(App.project.grid).filter((v) => v === 2).length,
     25,
     '尺寸 3 在 (2,2) 应涂满 5x5（25 格）',
   );
-  assert.equal(App.strokeBuffer.length, 25, '一次盖章应记录 25 个像素修改');
-  App.strokeBuffer = null;
+  assert.equal(interactionState.strokeBuffer.length, 25, '一次盖章应记录 25 个像素修改');
+  interactionState.strokeBuffer = null;
 
   // 边缘裁剪：角落 (0,0) 盖章 → 只涂 3x3（用调色板内合法色号 1）
   App.brushColor = 1;
-  App.strokeBuffer = [];
+  interactionState.strokeBuffer = [];
   hooks.paintStamp({ x: 0, y: 0 });
   assert.equal(
     Array.from(App.project.grid).filter((v) => v === 1).length,
     9,
     '角落盖章应裁剪为 3x3（9 格）',
   );
-  App.strokeBuffer = null;
+  interactionState.strokeBuffer = null;
 
   // 橡皮尺寸：以 (3,3) 为中心擦除 5x5
   App.tool = 'eraser';
-  App.strokeBuffer = [];
+  interactionState.strokeBuffer = [];
   hooks.paintStamp({ x: 3, y: 3 });
   const erased = Array.from(App.project.grid).filter((v) => v === -1).length;
   assert.equal(erased, 25, '橡皮尺寸 3 在 (3,3) 应擦除 5x5（25 格）');
-  App.strokeBuffer = null;
+  interactionState.strokeBuffer = null;
 
   // 橡皮 hover：尺寸 3 在角落 (0,0) 时，边框与 X 仍按完整 5×5 绘制（不因裁剪形变）
   App.tool = 'eraser';
-  App.hoverCell = { x: 0, y: 0 };
+  interactionState.hoverCell = { x: 0, y: 0 };
   App.settings.brushSize = 3;
   drawLog.strokes = [];
   hooks.renderAll();
@@ -1225,12 +1230,12 @@ function mouseAt(cellX, cellY) {
   assert.equal(eraserFrame.length, 1, '橡皮 hover 应绘制一条边框');
   assert.equal(eraserFrame[0].w, 139, '橡皮 hover 边框宽度应保持完整 5×5（139px），不因角落形变');
   assert.equal(eraserFrame[0].h, 139, '橡皮 hover 边框高度应保持完整 5×5');
-  App.hoverCell = null;
+  interactionState.hoverCell = null;
 
   // 画笔 hover 尺寸 3：5×5 共 25 个格子的颜色边框 + 1 条黑色外框（黑色最后绘制，压在最上）
   App.tool = 'brush';
   App.brushColor = 0; // 白色
-  App.hoverCell = { x: 2, y: 2 };
+  interactionState.hoverCell = { x: 2, y: 2 };
   App.settings.brushSize = 3;
   drawLog.strokes = [];
   hooks.renderAll();
@@ -1244,7 +1249,7 @@ function mouseAt(cellX, cellY) {
     '#000000',
     '黑色外框应最后绘制',
   );
-  App.hoverCell = null;
+  interactionState.hoverCell = null;
   App.settings.brushSize = 1;
   hooks.setTool('select');
   console.log('[OK] 画笔 / 橡皮尺寸：拖动条显示与矩形涂色');
@@ -1259,7 +1264,7 @@ function mouseAt(cellX, cellY) {
   App.brushColor = 2;
   App.settings.brushSize = 1;
   App.selection.clear();
-  App.strokeBuffer = null;
+  interactionState.strokeBuffer = null;
   hooks.renderAll();
   canvasRectForCells();
   const md = elsMap['canvas-scroll'].listeners.mousedown[0];
@@ -1382,7 +1387,7 @@ function mouseAt(cellX, cellY) {
 {
   seedProject();
   App.selection.clear();
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   App.settings.sameColorSelect = false;
   App.settings.brushSize = 1;
   hooks.setTool('brush');
@@ -1424,7 +1429,7 @@ function mouseAt(cellX, cellY) {
   mm({ ...mouseAt(1, 1) });
   mu({});
   assert.equal(App.selection.size, 4, '拖拽应选中 2x2 矩形');
-  assert.equal(App.dragPreview, null, '拖拽结束后应清除实时预览');
+  assert.equal(interactionState.dragPreview, null, '拖拽结束后应清除实时预览');
 
   // 同色选区：单击选四方向连通块（网格 [0,1,0,1]：白色 (0,0)(0,1) 相连、红色 (1,0)(1,1) 相连）
   App.settings.sameColorSelect = true;
@@ -1442,7 +1447,7 @@ function mouseAt(cellX, cellY) {
   mm({ ...mouseAt(1, 1) });
   mu({});
   assert.equal(App.selection.size, 4, '同色选区勾选时拖拽不应改变选择');
-  assert.equal(App.dragPreview, null, '同色选区勾选时不应出现拖拽预览');
+  assert.equal(interactionState.dragPreview, null, '同色选区勾选时不应出现拖拽预览');
   App.settings.sameColorSelect = false;
 
   // ESC 清除选择
@@ -1483,7 +1488,7 @@ function mouseAt(cellX, cellY) {
   App.selection.clear();
   App.selection.add(0);
   App.selection.add(1);
-  App.hoverCell = null; // 多选且无悬停格时 D 不应打开九宫格
+  interactionState.hoverCell = null; // 多选且无悬停格时 D 不应打开九宫格
   kd({ key: 'd', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
   assert.ok(elsMap['quick-picker'].classList.contains('hidden'), '多选时 D 键不应打开九宫格');
   App.selection.clear();
@@ -1497,14 +1502,14 @@ function mouseAt(cellX, cellY) {
   App.project = { width: 2, height: 2, grid: Int16Array.from([0, 1, 0, 1]) };
   App.baseGrid = App.project.grid.slice();
   App.selection.clear();
-  App.highlightColor = 0; // 白色
-  App.highlightBlink = true;
+  interactionState.highlightColor = 0; // 白色
+  interactionState.highlightBlink = true;
   hooks.renderAll();
   assert.ok(App.highlightTimer, '高亮应启动闪烁定时器');
   elsMap['select-highlight'].emit('click');
   assert.equal(App.selection.size, 2, '选中高亮颜色应选中该色号全部 2 个像素');
   assert.ok(App.selection.has(0) && App.selection.has(2), '应选中两个白色格子');
-  assert.equal(App.highlightColor, null, '选中后应取消高亮');
+  assert.equal(interactionState.highlightColor, null, '选中后应取消高亮');
   assert.equal(App.highlightTimer, null, '取消高亮后应停止闪烁定时器');
 
   App.settings.sameColorSelect = false;
@@ -1517,8 +1522,8 @@ function mouseAt(cellX, cellY) {
   seedProject();
   App.tool = 'select';
   App.selection.clear();
-  App.highlightColor = null;
-  App.hoverCell = null;
+  interactionState.highlightColor = null;
+  interactionState.hoverCell = null;
   hooks.renderAll();
   const kd = windowListeners.keydown[0];
   const esc = { key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault() {} };
@@ -1526,9 +1531,9 @@ function mouseAt(cellX, cellY) {
 
   // 单选一格时：D 作用于选中格（即使悬停其它格），目标格带浮起效果
   App.selection = new Set([0]);
-  App.hoverCell = { x: 1, y: 0 };
+  interactionState.hoverCell = { x: 1, y: 0 };
   kd(d);
-  assert.equal(App.pickerCell.p, 0, '单选一格时 D 应作用于选中格 (0,0)');
+  assert.equal(interactionState.pickerCell.p, 0, '单选一格时 D 应作用于选中格 (0,0)');
   drawLog.strokes = [];
   hooks.renderAll();
   const raised = drawLog.strokes.filter(
@@ -1539,29 +1544,29 @@ function mouseAt(cellX, cellY) {
   );
   assert.ok(raised.length >= 3, '九宫格打开时目标格应绘制浮起效果');
   kd(esc);
-  assert.equal(App.pickerCell, null, '关闭九宫格后应清除目标格');
+  assert.equal(interactionState.pickerCell, null, '关闭九宫格后应清除目标格');
 
   // 未选中时：D 作用于悬停格
   App.selection.clear();
-  App.hoverCell = { x: 1, y: 1 };
+  interactionState.hoverCell = { x: 1, y: 1 };
   kd(d);
-  assert.equal(App.pickerCell.p, 3, '未选中时 D 应作用于悬停格 (1,1)');
+  assert.equal(interactionState.pickerCell.p, 3, '未选中时 D 应作用于悬停格 (1,1)');
   kd(esc);
 
   // 多选时：D 作用于悬停格
   App.selection = new Set([0, 1]);
-  App.hoverCell = { x: 0, y: 1 };
+  interactionState.hoverCell = { x: 0, y: 1 };
   kd(d);
-  assert.equal(App.pickerCell.p, 2, '多选时 D 应作用于悬停格 (0,1)');
+  assert.equal(interactionState.pickerCell.p, 2, '多选时 D 应作用于悬停格 (0,1)');
   kd(esc);
 
   // 无悬停格时 D 无效
   App.selection.clear();
-  App.hoverCell = null;
+  interactionState.hoverCell = null;
   kd(d);
-  assert.equal(App.pickerCell, null, '无悬停格时 D 不应打开九宫格');
+  assert.equal(interactionState.pickerCell, null, '无悬停格时 D 不应打开九宫格');
   App.selection.clear();
-  App.hoverCell = null;
+  interactionState.hoverCell = null;
   console.log('[OK] D 键优先级：单选格 > 悬停格，目标格浮起效果');
 }
 
@@ -1570,8 +1575,8 @@ function mouseAt(cellX, cellY) {
   seedProject();
   App.tool = 'select';
   App.selection.clear();
-  App.highlightColor = null;
-  App.hoverCell = null;
+  interactionState.highlightColor = null;
+  interactionState.hoverCell = null;
   hooks.renderAll();
   canvasRectForCells();
   const md = elsMap['canvas-scroll'].listeners.mousedown[0];
@@ -1590,10 +1595,10 @@ function mouseAt(cellX, cellY) {
   // 打开九宫格后调整滑块 → 应关闭九宫格并清空目标格
   const kd = windowListeners.keydown[0];
   kd({ key: 'd', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
-  assert.ok(App.pickerCell, '前置：九宫格应打开并设置目标格');
+  assert.ok(interactionState.pickerCell, '前置：九宫格应打开并设置目标格');
   hooks.applySlider(1);
   assert.ok(elsMap['quick-picker'].classList.contains('hidden'), '调整滑块后应关闭九宫格');
-  assert.equal(App.pickerCell, null, '调整滑块后应清空目标格');
+  assert.equal(interactionState.pickerCell, null, '调整滑块后应清空目标格');
   assert.equal(App.selection.size, 0, '调整滑块后应清空选区（与重新压缩一致）');
   App.selection.clear();
   console.log('[OK] 回归：右键单击不触发选择，项目变化关闭九宫格');
@@ -1604,7 +1609,7 @@ function mouseAt(cellX, cellY) {
   seedProject();
   App.tool = 'select';
   App.selection = new Set([0, 1, 2, 3]); // 整个 2x2
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   hooks.renderAll();
   elsMap['color-list'].children[2].emit('click'); // 蓝色
   assert.equal(App.undoStack.length, 1, '整块填充应记一步撤销');
@@ -1623,7 +1628,7 @@ function mouseAt(cellX, cellY) {
 {
   seedProject();
   App.selection.clear();
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   drawLog.texts = [];
   hooks.renderAll();
   const digits = drawLog.texts.map((t) => t.text).filter((t) => /^\d$/.test(t));
@@ -1772,18 +1777,22 @@ function mouseAt(cellX, cellY) {
     globalThis.document.body.classList.contains('crop-active'),
     '裁剪模式应给工作区加蒙版类',
   );
-  assert.deepEqual(App.crop, { x0: 0, y0: 0, x1: 1, y1: 1 }, '初始矩形应为整图');
+  assert.deepEqual(interactionState.crop, { x0: 0, y0: 0, x1: 1, y1: 1 }, '初始矩形应为整图');
   hooks.moveCropEdgeTo('left', 1);
-  assert.equal(App.crop.x0, 1, '左边应移动到第 1 条格线');
+  assert.equal(interactionState.crop.x0, 1, '左边应移动到第 1 条格线');
   hooks.moveCropEdgeTo('bottom', 1);
-  assert.equal(App.crop.y1, 0, '底边应移动到第 1 条格线');
+  assert.equal(interactionState.crop.y1, 0, '底边应移动到第 1 条格线');
   hooks.moveCropEdgeTo('right', 0);
-  assert.equal(App.crop.x1, 1, '右边不能越过左边');
+  assert.equal(interactionState.crop.x1, 1, '右边不能越过左边');
 
   // 自动裁剪：带空位的图案 → 收缩到非空格包围盒
   App.project.grid = Int16Array.from([0, -1, -1, 2]);
   hooks.autoCrop();
-  assert.deepEqual(App.crop, { x0: 0, y0: 0, x1: 1, y1: 1 }, '自动裁剪应收缩到非空格包围盒');
+  assert.deepEqual(
+    interactionState.crop,
+    { x0: 0, y0: 0, x1: 1, y1: 1 },
+    '自动裁剪应收缩到非空格包围盒',
+  );
 
   // 应用：裁剪左上角 1x1（网格 [0,-1,-1,2] → [0]）
   hooks.moveCropEdgeTo('bottom', 0);
@@ -1814,7 +1823,7 @@ function mouseAt(cellX, cellY) {
   const kd = windowListeners.keydown[0];
   kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault: () => {} });
   assert.equal(App.tool, 'select', 'ESC 应退出裁剪模式');
-  assert.equal(App.crop, null, 'ESC 退出后裁剪状态应清空');
+  assert.equal(interactionState.crop, null, 'ESC 退出后裁剪状态应清空');
   assert.equal(App.project.width, 2, 'ESC 不应应用裁剪');
 
   // 光标与预览：悬停边显示双箭头；图片之外取消选择；选中边时显示预览虚线
@@ -1827,22 +1836,26 @@ function mouseAt(cellX, cellY) {
   const midY = 1.5 * cellSz * scale2;
   hooks.updateCropCursor({ clientX: edgeX, clientY: midY });
   assert.equal(cv.style.cursor, 'ew-resize', '悬停左边缘应显示左右调整光标');
-  App.cropActiveEdge = 'left';
+  interactionState.cropActiveEdge = 'left';
   drawLog.strokes = [];
   hooks.updateCropPreview({ clientX: 2 * cellSz * scale2, clientY: midY });
-  assert.deepEqual(App.cropPreview, { horizontal: true, pos: 1 }, '预览应记录水平格线位置 1');
+  assert.deepEqual(
+    interactionState.cropPreview,
+    { horizontal: true, pos: 1 },
+    '预览应记录水平格线位置 1',
+  );
   assert.ok(
     drawLog.strokes.some((s) => s.style === '#ff3b30' && s.dash && s.dash.length),
     '应绘制红色预览虚线',
   );
   // 选中边且鼠标在图案内（不在线上）也显示双箭头
-  App.cropActiveEdge = 'bottom';
+  interactionState.cropActiveEdge = 'bottom';
   hooks.updateCropCursor({ clientX: 1.5 * cellSz * scale2, clientY: midY });
   assert.equal(cv.style.cursor, 'ns-resize', '选中底边后鼠标在图案内应显示上下调整光标');
   // 拖拽中不显示预览虚线
-  App.cropActiveEdge = 'left';
+  interactionState.cropActiveEdge = 'left';
   globalThis.__dragState.cropEdge = 'left';
-  App.cropPreview = { horizontal: true, pos: 1 };
+  interactionState.cropPreview = { horizontal: true, pos: 1 };
   drawLog.strokes = [];
   hooks.renderAll();
   assert.ok(
@@ -1852,26 +1865,34 @@ function mouseAt(cellX, cellY) {
   globalThis.__dragState.cropEdge = null;
   // 拖拽结束后取消选中；单击（未拖拽）保持选中
   const mu = windowListeners.mouseup[0];
-  App.cropActiveEdge = 'left';
+  interactionState.cropActiveEdge = 'left';
   globalThis.__dragState.active = true;
   globalThis.__dragState.cropEdge = 'left';
   globalThis.__dragState.moved = true;
   mu({});
-  assert.equal(App.cropActiveEdge, null, '拖拽结束后应取消选中该边');
-  App.cropActiveEdge = 'left';
+  assert.equal(interactionState.cropActiveEdge, null, '拖拽结束后应取消选中该边');
+  interactionState.cropActiveEdge = 'left';
   globalThis.__dragState.active = true;
   globalThis.__dragState.cropEdge = 'left';
   globalThis.__dragState.moved = false;
   mu({});
-  assert.equal(App.cropActiveEdge, 'left', '单击（未拖拽）应保持边选择');
+  assert.equal(interactionState.cropActiveEdge, 'left', '单击（未拖拽）应保持边选择');
   // 鼠标在图片之外：保留边选择与预览位置并继续显示双箭头；仅点击才取消
   hooks.updateCropPreview({ clientX: 2 * cellSz * scale2, clientY: midY });
-  assert.deepEqual(App.cropPreview, { horizontal: true, pos: 1 }, '前置：预览应已设置');
+  assert.deepEqual(
+    interactionState.cropPreview,
+    { horizontal: true, pos: 1 },
+    '前置：预览应已设置',
+  );
   hooks.updateCropCursor({ clientX: -100, clientY: -100 });
-  assert.equal(App.cropActiveEdge, 'left', '鼠标在图片之外不应取消边选择');
+  assert.equal(interactionState.cropActiveEdge, 'left', '鼠标在图片之外不应取消边选择');
   assert.equal(cv.style.cursor, 'ew-resize', '图片之外选中左边时应继续显示左右调整光标');
   hooks.updateCropPreview({ clientX: -100, clientY: -100 });
-  assert.deepEqual(App.cropPreview, { horizontal: true, pos: 1 }, '鼠标移出图片后预览位置应保留');
+  assert.deepEqual(
+    interactionState.cropPreview,
+    { horizontal: true, pos: 1 },
+    '鼠标移出图片后预览位置应保留',
+  );
   const mdOut = elsMap['canvas-scroll'].listeners.mousedown[0];
   mdOut({
     button: 0,
@@ -1881,12 +1902,12 @@ function mouseAt(cellX, cellY) {
     shiftKey: false,
     preventDefault() {},
   });
-  assert.equal(App.cropActiveEdge, null, '点击图片之外应取消边选择');
+  assert.equal(interactionState.cropActiveEdge, null, '点击图片之外应取消边选择');
 
   // 拖拽移动边：按下命中边 → 拖动 → 松开
-  App.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
-  App.cropActiveEdge = null;
-  App.cropPreview = null;
+  interactionState.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
+  interactionState.cropActiveEdge = null;
+  interactionState.cropPreview = null;
   const mdDrag = elsMap['canvas-scroll'].listeners.mousedown[0];
   const mmDrag = windowListeners.mousemove[0];
   const muDrag = windowListeners.mouseup[0];
@@ -1899,19 +1920,19 @@ function mouseAt(cellX, cellY) {
     shiftKey: false,
     preventDefault() {},
   });
-  assert.equal(App.cropActiveEdge, 'left', '按下左边缘应选中该边');
+  assert.equal(interactionState.cropActiveEdge, 'left', '按下左边缘应选中该边');
   assert.equal(globalThis.__dragState.cropEdge, 'left', '按下左边缘应进入拖拽状态');
   mmDrag({ clientX: 2 * cellSz * scale2, clientY: dragY, button: 0 });
-  assert.equal(App.crop.x0, 1, '拖拽应把左边移动到格线');
+  assert.equal(interactionState.crop.x0, 1, '拖拽应把左边移动到格线');
   muDrag({});
-  assert.equal(App.cropActiveEdge, null, '拖拽结束应取消边选中');
-  assert.equal(App.cropPreview, null, '拖拽结束后预览应清空');
+  assert.equal(interactionState.cropActiveEdge, null, '拖拽结束应取消边选中');
+  assert.equal(interactionState.cropPreview, null, '拖拽结束后预览应清空');
 
   // 放大镜：低缩放显示、正常缩放隐藏
   hooks.setTool('crop');
   App.screenCell = 8;
   App.zoom = 1;
-  App.hoverCell = { x: 0, y: 0 };
+  interactionState.hoverCell = { x: 0, y: 0 };
   hooks.updateCropMagnifier({ clientX: 100, clientY: 100 });
   assert.ok(!elsMap['crop-magnifier'].classList.contains('hidden'), '低缩放时应显示放大镜');
   assert.equal(elsMap['crop-magnifier-canvas'].width, 11 * 20, '放大镜应为 11×11，每格 20px');
@@ -1941,7 +1962,7 @@ function mouseAt(cellX, cellY) {
   App.settings.useLab = true;
   App.settings.wandSensitivity = 0;
   App.selection.clear();
-  App.highlightColor = null;
+  interactionState.highlightColor = null;
   App.brushColor = 0;
   hooks.renderAll();
 
@@ -2009,9 +2030,9 @@ function mouseAt(cellX, cellY) {
 {
   seedProject();
   hooks.setTool('select');
-  App.crop = null;
-  App.cropActiveEdge = null;
-  App.cropPreview = null;
+  interactionState.crop = null;
+  interactionState.cropActiveEdge = null;
+  interactionState.cropPreview = null;
   App.project = { width: 12, height: 12, grid: new Int16Array(144).fill(1) };
   App.baseGrid = App.project.grid.slice();
   App.zoom = 1;

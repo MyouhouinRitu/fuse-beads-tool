@@ -6,24 +6,27 @@
 // - 仅在 URL 带 ?test=1 或预设 __FUSE_TEST__ 全局标记时暴露，
 //   避免生产页面被任意脚本读取内部状态；
 // - 重构内部实现时需保持这里的暴露面不变，或同步更新上述测试。
-//   测试还会直接读写 window.__app / window.__dragState，
-//   修改 App / dragState 的字段结构前需先确认测试用法。
+//   测试还会直接读写 window.__app / window.__dragState / window.__interactionState，
+//   修改 App / dragState / interactionState 的字段结构前需先确认测试用法。
 
 import { buildProjectDocument } from './autosave.js';
+import { paintCell, paintStamp } from './brush.js';
 import * as canvas from './canvas.js';
+import { updateBrush } from './color-list.js';
 import * as crop from './crop.js';
+import { updateCropMagnifier } from './crop-magnifier.js';
 import * as exportDialog from './export-dialog.js';
-import * as historyActions from './history-actions.js';
 import * as historyUI from './history-ui.js';
+import { interactionState } from './interaction.js';
 import * as markdown from './markdown.js';
 import * as quickPicker from './quick-picker.js';
 import { drawPattern } from './render.js';
 import { App, dragState } from './state.js';
 import * as theme from './theme.js';
 import * as toolState from './tool-state.js';
+import * as historyActions from './undo-redo.js';
 import { getToastQueue } from './utils.js';
 import * as view from './view.js';
-import * as workspace from './workspace.js';
 
 export function installTestHooks({ renderAll, applySlider, restoreState }) {
   const expose =
@@ -33,6 +36,7 @@ export function installTestHooks({ renderAll, applySlider, restoreState }) {
 
   window.__app = App;
   window.__dragState = dragState;
+  window.__interactionState = interactionState;
 
   // 自动化测试用：暴露需要直接驱动的内部函数
   window.__testHooks = {
@@ -40,9 +44,9 @@ export function installTestHooks({ renderAll, applySlider, restoreState }) {
     redrawCanvas: canvas.redrawCanvas,
     drawPattern,
     setTool: toolState.setTool,
-    updateBrush: workspace.updateBrush,
-    paintCell: workspace.paintCell,
-    paintStamp: workspace.paintStamp,
+    updateBrush,
+    paintCell,
+    paintStamp,
     applyQuickColor: quickPicker.applyQuickColor,
     doUndo: historyActions.doUndo,
     doRedo: historyActions.doRedo,
@@ -55,7 +59,7 @@ export function installTestHooks({ renderAll, applySlider, restoreState }) {
     updateCropPreview: crop.updateCropPreview,
     autoCrop: crop.autoCrop,
     applyCrop: crop.applyCrop,
-    updateCropMagnifier: crop.updateCropMagnifier,
+    updateCropMagnifier,
     applySlider,
     saveTransaction: historyUI.saveTransaction,
     switchHistoryItem: historyUI.switchHistoryItem,

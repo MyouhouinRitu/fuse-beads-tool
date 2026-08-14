@@ -13,6 +13,7 @@ import {
   findTransaction,
   MAX_UNDO_STEPS,
 } from './history.js';
+import { interactionState } from './interaction.js';
 import { ensurePaletteConfig, renderColorTable } from './palette.js';
 import { renderAllNow } from './render-queue.js';
 import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
@@ -112,7 +113,7 @@ export function deleteHistoryItem(id) {
       // 删除了当前事务：工作网格失去锚点，单步记录一并清空
       App.undoStack = [];
       App.redoStack = [];
-      App.strokeBuffer = null;
+      interactionState.strokeBuffer = null;
     }
     renderHistoryUI();
   }

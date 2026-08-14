@@ -1,7 +1,7 @@
 // 导出对话框：数据构建、实时预览与导出请求。
 
 import * as api from './api.js';
-import { buildCodes, buildDisplayData, buildLegend } from './canvas.js';
+import { buildCodes, buildDisplayData, buildLegend, sortLegend } from './canvas.js';
 import * as C from './colors.js';
 import {
   EXPORT_CELL_DEFAULT,
@@ -17,7 +17,7 @@ import {
 import { els } from './els.js';
 import { drawPattern } from './render.js';
 import { App } from './state.js';
-import { clampInt, codeOf, downloadDataUrl, toast } from './utils.js';
+import { clampInt, codeOf, downloadUrl, toast } from './utils.js';
 
 let pdfPreviewPages = [];
 let pdfPreviewIndex = 0;
@@ -47,10 +47,7 @@ function buildExportData() {
     gridOut[p] = i;
   }
   // 图例与导出调色板共用同一套索引：按豆数从多到少排序，数量相同按色号
-  const legend = paletteOut
-    .map(({ hex, code, count }) => ({ hex, code, count }))
-    .filter((e) => e.count > 0)
-    .sort((a, b) => b.count - a.count || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+  const legend = sortLegend(paletteOut.map(({ hex, code, count }) => ({ hex, code, count })));
   const palette = paletteOut.map(({ index, hex }) => ({ index, hex }));
   return { grid: Array.from(gridOut), palette, legend, codes: codesOut };
 }
@@ -232,7 +229,7 @@ export async function doExport() {
       options: buildExportOptions(fmt),
     });
     const ext = fmt.startsWith('pdf-') ? 'pdf' : fmt === 'png' ? 'png' : 'jpg';
-    downloadDataUrl(res.dataUrl, `拼豆图案.${ext}`);
+    downloadUrl(res.dataUrl, `拼豆图案.${ext}`);
     els.dlgStatus.textContent = '导出完成';
     await new Promise((r) => setTimeout(r, EXPORT_COMPLETE_DELAY_MS)); // 稍作停留显示完成状态
     closeExportDialog();

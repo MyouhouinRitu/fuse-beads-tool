@@ -2,7 +2,7 @@
 
 import { redrawCanvas } from './canvas.js';
 import { THEME_STORAGE_KEY } from './constants.js';
-import { refreshCropMagnifier } from './crop.js';
+import { refreshCropMagnifier } from './crop-magnifier.js';
 import { els } from './els.js';
 import { App } from './state.js';
 

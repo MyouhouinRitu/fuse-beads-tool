@@ -18,6 +18,7 @@ interface EventTarget {
 interface Window {
   __app: any;
   __dragState: any;
+  __interactionState: any;
   __testHooks: any;
   __FUSE_TEST__?: boolean;
 }

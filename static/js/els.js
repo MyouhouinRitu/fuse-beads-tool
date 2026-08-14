@@ -66,6 +66,15 @@ export const els = {
   btnAddColor: $('btn-add-color'),
   tabPalette: $('tab-palette'),
   tabEdit: $('tab-edit'),
+  leftPanel: $('left-panel'),
+  leftPanelToggle: $('left-panel-toggle'),
+  leftPanelExpand: $('left-panel-expand'),
+  colorHighlightPanel: $('color-highlight-panel'),
+  colorHighlightPanelHead: $('color-highlight-panel-head'),
+  colorHighlightPanelExpand: $('color-highlight-panel-expand'),
+  rightPanel: $('right-panel'),
+  rightPanelHead: $('right-panel-head'),
+  rightPanelExpand: $('right-panel-expand'),
   /** @type {HTMLButtonElement} */
   toolBrush: $('tool-brush'),
   /** @type {HTMLButtonElement} */

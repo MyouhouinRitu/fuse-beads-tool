@@ -7,29 +7,29 @@ import {
   PANEL_IDS,
   PANEL_STORAGE_KEY,
 } from './constants.js';
-import { $ } from './els.js';
+import { els } from './els.js';
 import { App, setProjectDirty } from './state.js';
 import { applyOriginalTransform, applyTransform } from './view.js';
 
 // 面板 DOM 集中引用：与 els.js 一致，避免散落的 document.getElementById
 const PANEL_DOM = {
   'left-panel': {
-    panel: $('left-panel'),
-    toggle: $('left-panel-toggle'),
-    head: $('left-panel-head'),
-    expand: $('left-panel-expand'),
+    panel: els.leftPanel,
+    toggle: els.leftPanelToggle,
+    head: null, // 左侧栏没有独立的标题头，收起/展开走 toggle 与展开条
+    expand: els.leftPanelExpand,
   },
   'color-highlight-panel': {
-    panel: $('color-highlight-panel'),
+    panel: els.colorHighlightPanel,
     toggle: null,
-    head: $('color-highlight-panel-head'),
-    expand: $('color-highlight-panel-expand'),
+    head: els.colorHighlightPanelHead,
+    expand: els.colorHighlightPanelExpand,
   },
   'right-panel': {
-    panel: $('right-panel'),
+    panel: els.rightPanel,
     toggle: null,
-    head: $('right-panel-head'),
-    expand: $('right-panel-expand'),
+    head: els.rightPanelHead,
+    expand: els.rightPanelExpand,
   },
 };
 

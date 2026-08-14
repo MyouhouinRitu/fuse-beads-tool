@@ -823,7 +823,7 @@ async function main() {
   await page.click('#tool-brush'); // 切换模式后色号高亮应保留
   await page.waitForTimeout(150);
   assert.equal(
-    await page.evaluate(() => window.__app.highlightColor != null),
+    await page.evaluate(() => window.__interactionState.highlightColor != null),
     true,
     '切换画笔模式后色号高亮应保留',
   );

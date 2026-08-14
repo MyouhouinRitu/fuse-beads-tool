@@ -1,20 +1,22 @@
+async function responseError(res, fallback) {
+  let msg = fallback || `请求失败（${res.status}）`;
+  try {
+    const j = await res.json();
+    if (j?.error) msg = j.error;
+  } catch (_e) {
+    /* ignore */
+  }
+  return new Error(msg);
+}
+
 async function request(path, options = {}) {
   const res = await fetch(path, options);
-  if (!res.ok) {
-    let msg = `请求失败（${res.status}）`;
-    try {
-      const j = await res.json();
-      if (j?.error) msg = j.error;
-    } catch (_e) {
-      /* ignore */
-    }
-    throw new Error(msg);
-  }
+  if (!res.ok) throw await responseError(res);
   return res.json();
 }
 
-const json = (body) => ({
-  method: 'POST',
+const json = (body, method = 'POST') => ({
+  method,
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body),
 });
@@ -23,11 +25,7 @@ export const getConfigs = () => request('/api/configs');
 export const getConfig = (name) => request(`/api/configs/${encodeURIComponent(name)}`);
 export const createConfig = (name, colors) => request('/api/configs', json({ name, colors }));
 export const saveConfig = (name, colors) =>
-  request(`/api/configs/${encodeURIComponent(name)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ colors }),
-  });
+  request(`/api/configs/${encodeURIComponent(name)}`, json({ colors }, 'PUT'));
 export const renameConfig = (name, newName) =>
   request(`/api/configs/${encodeURIComponent(name)}/rename`, json({ newName }));
 export const deleteConfig = (name) =>
@@ -47,16 +45,7 @@ export const uploadImage = (file, targetPixels, sharpen, originalId = null) => {
 };
 export const getOriginalBlob = async (originalId) => {
   const res = await fetch(`/api/originals/${encodeURIComponent(originalId)}`);
-  if (!res.ok) {
-    let msg = '原图不存在';
-    try {
-      const j = await res.json();
-      if (j?.error) msg = j.error;
-    } catch (_e) {
-      /* ignore */
-    }
-    throw new Error(msg);
-  }
+  if (!res.ok) throw await responseError(res, '原图不存在');
   return res.blob();
 };
 export const deleteOriginal = (originalId) =>
@@ -73,18 +62,8 @@ export const openProjectUpload = (file) => {
 export const exportImage = (payload) => request('/api/export', json(payload));
 export const exportPdfPreview = (payload) => request('/api/export-preview', json(payload));
 export const getState = () => request('/api/state');
-export const putState = (state) =>
-  request('/api/state', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(state),
-  });
+export const putState = (state) => request('/api/state', json(state, 'PUT'));
 export const authStatus = () => request('/api/auth/status');
 export const getAppInfo = () => request('/api/app-info');
-export const login = (token) =>
-  request('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-  });
+export const login = (token) => request('/api/auth/login', json({ token }));
 export const logout = () => request('/api/auth/logout', { method: 'POST' });

@@ -14,6 +14,23 @@ export function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+// 打包 / 解包 0xRRGGBB：画布显示数据用整数存储像素色
+export function packRgb(rgb) {
+  return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+}
+
+export function hex6(packed) {
+  return (
+    ((packed >>> 16) & 255).toString(16).padStart(2, '0') +
+    ((packed >>> 8) & 255).toString(16).padStart(2, '0') +
+    (packed & 255).toString(16).padStart(2, '0')
+  );
+}
+
+export function rgbFromPacked(v) {
+  return [(v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+}
+
 // 感知亮度判断：≥ 阈值视为亮色（用于文字、描边等对比色选择）
 export function isLightColor(rgb) {
   return luminance(rgb) >= LUMINANCE_THRESHOLD;

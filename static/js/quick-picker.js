@@ -1,6 +1,5 @@
 // D 键九宫格快速选色：候选色构建、弹窗渲染与定位、悬停预览与确认改色。
 
-import { scheduleAutosave } from './autosave.js';
 import * as C from './colors.js';
 import {
   QUICK_PICKER_CELL,
@@ -13,9 +12,10 @@ import {
   TOOLS,
 } from './constants.js';
 import { els } from './els.js';
-import { recordStep } from './history.js';
+import { interactionState } from './interaction.js';
+import { applyGridChanges, recordGridChanges, setGridPreview } from './mutations.js';
 import { scheduleCanvasRender, scheduleRender } from './render-queue.js';
-import { App, setDirty } from './state.js';
+import { App } from './state.js';
 import { setTool } from './tool-state.js';
 import { codeOf, countBadge, titleOf } from './utils.js';
 import { cellCenterToScreen } from './view.js';
@@ -36,8 +36,8 @@ const QUICK_PICKER_NEIGHBORS = [
 export function buildQuickCandidates(cell) {
   const { grid, width, height } = App.project;
   const p = cell.y * width + cell.x;
-  App.pickerCell = { x: cell.x, y: cell.y, p, original: grid[p] };
-  App.pickerPreviewIndex = null;
+  interactionState.pickerCell = { x: cell.x, y: cell.y, p, original: grid[p] };
+  interactionState.pickerPreviewIndex = null;
   const own = grid[p];
   const exclude = new Set(own >= 0 ? [own] : []);
   const candSet = new Set();
@@ -67,7 +67,7 @@ export function buildQuickCandidates(cell) {
     }
   }
   const scored = list.slice(0, QUICK_PICKER_MAX).map((i) => ({ i }));
-  App.pickerCandidates = scored;
+  interactionState.pickerCandidates = scored;
   return scored;
 }
 
@@ -158,27 +158,18 @@ export function openQuickPicker(cell) {
 }
 
 export function applyQuickColor(k) {
-  const cand = App.pickerCandidates?.[k];
+  const cand = interactionState.pickerCandidates?.[k];
   if (!cand) return;
-  const { grid } = App.project;
-  const pc = App.pickerCell; // 九宫格打开时由 openQuickPicker 设置目标格
+  const pc = interactionState.pickerCell; // 九宫格打开时由 openQuickPicker 设置目标格
   App.brushColor = cand.i;
   setTool(TOOLS.SELECT); // 改完颜色后回到选择模式（九宫格仅单选一格时可用）
   if (pc) {
     // 悬停预览可能已改动格子，这里统一以「打开时的原始颜色 → 目标颜色」记一步
-    const changed = grid[pc.p] !== pc.original;
-    grid[pc.p] = cand.i;
-    if (changed) {
-      App.strokeBuffer = [{ x: pc.x, y: pc.y, from: pc.original, to: cand.i }];
-      recordStep(App.undoStack, App.redoStack, App.strokeBuffer);
-      App.strokeBuffer = null;
-      setDirty(true);
-      App.editedSinceSlider = true;
-      scheduleAutosave();
-    }
+    const applied = applyGridChanges([{ x: pc.x, y: pc.y, from: pc.original, to: cand.i }]);
+    if (applied.length) recordGridChanges(applied);
   }
-  App.pickerPreviewIndex = null;
-  App.pickerCell = null;
+  interactionState.pickerPreviewIndex = null;
+  interactionState.pickerCell = null;
   closeQuickPicker();
   // 全量刷新：更新画布、画笔色列表选中态与撤销按钮（renderAll 统一覆盖）
   scheduleRender();
@@ -186,25 +177,26 @@ export function applyQuickColor(k) {
 
 // 悬停预览：把目标格临时显示为候选颜色（不进撤销栈，移出弹窗/取消时还原）
 export function previewQuickColor(k) {
-  const pc = App.pickerCell;
-  const cand = App.pickerCandidates?.[k];
+  const pc = interactionState.pickerCell;
+  const cand = interactionState.pickerCandidates?.[k];
   if (!pc || !cand || !App.project) return;
-  App.project.grid[pc.p] = cand.i;
-  App.pickerPreviewIndex = k;
+  setGridPreview(pc.p, cand.i);
+  interactionState.pickerPreviewIndex = k;
   scheduleCanvasRender();
 }
 
 // 还原悬停预览（移出弹窗或取消时调用）
 export function restoreQuickPickerPreview() {
-  if (!App.pickerCell || App.pickerPreviewIndex == null) return;
-  if (App.project) App.project.grid[App.pickerCell.p] = App.pickerCell.original;
-  App.pickerPreviewIndex = null;
+  if (!interactionState.pickerCell || interactionState.pickerPreviewIndex == null) return;
+  if (App.project)
+    setGridPreview(interactionState.pickerCell.p, interactionState.pickerCell.original);
+  interactionState.pickerPreviewIndex = null;
   scheduleCanvasRender();
 }
 
 export function closeQuickPicker() {
   restoreQuickPickerPreview();
-  App.pickerCell = null;
+  interactionState.pickerCell = null;
   els.quickPicker.classList.add('hidden');
-  App.pickerCandidates = null;
+  interactionState.pickerCandidates = null;
 }

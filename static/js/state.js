@@ -1,12 +1,14 @@
 // 应用全局状态：唯一的 App 单例与拖拽状态。
 // 状态归属约定：
 // - 可持久化的偏好统一放在 App.settings（唯一数据源）；
-// - App 统一持有领域状态与 UI 计时器句柄（toast/自动保存/配置保存/高亮闪烁），便于测试检查；
-// - 各模块私有瞬态（拖拽标记、渲染缓存、节流时间戳）留在所属模块，不塞进 App。
+// - App 统一持有可持久化领域状态与 UI 计时器句柄（toast/自动保存/配置保存/高亮闪烁），便于测试检查；
+// - 跨模块瞬态交互状态统一放在 interactionState（interaction.js），拖拽过程中间标记放在 dragState；
+//   渲染缓存、节流时间戳等模块私有瞬态留在所属模块，不塞进 App。
 
 import { CELL, DEFAULT_TARGET_PIXELS, TOOLS, WAND_SENSITIVITY_DEFAULT } from './constants.js';
 import { els } from './els.js';
 import { createEmptyHistory } from './history.js';
+import { interactionState } from './interaction.js';
 
 export const App = {
   configs: [],
@@ -31,19 +33,11 @@ export const App = {
   editedSinceSlider: false,
   brushColor: null, // 未选择颜色
   tool: TOOLS.SELECT, // select / brush / eraser / picker / crop / wand
-  crop: null, // 裁剪矩形 {x0,y0,x1,y1}（含端点）
-  cropActiveEdge: null, // 当前选中/拖拽的边：left/right/top/bottom
-  cropPreview: null, // 裁剪预览虚线 {horizontal, pos}
   selection: new Set(), // 当前选中的像素格索引集合（p = y*width + x）
-  dragPreview: null, // 矩形拖选中的实时预览范围 {x0,y0,x1,y1}
-  hoverCell: null, // 鼠标当前指向的像素格（用于 hover 边框）
-  painting: false,
-  lastCell: null,
   pan: { x: 0, y: 0 },
   history: createEmptyHistory(),
   undoStack: [],
   redoStack: [],
-  strokeBuffer: null, // 一次画笔/橡皮按下到放开过程中累积的像素修改
   settings: {
     targetPixels: DEFAULT_TARGET_PIXELS,
     useLab: true,
@@ -60,13 +54,8 @@ export const App = {
   projectDirty: false, // 自上次打开/保存 .ssfbp 后，会写入项目文件的文档数据是否变化
   zoom: 1,
   screenCell: CELL,
-  highlightBlink: true,
   highlightTimer: null,
   toastTimer: null,
-  pickerCandidates: null,
-  pickerCell: null, // 九宫格改色的目标格 {x,y,p,original}
-  pickerPreviewIndex: null, // 九宫格当前悬停预览的候选序号（null 表示未预览）
-  highlightColor: null,
   saveTimer: null,
   configTimer: null,
 };
@@ -94,7 +83,8 @@ export function setDirty(d) {
   App.dirty = d;
   // 一旦产生未保存修改，当前事务就不再是“当前状态”，只保留基线标记
   if (d && App.history.currentId != null) App.history.currentId = null;
-  // 画布网格等任何已保存文档数据发生变化时，项目文件也应标记为未保存
+  // 约定：任何画布编辑（置 true）同时标记项目文档未保存；
+  // 因此调用方无需再重复 setProjectDirty(true)；置 false 不会清除项目文档标记。
   if (d) App.projectDirty = true;
   els.dirtyIndicator.classList.toggle('hidden', !d);
 }
@@ -113,5 +103,5 @@ export function clearHistoryRecords() {
   App.history = createEmptyHistory();
   App.undoStack = [];
   App.redoStack = [];
-  App.strokeBuffer = null;
+  interactionState.strokeBuffer = null;
 }
