@@ -1,0 +1,21 @@
+{
+  "name": "fuse-beads-tool",
+  "version": "0.3.1",
+  "private": true,
+  "type": "module",
+  "description": "拼豆（Perler / Fuse Beads）图案制作工具前端",
+  "scripts": {
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "node tests/frontend_logic_test.mjs && node tests/dom_behavior_test.mjs && node tests/constants_sync_test.mjs",
+    "test:ui": "node tests/ui_test.mjs",
+    "check": "npm run lint && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.8",
+    "typescript": "^7.0.2"
+  }
+}

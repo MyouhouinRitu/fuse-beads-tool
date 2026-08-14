@@ -1,5 +1,8 @@
 // 裁剪工具：矩形编辑、自动裁剪、应用裁剪（结构性撤销）、低缩放放大镜。
 
+import { scheduleAutosave } from './autosave.js';
+import { buildDisplayData, clearProjectEditingState } from './canvas.js';
+import * as C from './colors.js';
 import {
   CANVAS_EDGE_CELLS,
   CROP_EDGE_ACTIVE_COLOR,
@@ -14,18 +17,15 @@ import {
   CROP_MAGNIFIER_WINDOW_MARGIN,
   TOOLS,
 } from './constants.js';
-import * as C from './colors.js';
 import { els } from './els.js';
 import { createTransaction, recordStructuralStep } from './history.js';
-import { App, dragState, setDirty, setProjectDirty } from './state.js';
-import { clampInt, hideCropMagnifier, toast } from './utils.js';
-import { buildDisplayData, clearProjectEditingState } from './canvas.js';
-import { drawPatternBase } from './render.js';
 import { renderHistoryUI } from './history-ui.js';
-import { setTool } from './tool-state.js';
-import { canvasScale, eventToCanvasPos, fitViewportToCanvas } from './view.js';
+import { drawPatternBase } from './render.js';
 import { renderAllNow, scheduleCanvasRender } from './render-queue.js';
-import { scheduleAutosave } from './autosave.js';
+import { App, dragState, setDirty, setProjectDirty } from './state.js';
+import { setTool } from './tool-state.js';
+import { clampInt, hideCropMagnifier, toast } from './utils.js';
+import { canvasScale, eventToCanvasPos, fitViewportToCanvas } from './view.js';
 
 let cropLastMouse = null; // 裁剪模式最近一次鼠标位置（缩放后重绘放大镜用）
 
@@ -63,7 +63,10 @@ function cropEdgeAt(e) {
   let best = null;
   let bestD = t;
   for (const [edge, d] of cands) {
-    if (d <= bestD) { best = edge; bestD = d; }
+    if (d <= bestD) {
+      best = edge;
+      bestD = d;
+    }
   }
   return best;
 }
@@ -143,23 +146,37 @@ export function updateCropCursor(e) {
     return;
   }
   if (dragState.cropEdge) {
-    els.canvas.style.cursor = dragState.cropEdge === 'left' || dragState.cropEdge === 'right' ? 'ew-resize' : 'ns-resize';
+    els.canvas.style.cursor =
+      dragState.cropEdge === 'left' || dragState.cropEdge === 'right' ? 'ew-resize' : 'ns-resize';
     return;
   }
   const edge = cropEdgeAt(e) || App.cropActiveEdge;
-  els.canvas.style.cursor = edge ? (edge === 'left' || edge === 'right' ? 'ew-resize' : 'ns-resize') : '';
+  els.canvas.style.cursor = edge
+    ? edge === 'left' || edge === 'right'
+      ? 'ew-resize'
+      : 'ns-resize'
+    : '';
 }
 
 // 裁剪预览：选中边且鼠标在图案内时，记录该边将移动到的平行格线（红虚线预览）
 export function updateCropPreview(e) {
-  const active = App.tool === TOOLS.CROP && App.project && App.crop
-    && App.cropActiveEdge && !dragState.cropEdge && isInCropArea(e);
+  const active =
+    App.tool === TOOLS.CROP &&
+    App.project &&
+    App.crop &&
+    App.cropActiveEdge &&
+    !dragState.cropEdge &&
+    isInCropArea(e);
   if (!active) return; // 图片之外：保留当前预览位置，不更新也不清除
   const horizontal = App.cropActiveEdge === 'left' || App.cropActiveEdge === 'right';
   const pos = Math.round(cropPosFromEvent(e, horizontal));
   const maxPos = horizontal ? App.project.width : App.project.height;
   const clamped = clampInt(pos, 0, maxPos);
-  if (!App.cropPreview || App.cropPreview.horizontal !== horizontal || App.cropPreview.pos !== clamped) {
+  if (
+    !App.cropPreview ||
+    App.cropPreview.horizontal !== horizontal ||
+    App.cropPreview.pos !== clamped
+  ) {
     App.cropPreview = { horizontal, pos: clamped };
     scheduleCanvasRender();
   }
@@ -169,7 +186,10 @@ export function updateCropPreview(e) {
 export function autoCrop() {
   if (!App.project || App.tool !== TOOLS.CROP || !App.crop) return;
   const { grid, width, height } = App.project;
-  let minX = width, minY = height, maxX = -1, maxY = -1;
+  let minX = width,
+    minY = height,
+    maxX = -1,
+    maxY = -1;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (grid[y * width + x] >= 0) {
@@ -180,7 +200,10 @@ export function autoCrop() {
       }
     }
   }
-  if (maxX < 0) { toast('图案全为空位，无法自动裁剪'); return; }
+  if (maxX < 0) {
+    toast('图案全为空位，无法自动裁剪');
+    return;
+  }
   App.crop = { x0: minX, y0: minY, x1: maxX, y1: maxY };
   App.cropActiveEdge = null;
   hideCropMagnifier();
@@ -193,7 +216,8 @@ export function applyCrop() {
   const { x0, y0, x1, y1 } = App.crop;
   const w = x1 - x0 + 1;
   const h = y1 - y0 + 1;
-  if (w <= 0 || h <= 0 || x0 < 0 || y0 < 0 || x1 >= App.project.width || y1 >= App.project.height) return;
+  if (w <= 0 || h <= 0 || x0 < 0 || y0 < 0 || x1 >= App.project.width || y1 >= App.project.height)
+    return;
   if (w === App.project.width && h === App.project.height) {
     toast('未做任何裁剪');
     setTool(TOOLS.SELECT);
@@ -252,7 +276,10 @@ function drawCropMagnifier() {
   const canvas = els.cropMagnifierCanvas;
   const n = CROP_MAGNIFIER_SIZE;
   // 放大后每格尺寸 = 当前屏幕格宽 × 倍率（至少 16px，保证可见）
-  const cell = Math.max(CROP_MAGNIFIER_MIN_CELL, Math.round(App.screenCell * App.zoom * CROP_MAGNIFIER_SCALE));
+  const cell = Math.max(
+    CROP_MAGNIFIER_MIN_CELL,
+    Math.round(App.screenCell * App.zoom * CROP_MAGNIFIER_SCALE),
+  );
   const { width, height } = App.project;
   const hx = App.hoverCell.x;
   const hy = App.hoverCell.y;
@@ -291,6 +318,7 @@ function drawCropMagnifier() {
     const cx1 = (App.crop.x1 + 1 - x0) * cell;
     const cy1 = (App.crop.y1 + 1 - y0) * cell;
     ctx2.lineWidth = 2;
+    /** @type {Array<[string, number, number, number, number]>} */
     const edges = [
       ['left', cx0, cy0, cx0, cy1],
       ['right', cx1, cy0, cx1, cy1],
@@ -329,16 +357,21 @@ function positionCropMagnifier(e) {
   const pad = CROP_MAGNIFIER_GAP;
   let left = e.clientX + pad;
   let top = e.clientY + pad;
-  if (left + w > (window.innerWidth || 0) - CROP_MAGNIFIER_WINDOW_MARGIN) left = e.clientX - w - pad;
+  if (left + w > (window.innerWidth || 0) - CROP_MAGNIFIER_WINDOW_MARGIN)
+    left = e.clientX - w - pad;
   if (top + h > (window.innerHeight || 0) - CROP_MAGNIFIER_WINDOW_MARGIN) top = e.clientY - h - pad;
-  el.style.left = left + 'px';
-  el.style.top = top + 'px';
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
 }
 
 export function updateCropMagnifier(e) {
   const el = els.cropMagnifier;
-  if (App.tool !== TOOLS.CROP || !App.project || !App.hoverCell
-    || App.screenCell * App.zoom >= CROP_MAGNIFIER_MIN_SCREEN_CELL) {
+  if (
+    App.tool !== TOOLS.CROP ||
+    !App.project ||
+    !App.hoverCell ||
+    App.screenCell * App.zoom >= CROP_MAGNIFIER_MIN_SCREEN_CELL
+  ) {
     hideCropMagnifier();
     return;
   }

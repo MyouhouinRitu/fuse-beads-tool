@@ -1,10 +1,18 @@
 // 跨模块共享的小工具：提示、下载、颜色文案、数值收敛、几何换算等。
 
-import { DEFAULT_TARGET_PIXELS, TARGET_PIXELS_MAX, TOAST_DURATION_MS, HINT_THROTTLE_MS, VIEWPORT_PADDING, ZOOM_MIN } from './constants.js';
+import {
+  DEFAULT_TARGET_PIXELS,
+  HINT_THROTTLE_MS,
+  TARGET_PIXELS_MAX,
+  TARGET_PIXELS_MIN,
+  TOAST_DURATION_MS,
+  VIEWPORT_PADDING,
+  ZOOM_MIN,
+} from './constants.js';
 import { els } from './els.js';
 import { App } from './state.js';
 
-let toastQueue = [];
+const toastQueue = [];
 let toastVisible = false;
 let toastImportant = false;
 let pendingNormal = null;
@@ -117,12 +125,18 @@ export function clampInt(raw, min, max, fallback) {
 
 // 「目标像素量」统一取值入口：输入框 → 合法区间
 export function getTargetPixels() {
-  return Math.min(TARGET_PIXELS_MAX, parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS);
+  return Math.min(
+    TARGET_PIXELS_MAX,
+    Math.max(TARGET_PIXELS_MIN, parseInt(els.targetPixels.value, 10) || DEFAULT_TARGET_PIXELS),
+  );
 }
 
 // 计算把尺寸适配进视口的缩放与居中位移
 export function fitToViewport(sizeW, sizeH, vw, vh, cap) {
-  const zoom = Math.max(ZOOM_MIN, Math.min((vw - VIEWPORT_PADDING) / sizeW, (vh - VIEWPORT_PADDING) / sizeH, cap));
+  const zoom = Math.max(
+    ZOOM_MIN,
+    Math.min((vw - VIEWPORT_PADDING) / sizeW, (vh - VIEWPORT_PADDING) / sizeH, cap),
+  );
   return {
     zoom,
     pan: { x: (vw - sizeW * zoom) / 2, y: (vh - sizeH * zoom) / 2 },
@@ -142,8 +156,9 @@ export function zoomAroundPoint(rectLeft, rectTop, panX, panY, oldZoom, clientX,
 }
 
 export function blurActive() {
-  if (document.activeElement && typeof document.activeElement.blur === 'function') {
-    document.activeElement.blur();
+  const el = document.activeElement;
+  if (el && typeof el.blur === 'function') {
+    el.blur();
   }
 }
 

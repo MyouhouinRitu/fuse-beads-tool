@@ -23,7 +23,7 @@
 - `Ctrl+S`：保存事务
 - `Ctrl+Shift+S`：保存项目（.ssfbp）
 - `Ctrl+Z`：撤销
-- `Ctrl+Y`：重做
+- `Ctrl+Shift+Z` / `Ctrl+Y`：重做
 
 ### 视图与画布
 

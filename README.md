@@ -59,7 +59,7 @@ python app.py
 - 自动保存会记录：设置、视口（缩放 / 平移）、当前工具与画笔颜色、选区、未保存修改标记、画布与基副本、单步撤销 / 重做栈、事务历史、后端原图引用；下次打开时恢复这些运行态。
 - 导入的原图会按内容哈希保存到 `data/originals/`，「重新压缩」可直接从后端原图提取；浏览器 IndexedDB 仍作为「对比原图」的缓存与降级来源。
 - 项目与每个事务快照都会保存色板哈希；打开 / 刷新 / 切换事务时按哈希检查配置，配置缺失或与快照不一致时会自动创建「原名 (恢复 哈希前8位)」配置并更新引用，原配置不会被覆盖。
-- 撤销 / 重做（Ctrl+Z / Ctrl+Y，最多 20 步，增量记录）；D 键改色、画笔 / 橡皮整段、选区填充各记一步。
+- 撤销 / 重做（Ctrl+Z 撤销；Ctrl+Shift+Z / Ctrl+Y 重做，最多 20 步，增量记录）；D 键改色、画笔 / 橡皮整段、选区填充各记一步。
 - 重新压缩或调整滑块会清空事务与撤销记录（有警告）；「清空所有状态」清空画布与全部历史。
 
 ### 7. 导出图片
@@ -106,7 +106,8 @@ python app.py
 | 按键 | 功能 |
 | --- | --- |
 | Ctrl+S / Cmd+S | 保存事务状态 |
-| Ctrl+Z / Ctrl+Y | 撤销 / 重做（最多 20 步） |
+| Ctrl+Z | 撤销（最多 20 步） |
+| Ctrl+Shift+Z / Ctrl+Y | 重做 |
 | D / 1-9 | 相近色九宫格 / 选择（单选格优先，否则悬停格） |
 | Q / W / E | 切换画笔 / 取色 / 橡皮 |
 | R | 裁剪工具（ESC 取消返回选择模式） |
@@ -127,3 +128,20 @@ node tests/ui_test.mjs                  # 完整界面回归（需 Playwright + 
 node tests/render_consistency_test.mjs  # 前端 / 后端渲染一致性（需 Playwright + Chromium）
 node tests/constants_sync_test.mjs      # 前端 / 后端 / CSS 布局与渲染参数一致性
 ```
+
+## 前端工具链
+
+前端使用 Biome（格式化 / lint）与 TypeScript `checkJs`（类型检查），通过 npm 脚本统一入口（需要 Node.js 在 PATH 中）：
+
+```bash
+npm run format        # Biome 格式化并写入
+npm run format:check  # 仅检查格式
+npm run lint          # Biome lint + 格式 + import 排序检查
+npm run lint:fix      # Biome 自动修复（含安全修复）
+npm run typecheck     # tsc --noEmit（checkJs 类型检查）
+npm test              # 纯 Node 测试（逻辑 / DOM 行为 / 常量同步）
+npm run test:ui       # Playwright 完整界面回归
+npm run check         # lint + typecheck + test 一键检查
+```
+
+编辑器推荐安装 Biome 扩展（`.vscode/extensions.json` 已声明），保存时自动格式化并修复。

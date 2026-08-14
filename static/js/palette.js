@@ -1,12 +1,12 @@
 // 色板配置面板：配置列表/详情、色表渲染、增删改与延迟保存。
 
-import { CONFIG_SAVE_DELAY_MS } from './constants.js';
 import * as api from './api.js';
+import { scheduleAutosave } from './autosave.js';
+import { CONFIG_SAVE_DELAY_MS } from './constants.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
 import { App, setProjectDirty } from './state.js';
 import { hintPaletteDeferred, toast } from './utils.js';
-import { scheduleAutosave } from './autosave.js';
 
 export async function loadConfigs(selectName) {
   const res = await api.getConfigs();
@@ -18,9 +18,12 @@ export async function loadConfigs(selectName) {
     opt.textContent = `${c.name}（${c.colorCount}色）`;
     els.configSelect.appendChild(opt);
   }
-  const name = selectName && res.configs.some((c) => c.name === selectName)
-    ? selectName
-    : (res.configs[0] ? res.configs[0].name : null);
+  const name =
+    selectName && res.configs.some((c) => c.name === selectName)
+      ? selectName
+      : res.configs[0]
+        ? res.configs[0].name
+        : null;
   App.configName = name;
   els.configSelect.value = name || '';
   if (name && !App.palette.length) {
@@ -54,7 +57,7 @@ async function configHashByName(name) {
     const hash = paletteHash(res.colors);
     cfg.paletteHash = hash;
     return hash;
-  } catch (e) {
+  } catch (_e) {
     return null;
   }
 }
@@ -66,7 +69,7 @@ export async function ensurePaletteConfig(colors, preferredName) {
   if (byHash) return { name: byHash.name, hash, created: false };
 
   const preferred = String(preferredName || '恢复色板').trim() || '恢复色板';
-  if (await configHashByName(preferred) === hash) {
+  if ((await configHashByName(preferred)) === hash) {
     return { name: preferred, hash, created: false };
   }
 
@@ -104,13 +107,15 @@ function scheduleConfigSave() {
       const cfg = App.configs.find((c) => c.name === App.configName);
       if (cfg) cfg.paletteHash = paletteHash(App.palette);
     } catch (err) {
-      toast('配置保存失败：' + err.message);
+      toast(`配置保存失败：${err.message}`);
     }
   }, CONFIG_SAVE_DELAY_MS);
 }
 
 function renumberPalette() {
-  App.palette.forEach((c, i) => { c.index = i + 1; });
+  App.palette.forEach((c, i) => {
+    c.index = i + 1;
+  });
 }
 
 // 色表事件委托：容器上只绑定 input/change/click 三组监听，
@@ -136,7 +141,7 @@ export function bindColorTable() {
     const i = Number(row.dataset.index);
     if (e.target.classList.contains('c-hex')) {
       const h = /^#?[0-9a-fA-F]{6}$/.test(e.target.value.trim())
-        ? '#' + e.target.value.trim().replace('#', '').toUpperCase()
+        ? `#${e.target.value.trim().replace('#', '').toUpperCase()}`
         : App.palette[i].hex;
       App.palette[i].hex = h;
       e.target.value = h;
@@ -212,8 +217,12 @@ export function renderColorTable() {
 }
 
 function removeColor(i) {
-  const used = App.project && App.project.grid.some((v) => v === i);
-  if (used && !confirm('该颜色正在被使用，删除后重新压缩时已使用的格子会自动替换为最相近的颜色。是否继续？')) return;
+  const used = App.project?.grid.some((v) => v === i);
+  if (
+    used &&
+    !confirm('该颜色正在被使用，删除后重新压缩时已使用的格子会自动替换为最相近的颜色。是否继续？')
+  )
+    return;
   const oldPalette = App.palette;
   App.palette = App.palette.filter((_, k) => k !== i);
   if (!App.palette.length) {

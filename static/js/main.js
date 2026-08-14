@@ -2,7 +2,11 @@
 // 全量刷新 renderAll 与缩放联动钩子在这里编排，功能模块只依赖 render-queue 请求渲染。
 
 import * as api from './api.js';
+import * as auth from './auth.js';
+import { buildProjectDocument, defaultProjectFileName, scheduleAutosave } from './autosave.js';
+import * as canvas from './canvas.js';
 import * as C from './colors.js';
+import * as compare from './compare.js';
 import {
   BRUSH_SIZE_MAX,
   BRUSH_SIZE_MIN,
@@ -16,40 +20,51 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from './constants.js';
-import { sanitizeHistory, sanitizeUndoStack } from './history.js';
-import { App, dragState, hasPendingRecords, clearHistoryRecords, setDirty, setProjectDirty } from './state.js';
-import { assertElements, els } from './els.js';
-import { clampInt, downloadDataUrl, downloadUrl, hintDistanceDeferred, toast } from './utils.js';
-import { renderAllNow, scheduleCanvasRender, setRenderers } from './render-queue.js';
-import * as auth from './auth.js';
-import { buildProjectDocument, defaultProjectFileName, scheduleAutosave } from './autosave.js';
-import * as canvas from './canvas.js';
-import * as compare from './compare.js';
 import * as crop from './crop.js';
+import { assertElements, els } from './els.js';
 import * as exportDialog from './export-dialog.js';
 import * as highlight from './highlight.js';
+import { sanitizeHistory, sanitizeUndoStack } from './history.js';
 import * as historyActions from './history-actions.js';
 import * as historyUI from './history-ui.js';
 import * as markdown from './markdown.js';
 import * as palette from './palette.js';
 import * as panel from './panel.js';
 import * as quickPicker from './quick-picker.js';
+import { renderAllNow, scheduleCanvasRender, setRenderers } from './render-queue.js';
+import {
+  App,
+  clearHistoryRecords,
+  dragState,
+  hasPendingRecords,
+  setDirty,
+  setProjectDirty,
+} from './state.js';
+import { installTestHooks } from './test-hooks.js';
 import * as theme from './theme.js';
 import * as toolState from './tool-state.js';
 import * as upload from './upload.js';
+import {
+  clampInt,
+  downloadDataUrl,
+  downloadUrl,
+  getTargetPixels,
+  hintDistanceDeferred,
+  toast,
+} from './utils.js';
 import * as view from './view.js';
 import * as workspace from './workspace.js';
-import { installTestHooks } from './test-hooks.js';
 
 let nativeDialogs = false; // 后端明确告知是否支持 Windows 系统文件对话框
 
 function projectNameStem(name) {
-  return String(name || '').replace(/\.[^.]+$/, '').trim();
+  return String(name || '')
+    .replace(/\.[^.]+$/, '')
+    .trim();
 }
 
 function updateProjectNameLabel() {
-  const name = App.projectName
-    || (App.originalName ? projectNameStem(App.originalName) : '');
+  const name = App.projectName || (App.originalName ? projectNameStem(App.originalName) : '');
   els.projectNameLabel.textContent = name ? `· ${name}` : '';
 }
 
@@ -76,7 +91,9 @@ function renderAll() {
   }
   const counts = C.computeUsedCounts(project.grid, project.width, project.height);
   const used = C.countUsedColors(project.grid, project.width, project.height);
-  const baseUsed = App.baseGrid ? C.countUsedColors(App.baseGrid, project.width, project.height) : used;
+  const baseUsed = App.baseGrid
+    ? C.countUsedColors(App.baseGrid, project.width, project.height)
+    : used;
   App.maxColors = App.sliderN ?? baseUsed;
   els.colorSlider.max = String(Math.max(2, baseUsed));
   els.colorSlider.value = String(App.maxColors);
@@ -116,7 +133,9 @@ view.setAfterZoomHook(() => {
 // 从基副本按颜色数量 N 生成工作副本（有确认提示）
 function applySlider(n) {
   if (!App.project) return;
-  const baseUsed = App.baseGrid ? C.countUsedColors(App.baseGrid, App.project.width, App.project.height) : 0;
+  const baseUsed = App.baseGrid
+    ? C.countUsedColors(App.baseGrid, App.project.width, App.project.height)
+    : 0;
   const hasHistory = hasPendingRecords();
   if (hasHistory || App.editedSinceSlider) {
     const msg = hasHistory
@@ -145,9 +164,14 @@ function applySlider(n) {
 
 // 把持久化设置同步到 App 状态与界面控件
 function applySettingsToControls() {
-  App.settings.brushSize = clampInt(App.settings.brushSize, BRUSH_SIZE_MIN, BRUSH_SIZE_MAX, BRUSH_SIZE_MIN);
+  App.settings.brushSize = clampInt(
+    App.settings.brushSize,
+    BRUSH_SIZE_MIN,
+    BRUSH_SIZE_MAX,
+    BRUSH_SIZE_MIN,
+  );
   els.sameColorChk.checked = !!App.settings.sameColorSelect;
-  els.targetPixels.value = App.settings.targetPixels;
+  els.targetPixels.value = String(App.settings.targetPixels);
   els.chkSharpen.checked = App.settings.sharpen;
   els.chkCodes.checked = App.settings.showCodes;
   els.selDistance.value = App.settings.useLab ? 'lab' : 'rgb';
@@ -179,18 +203,19 @@ async function restoreProjectState(st) {
   App.baseGrid = st.project.baseGrid
     ? Int16Array.from(st.project.baseGrid)
     : App.project.grid.slice();
-  App.maxColors = st.project.maxColors || C.countUsedColors(App.project.grid, st.project.width, st.project.height) || 2;
+  App.maxColors =
+    st.project.maxColors ||
+    C.countUsedColors(App.project.grid, st.project.width, st.project.height) ||
+    2;
   App.sliderN = st.project.sliderN ?? null;
   App.editedSinceSlider = !!st.project.editedSinceSlider;
   App.configName = st.project.paletteName || App.configName;
   // 已应用色板 = 上次保存/导入时画布所用的色板，画布与编辑工具按其显示
-  App.appliedPalette = (st.project.palette && st.project.palette.length)
+  App.appliedPalette = st.project.palette?.length
     ? st.project.palette.map((c) => ({ ...c }))
     : App.appliedPalette.map((c) => ({ ...c }));
   // 色板配置（可编辑）以磁盘上的配置为准；快照与配置不一致时自动创建恢复配置
-  const snapPalette = st.project.palette && st.project.palette.length
-    ? st.project.palette
-    : null;
+  const snapPalette = st.project.palette?.length ? st.project.palette : null;
   if (snapPalette) {
     const preferred = App.configName || '恢复色板';
     const { name, created } = await palette.ensurePaletteConfig(snapPalette, preferred);
@@ -198,7 +223,7 @@ async function restoreProjectState(st) {
     try {
       const res = await api.getConfig(name);
       App.palette = res.colors;
-    } catch (e) {
+    } catch (_e) {
       App.palette = snapPalette.map((c) => ({ ...c }));
     }
     if (created || name !== preferred) scheduleAutosave();
@@ -206,7 +231,7 @@ async function restoreProjectState(st) {
     try {
       const res = await api.getConfig(App.configName);
       App.palette = res.colors;
-    } catch (e) {
+    } catch (_e) {
       App.palette = [];
     }
   } else {
@@ -216,7 +241,13 @@ async function restoreProjectState(st) {
   palette.renderColorTable();
 }
 
-const RESTORABLE_TOOLS = new Set([TOOLS.SELECT, TOOLS.BRUSH, TOOLS.ERASER, TOOLS.PICKER, TOOLS.WAND]);
+const RESTORABLE_TOOLS = new Set([
+  TOOLS.SELECT,
+  TOOLS.BRUSH,
+  TOOLS.ERASER,
+  TOOLS.PICKER,
+  TOOLS.WAND,
+]);
 
 function restoreSelection(raw, project) {
   if (!project || !Array.isArray(raw)) return new Set();
@@ -230,10 +261,15 @@ function restoreSelection(raw, project) {
 }
 
 function applySavedOriginalViewport(vp) {
-  const oz = Number(vp && vp.origZoom);
-  const op = vp && vp.origPan;
-  if (!Number.isFinite(oz) || oz <= 0 || !op
-    || !Number.isFinite(Number(op.x)) || !Number.isFinite(Number(op.y))) {
+  const oz = Number(vp?.origZoom);
+  const op = vp?.origPan;
+  if (
+    !Number.isFinite(oz) ||
+    oz <= 0 ||
+    !op ||
+    !Number.isFinite(Number(op.x)) ||
+    !Number.isFinite(Number(op.y))
+  ) {
     return false;
   }
   App.origZoom = oz;
@@ -243,10 +279,15 @@ function applySavedOriginalViewport(vp) {
 }
 
 function restoreViewport(vp) {
-  const zoom = Number(vp && vp.zoom);
-  const pan = vp && vp.pan;
-  if (!Number.isFinite(zoom) || zoom <= 0 || !pan
-    || !Number.isFinite(Number(pan.x)) || !Number.isFinite(Number(pan.y))) {
+  const zoom = Number(vp?.zoom);
+  const pan = vp?.pan;
+  if (
+    !Number.isFinite(zoom) ||
+    zoom <= 0 ||
+    !pan ||
+    !Number.isFinite(Number(pan.x)) ||
+    !Number.isFinite(Number(pan.y))
+  ) {
     return false;
   }
   App.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
@@ -260,7 +301,7 @@ async function restoreState() {
   let st;
   try {
     st = await api.getState();
-  } catch (e) {
+  } catch (_e) {
     st = {};
   }
   if (st.settings) Object.assign(App.settings, st.settings);
@@ -268,25 +309,27 @@ async function restoreState() {
   await restoreProjectState(st);
 
   App.history = sanitizeHistory(st.history);
-  App.undoStack = sanitizeUndoStack(st.undo && st.undo.undoStack);
-  App.redoStack = sanitizeUndoStack(st.undo && st.undo.redoStack);
+  App.undoStack = sanitizeUndoStack(st.undo?.undoStack);
+  App.redoStack = sanitizeUndoStack(st.undo?.redoStack);
   historyUI.renderHistoryUI();
 
-  App.originalId = st.original && st.original.id ? String(st.original.id) : null;
-  App.originalName = st.original && st.original.name ? String(st.original.name) : null;
-  App.originalSha256 = st.original && st.original.sha256 ? String(st.original.sha256) : null;
-  App.originalSize = st.original && Number.isFinite(Number(st.original.size))
-    ? Number(st.original.size)
-    : null;
-  App.projectName = st.projectName
-    || (st.original && st.original.name ? projectNameStem(st.original.name) : null);
+  App.originalId = st.original?.id ? String(st.original.id) : null;
+  App.originalName = st.original?.name ? String(st.original.name) : null;
+  App.originalSha256 = st.original?.sha256 ? String(st.original.sha256) : null;
+  App.originalSize =
+    st.original && Number.isFinite(Number(st.original.size)) ? Number(st.original.size) : null;
+  App.projectName =
+    st.projectName || (st.original?.name ? projectNameStem(st.original.name) : null);
 
   const editor = st.editor || {};
   App.selection = restoreSelection(editor.selection, App.project);
-  App.brushColor = (App.project && Number.isInteger(editor.brushColor)
-    && editor.brushColor >= 0 && editor.brushColor < App.appliedPalette.length)
-    ? editor.brushColor
-    : null;
+  App.brushColor =
+    App.project &&
+    Number.isInteger(editor.brushColor) &&
+    editor.brushColor >= 0 &&
+    editor.brushColor < App.appliedPalette.length
+      ? editor.brushColor
+      : null;
   App.dirty = !!editor.dirty && !!App.project;
   setDirty(App.dirty);
   App.projectDirty = !!st.projectDirty && !!App.project;
@@ -307,7 +350,9 @@ async function restoreState() {
     try {
       const blob = await api.getOriginalBlob(App.originalId);
       originalRestored = await compare.loadOriginalImage(blob);
-    } catch (e) { /* 忽略：无原图时对比保持关闭 */ }
+    } catch (_e) {
+      /* 忽略：无原图时对比保持关闭 */
+    }
   }
 
   if (App.settings.compare) {
@@ -329,7 +374,7 @@ async function restoreState() {
 }
 
 async function applyProjectDocument(doc, path = null) {
-  if (!doc || !doc.project) {
+  if (!doc?.project) {
     toast('项目文件缺少画布数据');
     return;
   }
@@ -345,7 +390,11 @@ async function applyProjectDocument(doc, path = null) {
   App.highlightColor = null;
   App.compressed = null;
   if (App.originalUrl) {
-    try { URL.revokeObjectURL(App.originalUrl); } catch (e) { /* ignore */ }
+    try {
+      URL.revokeObjectURL(App.originalUrl);
+    } catch (_e) {
+      /* ignore */
+    }
   }
   App.originalFile = null;
   App.originalImage = null;
@@ -359,15 +408,16 @@ async function applyProjectDocument(doc, path = null) {
   App.history = sanitizeHistory(doc.history);
   historyUI.renderHistoryUI();
 
-  App.originalId = doc.original && doc.original.id ? String(doc.original.id) : null;
-  App.originalName = doc.original && doc.original.name ? String(doc.original.name) : null;
-  App.originalSha256 = doc.original && doc.original.sha256 ? String(doc.original.sha256) : null;
-  App.originalSize = doc.original && Number.isFinite(Number(doc.original.size))
-    ? Number(doc.original.size)
-    : null;
+  App.originalId = doc.original?.id ? String(doc.original.id) : null;
+  App.originalName = doc.original?.name ? String(doc.original.name) : null;
+  App.originalSha256 = doc.original?.sha256 ? String(doc.original.sha256) : null;
+  App.originalSize =
+    doc.original && Number.isFinite(Number(doc.original.size)) ? Number(doc.original.size) : null;
   App.projectName = path
     ? projectNameStem(String(path).split(/[\\/]/).pop())
-    : (doc.original && doc.original.name ? projectNameStem(doc.original.name) : '未命名');
+    : doc.original?.name
+      ? projectNameStem(doc.original.name)
+      : '未命名';
 
   setDirty(false);
   setProjectDirty(false);
@@ -380,7 +430,9 @@ async function applyProjectDocument(doc, path = null) {
     try {
       const blob = await api.getOriginalBlob(App.originalId);
       originalRestored = await compare.loadOriginalImage(blob);
-    } catch (e) { /* 忽略 */ }
+    } catch (_e) {
+      /* 忽略 */
+    }
   }
   if (App.settings.compare) {
     if (App.project && originalRestored) {
@@ -405,7 +457,8 @@ async function applyProjectDocument(doc, path = null) {
 async function saveProjectFile() {
   if (!App.project) return;
   try {
-    const isTest = typeof location !== 'undefined' && new URLSearchParams(location.search).has('test');
+    const isTest =
+      typeof location !== 'undefined' && new URLSearchParams(location.search).has('test');
     const res = await api.saveProject(
       buildProjectDocument(),
       defaultProjectFileName(),
@@ -413,7 +466,7 @@ async function saveProjectFile() {
     );
     if (res.cancelled) return;
     if (res.mode === 'download') {
-      downloadDataUrl('data:application/octet-stream;base64,' + res.dataBase64, res.filename);
+      downloadDataUrl(`data:application/octet-stream;base64,${res.dataBase64}`, res.filename);
       App.projectName = projectNameStem(res.filename);
       toast('已生成项目文件（浏览器下载）');
     } else if (res.mode === 'saved') {
@@ -424,13 +477,14 @@ async function saveProjectFile() {
     setProjectDirty(false);
     updateProjectNameLabel();
   } catch (e) {
-    toast('保存项目失败：' + e.message);
+    toast(`保存项目失败：${e.message}`);
   }
 }
 
 async function openProjectViaDialog() {
   if (App.projectDirty && !confirm('当前项目有未保存的更改，打开新项目将覆盖。是否继续？')) return;
-  const isTest = typeof location !== 'undefined' && new URLSearchParams(location.search).has('test');
+  const isTest =
+    typeof location !== 'undefined' && new URLSearchParams(location.search).has('test');
   if (!nativeDialogs || isTest) {
     els.projectFileInput.click();
     return;
@@ -445,7 +499,7 @@ async function openProjectViaDialog() {
     const res = await api.openProjectPath(pick.path);
     await applyProjectDocument(res.document, res.path);
   } catch (e) {
-    toast('打开项目失败：' + e.message);
+    toast(`打开项目失败：${e.message}`);
   }
 }
 
@@ -495,7 +549,9 @@ function bindEvents() {
   els.btnLogout.addEventListener('click', async () => {
     try {
       await api.logout();
-    } catch (e) { /* ignore */ }
+    } catch (_e) {
+      /* ignore */
+    }
     location.reload();
   });
 
@@ -504,17 +560,19 @@ function bindEvents() {
     const f = els.projectFileInput.files[0];
     els.projectFileInput.value = '';
     if (!f) return;
-    if (App.projectDirty && !confirm('当前项目有未保存的更改，打开新项目将覆盖。是否继续？')) return;
+    if (App.projectDirty && !confirm('当前项目有未保存的更改，打开新项目将覆盖。是否继续？'))
+      return;
     try {
       const res = await api.openProjectUpload(f);
       await applyProjectDocument(res.document);
     } catch (e) {
-      toast('打开项目失败：' + e.message);
+      toast(`打开项目失败：${e.message}`);
     }
   });
   els.btnSaveProject.addEventListener('click', saveProjectFile);
   els.btnImport.addEventListener('click', () => {
-    if (App.projectDirty && !confirm('当前项目有未保存的更改，导入新图片将覆盖。是否继续？')) return;
+    if (App.projectDirty && !confirm('当前项目有未保存的更改，导入新图片将覆盖。是否继续？'))
+      return;
     els.fileInput.click();
   });
   els.fileInput.addEventListener('change', () => {
@@ -551,6 +609,10 @@ function bindEvents() {
     setProjectDirty(true);
     scheduleAutosave();
   });
+  els.targetPixels.addEventListener('change', () => {
+    // 失焦时把越界值收敛到合法区间，避免显示值与实际使用值不一致
+    els.targetPixels.value = String(getTargetPixels());
+  });
   els.selDistance.addEventListener('change', () => {
     const useLab = els.selDistance.value === 'lab';
     if (App.settings.useLab === useLab) return;
@@ -572,18 +634,23 @@ function bindEvents() {
   });
 
   els.btnExport.addEventListener('click', exportDialog.openExportDialog);
-  els.dlgCancel.addEventListener('click', () => els.exportDialog.classList.add('hidden'));
+  els.dlgCancel.addEventListener('click', exportDialog.closeExportDialog);
   els.dlgOk.addEventListener('click', exportDialog.doExport);
   for (const [key, evt] of [
-    ['dlgCell', 'input'], ['dlgPad', 'input'],
-    ['dlgGrid', 'change'], ['dlgEdgeNumbers', 'change'], ['dlgCodes', 'change'], ['dlgLegend', 'change'],
-    ['dlgEmptyStyle', 'change'], ['dlgFormat', 'change'],
+    ['dlgCell', 'input'],
+    ['dlgPad', 'input'],
+    ['dlgGrid', 'change'],
+    ['dlgEdgeNumbers', 'change'],
+    ['dlgCodes', 'change'],
+    ['dlgLegend', 'change'],
+    ['dlgEmptyStyle', 'change'],
+    ['dlgFormat', 'change'],
   ]) {
     els[key].addEventListener(evt, exportDialog.renderExportPreview);
   }
 
   els.btnSaveStateSide.addEventListener('click', historyUI.saveTransaction);
-  els.btnClearAll.addEventListener('click', historyUI.clearAll);
+  els.btnClearAll.addEventListener('click', () => historyUI.clearAll());
   els.btnUndo.addEventListener('click', historyActions.doUndo);
   els.btnRedo.addEventListener('click', historyActions.doRedo);
   els.btnFixMenu.addEventListener('click', (e) => {
@@ -624,7 +691,7 @@ function bindEvents() {
       setProjectDirty(true);
       toast(`已创建配置「${name}」`);
     } catch (err) {
-      toast('创建失败：' + err.message);
+      toast(`创建失败：${err.message}`);
     }
   });
   els.btnImportConfig.addEventListener('click', () => els.configFileInput.click());
@@ -638,12 +705,15 @@ function bindEvents() {
       setProjectDirty(true);
       toast(`已导入配置「${res.name}」（${res.colors.length}色）`);
     } catch (err) {
-      toast('导入失败：' + err.message);
+      toast(`导入失败：${err.message}`);
     }
   });
   els.btnExportConfig.addEventListener('click', () => {
     if (!App.configName) return;
-    downloadUrl('/api/configs/' + encodeURIComponent(App.configName) + '/export', App.configName + '.csv');
+    downloadUrl(
+      `/api/configs/${encodeURIComponent(App.configName)}/export`,
+      `${App.configName}.csv`,
+    );
   });
   els.btnRenameConfig.addEventListener('click', async () => {
     if (!App.configName) return;
@@ -655,12 +725,15 @@ function bindEvents() {
       setProjectDirty(true);
       toast('已重命名');
     } catch (err) {
-      toast('重命名失败：' + err.message);
+      toast(`重命名失败：${err.message}`);
     }
   });
   els.btnDeleteConfig.addEventListener('click', async () => {
     if (!App.configName) return;
-    if (App.configs.length <= 1) { toast('至少保留一个配置'); return; }
+    if (App.configs.length <= 1) {
+      toast('至少保留一个配置');
+      return;
+    }
     if (!confirm(`确定删除配置「${App.configName}」吗？`)) return;
     try {
       await api.deleteConfig(App.configName);
@@ -669,7 +742,7 @@ function bindEvents() {
       setProjectDirty(true);
       toast('已删除配置');
     } catch (err) {
-      toast('删除失败：' + err.message);
+      toast(`删除失败：${err.message}`);
     }
   });
   els.btnAddColor.addEventListener('click', palette.addColor);
@@ -712,7 +785,12 @@ function bindEvents() {
     toolState.updateModeControls();
   });
   els.brushSize.addEventListener('input', () => {
-    App.settings.brushSize = clampInt(els.brushSize.value, BRUSH_SIZE_MIN, BRUSH_SIZE_MAX, BRUSH_SIZE_MIN);
+    App.settings.brushSize = clampInt(
+      els.brushSize.value,
+      BRUSH_SIZE_MIN,
+      BRUSH_SIZE_MAX,
+      BRUSH_SIZE_MIN,
+    );
     toolState.updateModeControls();
     setProjectDirty(true);
     scheduleCanvasRender();
@@ -753,8 +831,13 @@ function bindEvents() {
   els.canvasScroll.addEventListener('mouseleave', workspace.onCanvasScrollMouseLeave);
   // 九宫格：鼠标移出弹窗时还原悬停预览的颜色
   els.quickPicker.addEventListener('mouseleave', quickPicker.restoreQuickPickerPreview);
-  // 全域禁用右键菜单：工具不需要右键菜单，避免拖拽结束时在菜单栏等位置弹出
-  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  // 全域禁用右键菜单：工具不需要右键菜单，避免拖拽结束时在菜单栏等位置弹出；
+  // 输入框保留原生菜单（粘贴 / 拼写检查等，登录 Token、色号、Hex 等都需要粘贴）
+  document.addEventListener('contextmenu', (e) => {
+    const t = e.target;
+    if (t?.closest?.('input, textarea, select')) return;
+    e.preventDefault();
+  });
 
   els.canvasScroll.addEventListener('wheel', workspace.onCanvasWheel, { passive: false });
   els.compareOriginal.addEventListener('mousedown', workspace.onCompareMouseDown);
@@ -763,7 +846,9 @@ function bindEvents() {
   const tabs = document.querySelectorAll('.tabs .tab');
   tabs.forEach((btn) => {
     btn.addEventListener('click', () => {
-      tabs.forEach((b) => b.classList.remove('active'));
+      tabs.forEach((b) => {
+        b.classList.remove('active');
+      });
       btn.classList.add('active');
       const tab = btn.dataset.tab;
       els.tabPalette.classList.toggle('hidden', tab !== 'palette');
@@ -773,7 +858,8 @@ function bindEvents() {
 
   window.addEventListener('keydown', (e) => {
     const t = e.target;
-    const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+    const inField =
+      t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
     const mod = e.ctrlKey || e.metaKey;
     if (e.key === 'Escape') {
       if (!els.docDialog.classList.contains('hidden')) {
@@ -793,7 +879,7 @@ function bindEvents() {
       }
       if (!els.exportDialog.classList.contains('hidden')) {
         // 导出弹窗：Escape 与「取消」一致
-        els.exportDialog.classList.add('hidden');
+        exportDialog.closeExportDialog();
         e.preventDefault();
         return;
       }
@@ -827,6 +913,12 @@ function bindEvents() {
       return;
     }
     if (inField) return;
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'z') {
+      // Ctrl+Shift+Z 与 Ctrl+Y 均为重做
+      e.preventDefault();
+      historyActions.doRedo();
+      return;
+    }
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       historyActions.doUndo();
@@ -840,19 +932,48 @@ function bindEvents() {
     const pickerOpen = !els.quickPicker.classList.contains('hidden');
     if (pickerOpen) {
       const n = parseInt(e.key, 10);
-      if (n >= 1 && n <= QUICK_PICKER_MAX && App.pickerCandidates && App.pickerCandidates[n - 1]) {
+      if (n >= 1 && n <= QUICK_PICKER_MAX && App.pickerCandidates?.[n - 1]) {
         e.preventDefault();
         quickPicker.applyQuickColor(n - 1);
       }
       return;
     }
-    if (!mod && !dragState.active && e.key.toLowerCase() === 'q') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.BRUSH); return; }
-    if (!mod && !dragState.active && e.key.toLowerCase() === 'w') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.PICKER); return; }
-    if (!mod && !dragState.active && e.key.toLowerCase() === 'e') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.ERASER); return; }
-    if (!mod && !dragState.active && e.key.toLowerCase() === 'r') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.CROP); return; }
-    if (!mod && !dragState.active && e.key.toLowerCase() === 'm') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.WAND); return; }
-    if (e.key === 'Delete') { e.preventDefault(); workspace.clearSelectionToEmpty(); return; }
-    if (e.key.toLowerCase() === 'd' && App.tool === TOOLS.SELECT && App.project && !dragState.active) {
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'q') {
+      e.preventDefault();
+      workspace.switchToolShortcut(TOOLS.BRUSH);
+      return;
+    }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      workspace.switchToolShortcut(TOOLS.PICKER);
+      return;
+    }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'e') {
+      e.preventDefault();
+      workspace.switchToolShortcut(TOOLS.ERASER);
+      return;
+    }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'r') {
+      e.preventDefault();
+      workspace.switchToolShortcut(TOOLS.CROP);
+      return;
+    }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'm') {
+      e.preventDefault();
+      workspace.switchToolShortcut(TOOLS.WAND);
+      return;
+    }
+    if (e.key === 'Delete') {
+      e.preventDefault();
+      workspace.clearSelectionToEmpty();
+      return;
+    }
+    if (
+      e.key.toLowerCase() === 'd' &&
+      App.tool === TOOLS.SELECT &&
+      App.project &&
+      !dragState.active
+    ) {
       // 单选一格时作用于选中格，否则作用于当前悬停格（拖拽中忽略）
       let target = null;
       if (App.selection.size === 1) {
@@ -876,7 +997,9 @@ async function init() {
   try {
     const info = await api.getAppInfo();
     nativeDialogs = !!info.nativeDialogs;
-  } catch (e) { /* 保持默认 false */ }
+  } catch (_e) {
+    /* 保持默认 false */
+  }
   panel.applyPanelPrefs();
   theme.applyTheme(theme.currentTheme());
   bindEvents();
@@ -885,13 +1008,13 @@ async function init() {
     await palette.loadConfigs();
   } catch (e) {
     console.error('配置加载失败：', e);
-    toast('配置加载失败：' + e.message);
+    toast(`配置加载失败：${e.message}`);
   }
   try {
     await restoreState();
   } catch (e) {
     console.error('状态恢复失败：', e);
-    toast('状态恢复失败：' + e.message);
+    toast(`状态恢复失败：${e.message}`);
   }
   renderAllNow();
   historyUI.renderHistoryUI();

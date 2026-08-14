@@ -8,3 +8,4 @@ data/project_path.txt
 *.ssfbp
 build/
 dist/
+node_modules/

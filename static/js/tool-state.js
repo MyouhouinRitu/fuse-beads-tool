@@ -2,9 +2,9 @@
 
 import { TOOLS, WAND_SENSITIVITY_DEFAULT } from './constants.js';
 import { els } from './els.js';
+import { scheduleCanvasRender } from './render-queue.js';
 import { App } from './state.js';
 import { hideCropMagnifier, toast } from './utils.js';
-import { scheduleCanvasRender } from './render-queue.js';
 
 // 工具 → UI 的映射（按钮 / 画布模式类 / 模式标签），避免 setTool 里逐行手写
 const TOOL_UI = [
@@ -22,12 +22,16 @@ export function updateModeControls() {
   const size = String(App.settings.brushSize);
   if (els.brushSize.value !== size) els.brushSize.value = size;
   if (els.brushSizeValue.textContent !== size) els.brushSizeValue.textContent = size;
-  els.brushSizeWrap.classList.toggle('hidden', App.tool !== TOOLS.BRUSH && App.tool !== TOOLS.ERASER);
+  els.brushSizeWrap.classList.toggle(
+    'hidden',
+    App.tool !== TOOLS.BRUSH && App.tool !== TOOLS.ERASER,
+  );
   const sens = Number.isFinite(App.settings.wandSensitivity)
     ? App.settings.wandSensitivity
     : WAND_SENSITIVITY_DEFAULT;
   if (els.wandSensitivity.value !== String(sens)) els.wandSensitivity.value = String(sens);
-  if (els.wandSensitivityValue.textContent !== String(sens)) els.wandSensitivityValue.textContent = String(sens);
+  if (els.wandSensitivityValue.textContent !== String(sens))
+    els.wandSensitivityValue.textContent = String(sens);
   els.wandSensitivityWrap.classList.toggle('hidden', App.tool !== TOOLS.WAND);
   els.selectionControls.classList.toggle('hidden', App.tool !== TOOLS.SELECT);
   els.cropControls.classList.toggle('hidden', App.tool !== TOOLS.CROP);

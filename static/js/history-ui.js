@@ -1,6 +1,8 @@
 // 事务历史面板：保存快照、切换/删除节点、清空、历史列表渲染与撤销按钮状态。
 
 import * as api from './api.js';
+import { scheduleAutosave } from './autosave.js';
+import { resetProjectEditingState } from './canvas.js';
 import * as C from './colors.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
@@ -11,12 +13,10 @@ import {
   findTransaction,
   MAX_UNDO_STEPS,
 } from './history.js';
-import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
-import { toast } from './utils.js';
-import { resetProjectEditingState } from './canvas.js';
 import { ensurePaletteConfig, renderColorTable } from './palette.js';
 import { renderAllNow } from './render-queue.js';
-import { scheduleAutosave } from './autosave.js';
+import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
+import { toast } from './utils.js';
 
 export function updateUndoUI() {
   els.btnUndo.disabled = App.undoStack.length === 0;
@@ -25,7 +25,10 @@ export function updateUndoUI() {
 }
 
 export function saveTransaction() {
-  if (!App.project) { toast('请先导入图片'); return; }
+  if (!App.project) {
+    toast('请先导入图片');
+    return;
+  }
   const snapshot = {
     grid: Array.from(App.project.grid),
     width: App.project.width,
@@ -49,7 +52,8 @@ export async function switchHistoryItem(id) {
   const snap = node.snapshot;
   App.project = { width: snap.width, height: snap.height, grid: Int16Array.from(snap.grid) };
   App.baseGrid = App.project.grid.slice();
-  App.maxColors = snap.maxColors || C.countUsedColors(App.project.grid, snap.width, snap.height) || 2;
+  App.maxColors =
+    snap.maxColors || C.countUsedColors(App.project.grid, snap.width, snap.height) || 2;
   App.sliderN = null;
   App.editedSinceSlider = false;
   App.history.currentId = id;
@@ -60,7 +64,7 @@ export async function switchHistoryItem(id) {
   // 切换到其它事务后，工作网格整体被替换，旧的单步记录不再有效
   resetProjectEditingState();
 
-  const snapPalette = snap.palette && snap.palette.length ? snap.palette : null;
+  const snapPalette = snap.palette?.length ? snap.palette : null;
   if (snapPalette) {
     try {
       const preferred = snap.paletteName || App.configName || '恢复色板';
@@ -71,7 +75,7 @@ export async function switchHistoryItem(id) {
       App.configName = res.name;
       els.configSelect.value = res.name;
       renderColorTable();
-    } catch (e) {
+    } catch (_e) {
       App.palette = (snap.palette || []).map((c) => ({ ...c }));
     }
   } else if (snap.paletteName && App.configs.some((c) => c.name === snap.paletteName)) {
@@ -81,7 +85,7 @@ export async function switchHistoryItem(id) {
       App.configName = res.name;
       els.configSelect.value = res.name;
       renderColorTable();
-    } catch (e) {
+    } catch (_e) {
       App.palette = [];
     }
   } else {
@@ -120,7 +124,8 @@ export function clearAll({ silent = false } = {}) {
     if (!silent) toast('当前没有可清空的内容');
     return;
   }
-  if (!silent && !confirm('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。')) return;
+  if (!silent && !confirm('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。'))
+    return;
   App.project = null;
   App.baseGrid = null;
   App.compressed = null;
@@ -173,7 +178,7 @@ export function bindHistoryList() {
 function renderHistoryItem(item) {
   const { id } = item;
   const div = document.createElement('div');
-  div.className = 'history-item' + (App.history.currentId === id ? ' current' : '');
+  div.className = `history-item${App.history.currentId === id ? ' current' : ''}`;
   div.dataset.id = String(id);
 
   const head = document.createElement('div');
@@ -184,7 +189,10 @@ function renderHistoryItem(item) {
   const time = document.createElement('span');
   time.className = 'hi-time';
   time.textContent = new Date(item.createdAt).toLocaleString('zh-CN', {
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   });
   head.append(label, time);
 

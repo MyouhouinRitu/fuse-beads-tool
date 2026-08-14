@@ -1,15 +1,15 @@
 // 图片导入与重新压缩：上传、映射为拼豆网格、应用到工作区。
 
 import * as api from './api.js';
+import { scheduleAutosave } from './autosave.js';
+import { resetProjectEditingState } from './canvas.js';
 import * as C from './colors.js';
 import { els } from './els.js';
+import { confirmClearRecords } from './history-ui.js';
+import { renderAllNow } from './render-queue.js';
 import { App, setProjectDirty } from './state.js';
 import { getTargetPixels, toast } from './utils.js';
-import { resetProjectEditingState } from './canvas.js';
 import { fitViewportToCanvas } from './view.js';
-import { scheduleAutosave } from './autosave.js';
-import { renderAllNow } from './render-queue.js';
-import { confirmClearRecords } from './history-ui.js';
 
 export async function processUpload() {
   if (!App.originalFile && !App.originalId) {
@@ -19,10 +19,18 @@ export async function processUpload() {
   try {
     const target = getTargetPixels();
     const oldOriginalId = App.originalId;
-    const res = await api.uploadImage(App.originalFile || null, target, els.chkSharpen.checked, App.originalId);
+    const res = await api.uploadImage(
+      App.originalFile || null,
+      target,
+      els.chkSharpen.checked,
+      App.originalId,
+    );
     const img = new Image();
-    img.src = 'data:image/png;base64,' + res.pngBase64;
-    await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; });
+    img.src = `data:image/png;base64,${res.pngBase64}`;
+    await new Promise((ok, fail) => {
+      img.onload = ok;
+      img.onerror = fail;
+    });
     const off = document.createElement('canvas');
     off.width = res.width;
     off.height = res.height;
@@ -34,8 +42,10 @@ export async function processUpload() {
     App.originalName = res.originalName || null;
     App.originalSha256 = res.originalSha256 || null;
     App.originalSize = res.originalSize || null;
-    App.projectName = String(App.originalName || res.originalName || '')
-      .replace(/\.[^.]+$/, '').trim() || '未命名';
+    App.projectName =
+      String(App.originalName || res.originalName || '')
+        .replace(/\.[^.]+$/, '')
+        .trim() || '未命名';
     if (oldOriginalId && oldOriginalId !== App.originalId) {
       api.deleteOriginal(oldOriginalId).catch(() => {});
     }
@@ -44,7 +54,7 @@ export async function processUpload() {
     const used = C.countUsedColors(App.project.grid, App.project.width, App.project.height);
     toast(`已导入 ${res.width} × ${res.height}，共使用 ${used} 种颜色`);
   } catch (err) {
-    toast('导入失败：' + err.message);
+    toast(`导入失败：${err.message}`);
   }
 }
 
@@ -68,7 +78,10 @@ function applyMapping() {
 }
 
 export async function recompress() {
-  if (!App.originalFile && !App.originalId) { toast('请先导入图片'); return; }
+  if (!App.originalFile && !App.originalId) {
+    toast('请先导入图片');
+    return;
+  }
   if (App.project && App.dirty) {
     if (!confirm('重新压缩将按新设置重新生成图案，并丢弃画布上的手动修改。是否继续？')) return;
   }

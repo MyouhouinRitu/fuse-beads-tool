@@ -1,13 +1,13 @@
 // 单步撤销/重做：兼容普通增量步骤与结构性步骤（如裁剪）。
 
-import { App, setDirty } from './state.js';
-import { applyStepToGrid, applyStructuralStep, redoStep, undoStep } from './history.js';
-import { clearProjectEditingState } from './canvas.js';
-import { renderHistoryUI } from './history-ui.js';
-import { fitViewportToCanvas } from './view.js';
-import { scheduleRender } from './render-queue.js';
 import { scheduleAutosave } from './autosave.js';
+import { clearProjectEditingState } from './canvas.js';
+import { applyStepToGrid, applyStructuralStep, redoStep, undoStep } from './history.js';
+import { renderHistoryUI } from './history-ui.js';
+import { scheduleRender } from './render-queue.js';
+import { App, setDirty } from './state.js';
 import { toast } from './utils.js';
+import { fitViewportToCanvas } from './view.js';
 
 // 应用一步撤销/重做（兼容普通增量步骤与结构性步骤）
 function applyUndoRedoStep(step, mode) {

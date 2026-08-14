@@ -29,9 +29,8 @@ export function sanitizeHistory(h) {
   }
   let currentId = h.currentId;
   if (currentId != null && !ids.has(Number(currentId))) currentId = null;
-  const baselineId = h.baselineId != null && ids.has(Number(h.baselineId))
-    ? Number(h.baselineId)
-    : null;
+  const baselineId =
+    h.baselineId != null && ids.has(Number(h.baselineId)) ? Number(h.baselineId) : null;
   return {
     items,
     currentId,
@@ -44,16 +43,19 @@ function sanitizeSnapshot(s) {
   if (!s || typeof s !== 'object') return null;
   const width = Number(s.width);
   const height = Number(s.height);
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0)
+    return null;
   if (!Array.isArray(s.grid) || s.grid.length !== width * height) return null;
-  const norm = (arr) => arr.map((v) => {
-    const n = Number(v);
-    return Number.isInteger(n) ? n : -1;
-  });
+  const norm = (arr) =>
+    arr.map((v) => {
+      const n = Number(v);
+      return Number.isInteger(n) ? n : -1;
+    });
   const grid = norm(s.grid);
-  const baseGrid = Array.isArray(s.baseGrid) && s.baseGrid.length === width * height
-    ? norm(s.baseGrid)
-    : grid.slice();
+  const baseGrid =
+    Array.isArray(s.baseGrid) && s.baseGrid.length === width * height
+      ? norm(s.baseGrid)
+      : grid.slice();
   return { width, height, grid, baseGrid };
 }
 
@@ -82,7 +84,12 @@ export function sanitizeUndoStack(raw) {
           const y = Number(c.y);
           const from = Number(c.from);
           const to = Number(c.to);
-          if (Number.isInteger(x) && Number.isInteger(y) && Number.isInteger(from) && Number.isInteger(to)) {
+          if (
+            Number.isInteger(x) &&
+            Number.isInteger(y) &&
+            Number.isInteger(from) &&
+            Number.isInteger(to)
+          ) {
             changes.push({ x, y, from, to });
           }
         }
@@ -131,7 +138,7 @@ function cap(stack) {
 // 记录一步（一次 D 键选色，或一次画笔/橡皮按下到放开的整段修改）。
 // 入栈后清空重做栈；超出 20 步时丢弃最旧的一步。
 export function recordStep(undoStack, redoStack, changes) {
-  if (!changes || !changes.length) return null;
+  if (!changes?.length) return null;
   const step = { changes };
   undoStack.push(step);
   cap(undoStack);
@@ -171,7 +178,9 @@ function snapshotOf(projectLike) {
     width: projectLike.width,
     height: projectLike.height,
     grid: Array.from(projectLike.grid),
-    baseGrid: projectLike.baseGrid ? Array.from(projectLike.baseGrid) : Array.from(projectLike.grid),
+    baseGrid: projectLike.baseGrid
+      ? Array.from(projectLike.baseGrid)
+      : Array.from(projectLike.grid),
   };
 }
 

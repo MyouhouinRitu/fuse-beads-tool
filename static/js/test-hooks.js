@@ -9,9 +9,7 @@
 //   测试还会直接读写 window.__app / window.__dragState，
 //   修改 App / dragState 的字段结构前需先确认测试用法。
 
-import { drawPattern } from './render.js';
 import { buildProjectDocument } from './autosave.js';
-import { App, dragState } from './state.js';
 import * as canvas from './canvas.js';
 import * as crop from './crop.js';
 import * as exportDialog from './export-dialog.js';
@@ -19,17 +17,18 @@ import * as historyActions from './history-actions.js';
 import * as historyUI from './history-ui.js';
 import * as markdown from './markdown.js';
 import * as quickPicker from './quick-picker.js';
+import { drawPattern } from './render.js';
+import { App, dragState } from './state.js';
 import * as theme from './theme.js';
 import * as toolState from './tool-state.js';
+import { getToastQueue } from './utils.js';
 import * as view from './view.js';
 import * as workspace from './workspace.js';
-import { getToastQueue } from './utils.js';
 
 export function installTestHooks({ renderAll, applySlider, restoreState }) {
-  const expose = (
-    (typeof window !== 'undefined' && window.__FUSE_TEST__ === true)
-    || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('test'))
-  );
+  const expose =
+    (typeof window !== 'undefined' && window.__FUSE_TEST__ === true) ||
+    (typeof location !== 'undefined' && new URLSearchParams(location.search).has('test'));
   if (!expose) return;
 
   window.__app = App;

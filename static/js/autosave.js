@@ -1,7 +1,7 @@
 // 状态持久化：构建保存载荷、防抖自动保存。
 
-import { AUTOSAVE_DELAY_MS } from './constants.js';
 import * as api from './api.js';
+import { AUTOSAVE_DELAY_MS } from './constants.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
 import { App } from './state.js';
@@ -27,35 +27,37 @@ export function buildStatePayload() {
       tool: App.tool,
       brushColor: App.brushColor,
       dirty: App.dirty,
-      selection: App.selection.size
-        ? Array.from(App.selection).sort((a, b) => a - b)
-        : [],
+      selection: App.selection.size ? Array.from(App.selection).sort((a, b) => a - b) : [],
     },
     projectDirty: App.projectDirty,
     projectName: App.projectName,
-    project: App.project ? {
-      width: App.project.width,
-      height: App.project.height,
-      grid: Array.from(App.project.grid),
-      baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
-      sliderN: App.sliderN,
-      editedSinceSlider: App.editedSinceSlider,
-      paletteName: App.configName,
-      palette: App.appliedPalette.map((c) => ({ ...c })),
-      paletteHash: paletteHash(App.appliedPalette),
-      maxColors: App.maxColors,
-    } : null,
+    project: App.project
+      ? {
+          width: App.project.width,
+          height: App.project.height,
+          grid: Array.from(App.project.grid),
+          baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
+          sliderN: App.sliderN,
+          editedSinceSlider: App.editedSinceSlider,
+          paletteName: App.configName,
+          palette: App.appliedPalette.map((c) => ({ ...c })),
+          paletteHash: paletteHash(App.appliedPalette),
+          maxColors: App.maxColors,
+        }
+      : null,
     undo: {
       undoStack: App.undoStack,
       redoStack: App.redoStack,
     },
     history: App.history,
-    original: App.originalId ? {
-      id: App.originalId,
-      name: App.originalName,
-      sha256: App.originalSha256,
-      size: App.originalSize,
-    } : null,
+    original: App.originalId
+      ? {
+          id: App.originalId,
+          name: App.originalName,
+          sha256: App.originalSha256,
+          size: App.originalSize,
+        }
+      : null,
   };
 }
 
@@ -81,25 +83,29 @@ export function buildProjectDocument() {
       sameColorSelect: App.settings.sameColorSelect,
       wandSensitivity: App.settings.wandSensitivity,
     },
-    project: App.project ? {
-      width: App.project.width,
-      height: App.project.height,
-      grid: Array.from(App.project.grid),
-      baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
-      sliderN: App.sliderN,
-      editedSinceSlider: App.editedSinceSlider,
-      paletteName: App.configName,
-      palette: App.appliedPalette.map((c) => ({ ...c })),
-      paletteHash: paletteHash(App.appliedPalette),
-      maxColors: App.maxColors,
-    } : null,
+    project: App.project
+      ? {
+          width: App.project.width,
+          height: App.project.height,
+          grid: Array.from(App.project.grid),
+          baseGrid: App.baseGrid ? Array.from(App.baseGrid) : null,
+          sliderN: App.sliderN,
+          editedSinceSlider: App.editedSinceSlider,
+          paletteName: App.configName,
+          palette: App.appliedPalette.map((c) => ({ ...c })),
+          paletteHash: paletteHash(App.appliedPalette),
+          maxColors: App.maxColors,
+        }
+      : null,
     history: App.history,
-    original: App.originalId ? {
-      id: App.originalId,
-      name: App.originalName,
-      sha256: App.originalSha256,
-      size: App.originalSize,
-    } : null,
+    original: App.originalId
+      ? {
+          id: App.originalId,
+          name: App.originalName,
+          sha256: App.originalSha256,
+          size: App.originalSize,
+        }
+      : null,
   };
 }
 
@@ -121,8 +127,8 @@ export function scheduleAutosave() {
 async function saveStateNow() {
   try {
     await api.putState(buildStatePayload());
-    els.autosave.textContent = '已自动保存 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
-  } catch (err) {
+    els.autosave.textContent = `已自动保存 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+  } catch (_err) {
     els.autosave.textContent = '自动保存失败';
   }
 }

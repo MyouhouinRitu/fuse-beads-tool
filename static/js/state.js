@@ -11,39 +11,39 @@ import { createEmptyHistory } from './history.js';
 export const App = {
   configs: [],
   configName: null,
-  palette: [],          // 色板配置（可编辑，重新压缩时才应用到画布）
-  appliedPalette: [],   // 已应用色板：当前画布与编辑工具显示所用，重新压缩/导入时更新
-  project: null,       // { width, height, grid: Int16Array }
-  compressed: null,    // { rgba, width, height }
+  palette: [], // 色板配置（可编辑，重新压缩时才应用到画布）
+  appliedPalette: [], // 已应用色板：当前画布与编辑工具显示所用，重新压缩/导入时更新
+  project: null, // { width, height, grid: Int16Array }
+  compressed: null, // { rgba, width, height }
   originalFile: null,
   originalImage: null, // 用于「对比原图」的原图 HTMLImageElement
-  originalUrl: null,   // 原图 object URL
-  originalId: null,    // 后端 data/originals 中保存的原图引用（sha256）
+  originalUrl: null, // 原图 object URL
+  originalId: null, // 后端 data/originals 中保存的原图引用（sha256）
   originalName: null,
   originalSha256: null,
   originalSize: null,
-  projectName: null,   // 当前项目显示名（原图名 / 打开的 .ssfbp 文件名）
+  projectName: null, // 当前项目显示名（原图名 / 打开的 .ssfbp 文件名）
   origPan: { x: 0, y: 0 },
   origZoom: 1,
   maxColors: 2,
   baseGrid: null,
   sliderN: null,
   editedSinceSlider: false,
-  brushColor: null,    // 未选择颜色
-  tool: TOOLS.SELECT,  // select / brush / eraser / picker / crop / wand
-  crop: null,          // 裁剪矩形 {x0,y0,x1,y1}（含端点）
+  brushColor: null, // 未选择颜色
+  tool: TOOLS.SELECT, // select / brush / eraser / picker / crop / wand
+  crop: null, // 裁剪矩形 {x0,y0,x1,y1}（含端点）
   cropActiveEdge: null, // 当前选中/拖拽的边：left/right/top/bottom
-  cropPreview: null,   // 裁剪预览虚线 {horizontal, pos}
+  cropPreview: null, // 裁剪预览虚线 {horizontal, pos}
   selection: new Set(), // 当前选中的像素格索引集合（p = y*width + x）
-  dragPreview: null,     // 矩形拖选中的实时预览范围 {x0,y0,x1,y1}
-  hoverCell: null,     // 鼠标当前指向的像素格（用于 hover 边框）
+  dragPreview: null, // 矩形拖选中的实时预览范围 {x0,y0,x1,y1}
+  hoverCell: null, // 鼠标当前指向的像素格（用于 hover 边框）
   painting: false,
   lastCell: null,
   pan: { x: 0, y: 0 },
   history: createEmptyHistory(),
   undoStack: [],
   redoStack: [],
-  strokeBuffer: null,  // 一次画笔/橡皮按下到放开过程中累积的像素修改
+  strokeBuffer: null, // 一次画笔/橡皮按下到放开过程中累积的像素修改
   settings: {
     targetPixels: DEFAULT_TARGET_PIXELS,
     useLab: true,
@@ -64,7 +64,7 @@ export const App = {
   highlightTimer: null,
   toastTimer: null,
   pickerCandidates: null,
-  pickerCell: null,      // 九宫格改色的目标格 {x,y,p,original}
+  pickerCell: null, // 九宫格改色的目标格 {x,y,p,original}
   pickerPreviewIndex: null, // 九宫格当前悬停预览的候选序号（null 表示未预览）
   highlightColor: null,
   saveTimer: null,
@@ -74,7 +74,7 @@ export const App = {
 // 画布拖拽交互的共享状态
 export const dragState = {
   active: false,
-  cropEdge: null,      // 裁剪模式当前拖拽的边
+  cropEdge: null, // 裁剪模式当前拖拽的边
   orig: false,
   moved: false,
   panning: false,
@@ -84,10 +84,10 @@ export const dragState = {
   origPanStart: null,
   downCell: null,
   selectionAnchor: null, // 选择模式矩形拖选的起点格
-  shift: false,          // 本次拖拽/单击是否按住 Shift（追加并集）
-  ctrl: false,           // 本次单击是否按住 Ctrl / Cmd（反选当前格）
-  straightStart: null,   // 画笔/橡皮按住 Shift 时的直线起点格
-  toggleLast: null,      // Ctrl 拖拽反选时上一次经过的格子
+  shift: false, // 本次拖拽/单击是否按住 Shift（追加并集）
+  ctrl: false, // 本次单击是否按住 Ctrl / Cmd（反选当前格）
+  straightStart: null, // 画笔/橡皮按住 Shift 时的直线起点格
+  toggleLast: null, // Ctrl 拖拽反选时上一次经过的格子
 };
 
 export function setDirty(d) {

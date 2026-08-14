@@ -11,7 +11,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as K from '../static/js/constants.js';
 
-const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')));
+const ROOT = path.dirname(
+  path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
+);
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 // ---------------- CSS 布局参数 ----------------
@@ -24,20 +26,35 @@ function cssVar(name) {
 }
 const px = (v) => parseInt(v, 10);
 
-assert.equal(px(cssVar('panel-left-width')), K.PANEL_FULL_WIDTH['left-panel'],
-  '--panel-left-width 应与 PANEL_FULL_WIDTH 一致');
-assert.equal(px(cssVar('panel-highlight-width')), K.PANEL_FULL_WIDTH['color-highlight-panel'],
-  '--panel-highlight-width 应与 PANEL_FULL_WIDTH 一致');
-assert.equal(px(cssVar('panel-right-width')), K.PANEL_FULL_WIDTH['right-panel'],
-  '--panel-right-width 应与 PANEL_FULL_WIDTH 一致');
-assert.equal(px(cssVar('panel-collapsed-width')), K.PANEL_COLLAPSED_WIDTH,
-  '--panel-collapsed-width 应与 PANEL_COLLAPSED_WIDTH 一致');
+assert.equal(
+  px(cssVar('panel-left-width')),
+  K.PANEL_FULL_WIDTH['left-panel'],
+  '--panel-left-width 应与 PANEL_FULL_WIDTH 一致',
+);
+assert.equal(
+  px(cssVar('panel-highlight-width')),
+  K.PANEL_FULL_WIDTH['color-highlight-panel'],
+  '--panel-highlight-width 应与 PANEL_FULL_WIDTH 一致',
+);
+assert.equal(
+  px(cssVar('panel-right-width')),
+  K.PANEL_FULL_WIDTH['right-panel'],
+  '--panel-right-width 应与 PANEL_FULL_WIDTH 一致',
+);
+assert.equal(
+  px(cssVar('panel-collapsed-width')),
+  K.PANEL_COLLAPSED_WIDTH,
+  '--panel-collapsed-width 应与 PANEL_COLLAPSED_WIDTH 一致',
+);
 
 {
   const m = cssText.match(/transition:\s*width\s+([\d.]+)s\s+ease/);
   assert.ok(m, 'style.css 应包含 aside 宽度过渡 transition: width 0.18s ease');
-  assert.equal(Math.round(parseFloat(m[1]) * 1000), K.PANEL_ANIMATION_MS,
-    'aside 宽度过渡时长应与 PANEL_ANIMATION_MS 一致');
+  assert.equal(
+    Math.round(parseFloat(m[1]) * 1000),
+    K.PANEL_ANIMATION_MS,
+    'aside 宽度过渡时长应与 PANEL_ANIMATION_MS 一致',
+  );
 }
 
 {
@@ -55,7 +72,9 @@ const pyText = read('bead/export.py');
 
 function pyConst(text, name) {
   // 只取值 token：双/单引号字符串或数字，避免被颜色值里的 # 与行尾注释干扰
-  const m = text.match(new RegExp(`^${name}\\s*=\\s*("(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[\\d.]+)`, 'm'));
+  const m = text.match(
+    new RegExp(`^${name}\\s*=\\s*("(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[\\d.]+)`, 'm'),
+  );
   if (!m) return undefined;
   const raw = m[1];
   if (raw.startsWith('"') || raw.startsWith("'")) return raw.slice(1, -1);
@@ -98,19 +117,43 @@ for (const [jsName, pyName] of Object.entries(SHARED)) {
   const pyVal = pyConst(pyText, pyName);
   assert.ok(jsVal !== undefined, `constants.js 缺少 ${jsName}`);
   assert.ok(pyVal !== undefined, `bead/export.py 缺少 ${pyName}`);
-  assert.equal(jsVal, pyVal, `${jsName}（前端 constants.js）应与 ${pyName}（后端 export.py）保持一致`);
+  assert.equal(
+    jsVal,
+    pyVal,
+    `${jsName}（前端 constants.js）应与 ${pyName}（后端 export.py）保持一致`,
+  );
 }
 
 // 有意保留的差异：行为/实现不同，锁定当前值防止意外漂移
 const EXCEPTIONS = [
-  { jsName: 'LEGEND_TEXT_DESCENT', js: 3, pyName: 'LEGEND_TEXT_DESCENT', py: 2,
-    reason: 'JS 用 alphabetic 基线、PIL 用 mm 锚点，垂直定位公式不同' },
-  { jsName: 'LEGEND_FONT_MIN', js: 12, pyName: 'FONT_MIN', py: 8,
-    reason: 'PIL 侧图例与格内色号共用 FONT_MIN=8，前端图例下限更大' },
-  { jsName: 'CODE_FONT_MIN', js: 8, pyName: 'FONT_MIN', py: 8,
-    reason: 'PIL 侧与图例共用 FONT_MIN' },
-  { jsName: null, js: 1, pyName: 'EMPTY_LINE_DIVISOR', py: 16,
-    reason: '前端空位斜线固定 1px，PIL 按格尺寸缩放（cell//16）' },
+  {
+    jsName: 'LEGEND_TEXT_DESCENT',
+    js: 3,
+    pyName: 'LEGEND_TEXT_DESCENT',
+    py: 2,
+    reason: 'JS 用 alphabetic 基线、PIL 用 mm 锚点，垂直定位公式不同',
+  },
+  {
+    jsName: 'LEGEND_FONT_MIN',
+    js: 12,
+    pyName: 'FONT_MIN',
+    py: 8,
+    reason: 'PIL 侧图例与格内色号共用 FONT_MIN=8，前端图例下限更大',
+  },
+  {
+    jsName: 'CODE_FONT_MIN',
+    js: 8,
+    pyName: 'FONT_MIN',
+    py: 8,
+    reason: 'PIL 侧与图例共用 FONT_MIN',
+  },
+  {
+    jsName: null,
+    js: 1,
+    pyName: 'EMPTY_LINE_DIVISOR',
+    py: 16,
+    reason: '前端空位斜线固定 1px，PIL 按格尺寸缩放（cell//16）',
+  },
 ];
 for (const e of EXCEPTIONS) {
   const jsVal = e.jsName ? K[e.jsName] : e.js;
@@ -124,7 +167,9 @@ for (const e of EXCEPTIONS) {
   const m = pyText.match(/EMPTY_STYLES\s*=\s*\{(.+?)\}/s);
   assert.ok(m, 'bead/export.py 应包含 EMPTY_STYLES');
   const py = {};
-  for (const [, key, bg, line] of m[1].matchAll(/"?(\w+)"?\s*:\s*\(\s*("[^"]+")\s*,\s*("[^"]+")/g)) {
+  for (const [, key, bg, line] of m[1].matchAll(
+    /"?(\w+)"?\s*:\s*\(\s*("[^"]+")\s*,\s*("[^"]+")/g,
+  )) {
     py[key] = { bg: bg.slice(1, -1), line: line.slice(1, -1) };
   }
   assert.deepEqual(py, K.EMPTY_STYLES, 'EMPTY_STYLES 应与后端保持一致');
@@ -133,8 +178,17 @@ for (const e of EXCEPTIONS) {
 // app.py 与 constants.js 的默认目标像素量
 {
   const appText = read('app.py');
-  assert.equal(pyConst(appText, 'DEFAULT_TARGET_PIXELS'), K.DEFAULT_TARGET_PIXELS,
-    'app.py DEFAULT_TARGET_PIXELS 应与 constants.js 保持一致');
+  assert.equal(
+    pyConst(appText, 'DEFAULT_TARGET_PIXELS'),
+    K.DEFAULT_TARGET_PIXELS,
+    'app.py DEFAULT_TARGET_PIXELS 应与 constants.js 保持一致',
+  );
+  const compressText = read('bead/compress.py');
+  assert.equal(
+    pyConst(compressText, 'MIN_TARGET_PIXELS'),
+    K.TARGET_PIXELS_MIN,
+    'bead/compress.py MIN_TARGET_PIXELS 应与 constants.js 保持一致',
+  );
 }
 
 console.log('[OK] 渲染参数与 bead/export.py 一致（图例 / 网格线 / 色号 / 空位样式 / 导出默认值）');

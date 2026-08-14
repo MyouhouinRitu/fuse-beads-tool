@@ -1,13 +1,17 @@
-import { createRequire } from 'module';
-import { spawn, execFileSync } from 'child_process';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import assert from 'node:assert/strict';
+import { execFileSync, spawn } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+
 const require = createRequire(import.meta.url);
-const pwPath = process.env.PLAYWRIGHT_PATH || 'C:/Users/myouh/AppData/Local/Temp/pwauth/node_modules/playwright';
+const pwPath =
+  process.env.PLAYWRIGHT_PATH || 'C:/Users/myouh/AppData/Local/Temp/pwauth/node_modules/playwright';
 const { chromium } = require(pwPath);
-const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')));
+const ROOT = path.dirname(
+  path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
+);
 const TOKEN = 'test-token-123';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fuse_auth_'));
 const STATE = path.join(TMP, 'state.json');
@@ -29,12 +33,20 @@ function startServer(port, extraEnv = {}) {
 }
 async function waitReady(port, tries = 60) {
   for (let i = 0; i < tries; i++) {
-    try { const r = await fetch(`http://127.0.0.1:${port}/api/auth/status`); if (r.ok) return; } catch {}
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/auth/status`);
+      if (r.ok) return;
+    } catch {}
     await sleep(300);
   }
   throw new Error('服务启动超时');
 }
-const maskHidden = (page) => page.waitForFunction(() => document.querySelector('#login-mask').classList.contains('hidden'), null, { timeout: 6000 });
+const maskHidden = (page) =>
+  page.waitForFunction(
+    () => document.querySelector('#login-mask').classList.contains('hidden'),
+    null,
+    { timeout: 6000 },
+  );
 const P = () => 5600 + Math.floor(Math.random() * 300);
 
 const browser = await chromium.launch({ channel: 'chromium', headless: true });
@@ -55,7 +67,10 @@ try {
   await page1.fill('#login-token', TOKEN);
   await page1.click('#btn-login');
   await maskHidden(page1);
-  assert.ok(!(await page1.locator('#btn-logout').evaluate((el) => el.classList.contains('hidden'))), '登录后应显示退出按钮');
+  assert.ok(
+    !(await page1.locator('#btn-logout').evaluate((el) => el.classList.contains('hidden'))),
+    '登录后应显示退出按钮',
+  );
   console.log('[OK] 正确 Token 登录成功');
   await page1.selectOption('#config-select', 'default_48');
   await sleep(300);
@@ -63,7 +78,9 @@ try {
   await page1.uncheck('#chk-sharpen');
   await page1.uncheck('#chk-codes');
   await page1.setInputFiles('#file-input', IMG);
-  await page1.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, { timeout: 20000 });
+  await page1.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, {
+    timeout: 20000,
+  });
   console.log('[OK] 登录后导入图片正常');
   await page1.click('#btn-logout');
   await page1.waitForSelector('#login-mask:not(.hidden)', { timeout: 8000 });
@@ -103,5 +120,7 @@ try {
   console.log('\nToken 认证全部通过（开发模式 + 生产模式）');
 } finally {
   await browser.close();
-  try { if (fs.existsSync(STATE)) fs.unlinkSync(STATE); } catch {}
+  try {
+    if (fs.existsSync(STATE)) fs.unlinkSync(STATE);
+  } catch {}
 }

@@ -1,5 +1,6 @@
 // 工作区画布管线：显示数据构建、底图/overlay 渲染、缩放联动、合并与滑块应用。
 
+import * as C from './colors.js';
 import {
   CELL,
   GRID_FINE_MIN_SCREEN_CELL,
@@ -10,15 +11,9 @@ import {
   SCREEN_CELL_MIN,
   TOOLS,
 } from './constants.js';
-import * as C from './colors.js';
 import { els } from './els.js';
 import { closeQuickPicker } from './quick-picker.js';
-import {
-  canvasMetrics,
-  clearCanvas,
-  drawPatternBase,
-  drawPatternOverlay,
-} from './render.js';
+import { canvasMetrics, clearCanvas, drawPatternBase, drawPatternOverlay } from './render.js';
 import { App, dragState, setDirty } from './state.js';
 import { codeOf, rectCells } from './utils.js';
 import { applyTransform } from './view.js';
@@ -40,7 +35,7 @@ export function clearWorkspace() {
 }
 
 export function chooseScreenCell(width, height) {
-  const key = width + 'x' + height;
+  const key = `${width}x${height}`;
   if (screenCellCache.key === key) return screenCellCache.value;
   let cell = CELL;
   const ok = (c) => {
@@ -62,7 +57,10 @@ export function buildDisplayData() {
   const rgb = new Uint32Array(n);
   for (let p = 0; p < n; p++) {
     const v = grid[p];
-    if (v < 0) { idx[p] = -1; continue; }
+    if (v < 0) {
+      idx[p] = -1;
+      continue;
+    }
     idx[p] = v;
     const c = App.appliedPalette[v] ? C.hexToRgb(App.appliedPalette[v].hex) : [255, 255, 255];
     rgb[p] = (c[0] << 16) | (c[1] << 8) | c[2];
@@ -131,16 +129,23 @@ export function syncBaseLayerDetail() {
 
 // 选区 + 拖选预览的合并集合（带缓存：引用不变时复用上次结果）
 function buildRenderSelection() {
-  if (renderSelectionCache.sel === App.selection
-    && renderSelectionCache.drag === App.dragPreview
-    && renderSelectionCache.size === App.selection.size) {
+  if (
+    renderSelectionCache.sel === App.selection &&
+    renderSelectionCache.drag === App.dragPreview &&
+    renderSelectionCache.size === App.selection.size
+  ) {
     return renderSelectionCache.value;
   }
   const value = new Set(App.selection);
   if (App.dragPreview) {
     for (const p of rectCells(App.dragPreview)) value.add(p);
   }
-  renderSelectionCache = { sel: App.selection, drag: App.dragPreview, size: App.selection.size, value };
+  renderSelectionCache = {
+    sel: App.selection,
+    drag: App.dragPreview,
+    size: App.selection.size,
+    value,
+  };
   return value;
 }
 
@@ -151,7 +156,14 @@ export function composeCanvas() {
   if (!lastDisplay) renderBaseLayer();
   const display = lastDisplay;
   const selected = buildRenderSelection();
-  const metrics = canvasMetrics(project.width, project.height, App.screenCell, 0, 0, App.screenCell);
+  const metrics = canvasMetrics(
+    project.width,
+    project.height,
+    App.screenCell,
+    0,
+    0,
+    App.screenCell,
+  );
   // 尺寸未变时不重设画布，直接覆盖绘制（底图覆盖整块画布）
   if (ctx.canvas.width !== metrics.w) ctx.canvas.width = metrics.w;
   if (ctx.canvas.height !== metrics.h) ctx.canvas.height = metrics.h;
@@ -173,9 +185,10 @@ export function composeCanvas() {
       tool: App.tool,
       brushSize: App.settings.brushSize,
       pickerCell: App.pickerCell ? { x: App.pickerCell.x, y: App.pickerCell.y } : null,
-      brushRgb: App.brushColor != null && App.appliedPalette[App.brushColor]
-        ? C.hexToRgb(App.appliedPalette[App.brushColor].hex)
-        : null,
+      brushRgb:
+        App.brushColor != null && App.appliedPalette[App.brushColor]
+          ? C.hexToRgb(App.appliedPalette[App.brushColor].hex)
+          : null,
     },
   });
   applyTransform();

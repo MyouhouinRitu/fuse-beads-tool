@@ -13,15 +13,25 @@ const windowListeners = {};
 let confirmResult = true;
 
 class ClassList {
-  constructor() { this.set = new Set(); }
-  add(...cs) { cs.forEach((c) => this.set.add(c)); }
-  remove(...cs) { cs.forEach((c) => this.set.delete(c)); }
+  constructor() {
+    this.set = new Set();
+  }
+  add(...cs) {
+    cs.forEach((c) => this.set.add(c));
+  }
+  remove(...cs) {
+    cs.forEach((c) => this.set.delete(c));
+  }
   toggle(c, force) {
     if (force === undefined) {
-      if (this.set.has(c)) this.set.delete(c); else this.set.add(c);
-    } else if (force) this.set.add(c); else this.set.delete(c);
+      if (this.set.has(c)) this.set.delete(c);
+      else this.set.add(c);
+    } else if (force) this.set.add(c);
+    else this.set.delete(c);
   }
-  contains(c) { return this.set.has(c); }
+  contains(c) {
+    return this.set.has(c);
+  }
 }
 
 class El {
@@ -50,13 +60,19 @@ class El {
     this.parentNode = null;
     this._rect = { left: 0, top: 0, width: 800, height: 600 };
   }
-  addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+  addEventListener(type, fn) {
+    (this.listeners[type] ||= []).push(fn);
+  }
   // className 与 classList 双向同步（模拟真实 DOM）
-  get className() { return [...this.classList.set].join(' '); }
+  get className() {
+    return [...this.classList.set].join(' ');
+  }
   set className(v) {
     this.classList.set = new Set(String(v).split(/\s+/).filter(Boolean));
   }
-  get innerHTML() { return this._innerHTML; }
+  get innerHTML() {
+    return this._innerHTML;
+  }
   set innerHTML(v) {
     this._innerHTML = String(v);
     if (this._innerHTML === '') this.children = [];
@@ -71,13 +87,17 @@ class El {
     c.parentNode = this;
     return c;
   }
-  append(...cs) { cs.forEach((c) => this.appendChild(c)); }
+  append(...cs) {
+    cs.forEach((c) => this.appendChild(c));
+  }
   removeChild(c) {
     const i = this.children.indexOf(c);
     if (i >= 0) this.children.splice(i, 1);
     c.parentNode = null;
   }
-  remove() { if (this.parentNode) this.parentNode.removeChild(this); }
+  remove() {
+    if (this.parentNode) this.parentNode.removeChild(this);
+  }
   getBoundingClientRect() {
     const r = this._rect;
     return { ...r, right: r.left + r.width, bottom: r.top + r.height };
@@ -86,7 +106,8 @@ class El {
     // 模拟 DOM 事件冒泡：沿 parentNode 逐级触发监听器
     let el = this;
     while (el) {
-      for (const fn of [...(el.listeners[type] || [])]) fn({ target: this, currentTarget: el, ...event });
+      for (const fn of [...(el.listeners[type] || [])])
+        fn({ target: this, currentTarget: el, ...event });
       el = el.parentNode;
     }
   }
@@ -123,20 +144,35 @@ function matchesSelector(el, sel) {
   let rest = sel.trim();
   let tag = null;
   const tagM = rest.match(/^[a-zA-Z][\w-]*/);
-  if (tagM) { tag = tagM[0].toLowerCase(); rest = rest.slice(tagM[0].length); }
+  if (tagM) {
+    tag = tagM[0].toLowerCase();
+    rest = rest.slice(tagM[0].length);
+  }
   const classes = [];
   const ids = [];
   const attrs = [];
   for (;;) {
     const idM = rest.match(/^#([\w-]+)/);
-    if (idM) { ids.push(idM[1]); rest = rest.slice(idM[0].length); continue; }
+    if (idM) {
+      ids.push(idM[1]);
+      rest = rest.slice(idM[0].length);
+      continue;
+    }
     const clsM = rest.match(/^\.([\w-]+)/);
-    if (clsM) { classes.push(clsM[1]); rest = rest.slice(clsM[0].length); continue; }
+    if (clsM) {
+      classes.push(clsM[1]);
+      rest = rest.slice(clsM[0].length);
+      continue;
+    }
     const attrM = rest.match(/^\[([\w-]+)(?:="([^"]*)")?\]/);
-    if (attrM) { attrs.push([attrM[1], attrM[2] ?? null]); rest = rest.slice(attrM[0].length); continue; }
+    if (attrM) {
+      attrs.push([attrM[1], attrM[2] ?? null]);
+      rest = rest.slice(attrM[0].length);
+      continue;
+    }
     break;
   }
-  if (rest.trim() !== '') throw new Error('stub 不支持的 selector: ' + sel);
+  if (rest.trim() !== '') throw new Error(`stub 不支持的 selector: ${sel}`);
   if (tag && el.tagName.toLowerCase() !== tag) return false;
   for (const id of ids) if (el.id !== id) return false;
   for (const c of classes) if (!el.classList.contains(c)) return false;
@@ -152,23 +188,47 @@ function matchesSelector(el, sel) {
 
 const drawLog = { fills: [], strokes: [], texts: [] };
 const ctxStub = {
-  get canvas() { return elsMap['canvas']; },
+  get canvas() {
+    return elsMap.canvas;
+  },
   _fillStyle: '#000000',
-  get fillStyle() { return this._fillStyle; },
-  set fillStyle(v) { this._fillStyle = v; },
+  get fillStyle() {
+    return this._fillStyle;
+  },
+  set fillStyle(v) {
+    this._fillStyle = v;
+  },
   _strokeStyle: '#000000',
-  get strokeStyle() { return this._strokeStyle; },
-  set strokeStyle(v) { this._strokeStyle = v; },
+  get strokeStyle() {
+    return this._strokeStyle;
+  },
+  set strokeStyle(v) {
+    this._strokeStyle = v;
+  },
   _lineWidth: 1,
-  get lineWidth() { return this._lineWidth; },
-  set lineWidth(v) { this._lineWidth = v; },
+  get lineWidth() {
+    return this._lineWidth;
+  },
+  set lineWidth(v) {
+    this._lineWidth = v;
+  },
   _lineDash: null,
   _lineDashOffset: 0,
-  get lineDashOffset() { return this._lineDashOffset; },
-  set lineDashOffset(v) { this._lineDashOffset = v; },
-  fillRect(x, y, w, h) { drawLog.fills.push({ style: this._fillStyle, x, y, w, h }); },
-  beginPath() {}, moveTo() {}, lineTo() {}, ellipse() {},
-  rect() {}, clip() {},
+  get lineDashOffset() {
+    return this._lineDashOffset;
+  },
+  set lineDashOffset(v) {
+    this._lineDashOffset = v;
+  },
+  fillRect(x, y, w, h) {
+    drawLog.fills.push({ style: this._fillStyle, x, y, w, h });
+  },
+  beginPath() {},
+  moveTo() {},
+  lineTo() {},
+  ellipse() {},
+  rect() {},
+  clip() {},
   stroke() {
     drawLog.strokes.push({
       rect: false,
@@ -183,14 +243,24 @@ const ctxStub = {
       rect: true,
       style: this._strokeStyle,
       lineWidth: this._lineWidth,
-      x, y, w, h,
+      x,
+      y,
+      w,
+      h,
       dash: this._lineDash ? [...this._lineDash] : null,
       dashOffset: this._lineDashOffset,
     });
   },
-  setLineDash(v) { this._lineDash = [...v]; },
-  measureText(text) { return { width: String(text).length * 7 }; },
-  fillText(text, x, y) { drawLog.texts.push({ text: String(text), x, y, fillStyle: this._fillStyle }); }, fill() {},
+  setLineDash(v) {
+    this._lineDash = [...v];
+  },
+  measureText(text) {
+    return { width: String(text).length * 7 };
+  },
+  fillText(text, x, y) {
+    drawLog.texts.push({ text: String(text), x, y, fillStyle: this._fillStyle });
+  },
+  fill() {},
   save() {
     this._savedDash = this._lineDash ? [...this._lineDash] : null;
     this._savedDashOffset = this._lineDashOffset;
@@ -199,8 +269,12 @@ const ctxStub = {
     this._lineDash = this._savedDash ? [...this._savedDash] : null;
     this._lineDashOffset = this._savedDashOffset || 0;
   },
-  getImageData() { return { data: new Uint8ClampedArray(0) }; },
-  drawImage() {}, setTransform() {}, clearRect() {},
+  getImageData() {
+    return { data: new Uint8ClampedArray(0) };
+  },
+  drawImage() {},
+  setTransform() {},
+  clearRect() {},
 };
 
 // 预注册模板中真实存在的元素 id：getElementById 对未知 id 返回 null，
@@ -213,25 +287,37 @@ for (const m of templateHtml.matchAll(/id="([^"]+)"/g)) {
 globalThis.document = {
   documentElement: { dataset: {} },
   getElementById: (id) => elsMap[id] || null,
-  createElement: (tag) => { const e = new El(); e.tagName = String(tag).toUpperCase(); created.push(e); return e; },
+  createElement: (tag) => {
+    const e = new El();
+    e.tagName = String(tag).toUpperCase();
+    created.push(e);
+    return e;
+  },
   createDocumentFragment: () => new El('__fragment__'),
   querySelectorAll: () => [],
-  addEventListener: (type, fn) => { (windowListeners[type] ||= []).push(fn); },
+  addEventListener: (type, fn) => {
+    (windowListeners[type] ||= []).push(fn);
+  },
   body: new El('body'),
   activeElement: null,
 };
 
 globalThis.window = globalThis;
-globalThis.addEventListener = (type, fn) => { (windowListeners[type] ||= []).push(fn); };
+globalThis.addEventListener = (type, fn) => {
+  (windowListeners[type] ||= []).push(fn);
+};
 // 模拟 rAF：同步执行回调并传入「已到动画结束」的时间戳，
 // 使基于 rAF 的动画（如侧边栏位移补偿）在测试中一步完成
-globalThis.requestAnimationFrame = (fn) => { fn(Infinity); return 1; };
+globalThis.requestAnimationFrame = (fn) => {
+  fn(Infinity);
+  return 1;
+};
 globalThis.confirm = () => confirmResult;
 globalThis.prompt = () => null;
 globalThis.Image = class {
   set src(v) {
     this._src = v;
-    queueMicrotask(() => this.onload && this.onload());
+    queueMicrotask(() => this.onload?.());
   }
 };
 
@@ -271,7 +357,8 @@ globalThis.fetch = async (url, options = {}) => {
     const name = decodeURIComponent(u.split('/api/configs/')[1]);
     return json({ name, colors: createdConfigs[name] || configColors[name] || [] });
   }
-  if (u === '/api/state' && (!options.method || options.method === 'GET')) return json(stateResponse);
+  if (u === '/api/state' && (!options.method || options.method === 'GET'))
+    return json(stateResponse);
   if (u === '/api/state' && options.method === 'PUT') {
     stateResponse = JSON.parse(options.body);
     return json({ ok: true });
@@ -289,7 +376,8 @@ globalThis.fetch = async (url, options = {}) => {
     return {
       ok: true,
       status: 200,
-      text: async () => '## 问题现象\n- 画线不拖拽\n\n## 问题原因\nEdge 鼠标手势。\n\n## 问题修复方案\n1. 添加 http://127.0.0.1',
+      text: async () =>
+        '## 问题现象\n- 画线不拖拽\n\n## 问题原因\nEdge 鼠标手势。\n\n## 问题修复方案\n1. 添加 http://127.0.0.1',
     };
   }
   return json({ ok: true });
@@ -337,12 +425,17 @@ function colorInputs() {
 }
 
 function canvasRectForCells() {
-  const cv = elsMap['canvas'];
+  const cv = elsMap.canvas;
   cv._rect = { left: 0, top: 0, width: cv.width || 800, height: cv.height || 600 };
 }
 
 function mouseAt(cellX, cellY) {
-  return { clientX: (cellX + 1.5) * 28, clientY: (cellY + 1.5) * 28, button: 0, preventDefault() {} };
+  return {
+    clientX: (cellX + 1.5) * 28,
+    clientY: (cellY + 1.5) * 28,
+    button: 0,
+    preventDefault() {},
+  };
 }
 
 // ---------------- 1. 色板配置修改：不即时更新图片与画笔，重新压缩后才应用 ----------------
@@ -362,7 +455,11 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.palette[0].hex, '#12AB34', '修改后色板配置本身应立即更新');
   assert.equal(drawLog.fills.length, fillsBefore, '修改色板后不应重绘画布');
   assert.ok(!fillStyles().has('#12ab34'), '修改色板后画布不应出现新颜色');
-  assert.equal(elsMap['brush-label'].textContent, brushBefore, `修改色板后画笔颜色不应改变，实际 ${elsMap['brush-label'].textContent}`);
+  assert.equal(
+    elsMap['brush-label'].textContent,
+    brushBefore,
+    `修改色板后画笔颜色不应改变，实际 ${elsMap['brush-label'].textContent}`,
+  );
 
   // 画布/编辑工具使用“已应用色板”：手动更新 appliedPalette 后重绘才生效
   App.appliedPalette[0].hex = '#00FF00';
@@ -381,7 +478,10 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.history.items.length, 2, 'Ctrl+S 保存两次应有 2 个独立事务');
   assert.equal(App.history.items[1].id, App.history.items[0].id + 1);
   assert.equal(App.history.currentId, App.history.items[1].id);
-  assert.ok(!('children' in App.history.items[0]) && !('parentId' in App.history.items[0]), '事务节点无父子关系');
+  assert.ok(
+    !('children' in App.history.items[0]) && !('parentId' in App.history.items[0]),
+    '事务节点无父子关系',
+  );
 
   // 删除非当前事务：仅删除该节点，当前节点不变
   const firstId = App.history.items[0].id;
@@ -424,8 +524,14 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.history.currentId, secondId, '新建第二个事务后应选中新事务');
   assert.equal(App.history.baselineId, secondId, '新建第二个事务后基线应指向新事务');
   assert.ok(elsMap['history-list'].children[1].classList.contains('current'), '新事务应保持选中态');
-  assert.ok(elsMap['history-list'].children[1].querySelector('.hi-baseline-dot'), '新事务应显示红色圆点');
-  assert.ok(!elsMap['history-list'].children[0].querySelector('.hi-baseline-dot'), '旧事务圆点应消失');
+  assert.ok(
+    elsMap['history-list'].children[1].querySelector('.hi-baseline-dot'),
+    '新事务应显示红色圆点',
+  );
+  assert.ok(
+    !elsMap['history-list'].children[0].querySelector('.hi-baseline-dot'),
+    '旧事务圆点应消失',
+  );
   console.log('[OK] 事务基线标记：选中 / 编辑取消选中 / 新建事务圆点迁移');
 }
 
@@ -441,9 +547,9 @@ function mouseAt(cellX, cellY) {
   assert.equal(grid[0], 0);
   assert.equal(grid[1], 1);
 
-  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mm = windowListeners['mousemove'][0];
-  const mu = windowListeners['mouseup'][0];
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mm = windowListeners.mousemove[0];
+  const mu = windowListeners.mouseup[0];
   md(mouseAt(0, 0));
   mm({ ...mouseAt(1, 0) });
   mu({});
@@ -476,11 +582,12 @@ function mouseAt(cellX, cellY) {
   assert.equal(grid[0], 0);
 
   // D 键打开九宫格
-  const kd = windowListeners['keydown'][0];
+  const kd = windowListeners.keydown[0];
   kd({ key: 'd', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
   assert.ok(!elsMap['quick-picker'].classList.contains('hidden'), 'D 键应打开九宫格');
-  const btns = elsMap['quick-picker'].children
-    .filter((c) => c.tagName === 'BUTTON' && !c.className.includes('qp-cancel'));
+  const btns = elsMap['quick-picker'].children.filter(
+    (c) => c.tagName === 'BUTTON' && !c.className.includes('qp-cancel'),
+  );
   assert.ok(btns.length > 0, '九宫格应有候选按钮');
 
   // 悬停候选 → 实时预览（不进撤销栈）
@@ -495,12 +602,48 @@ function mouseAt(cellX, cellY) {
 
   // 再次悬停并点击 → 提交改色，记一步撤销
   btns[0].emit('mouseover');
+  App.dirty = false;
+  App.projectDirty = false;
+  App.editedSinceSlider = false;
+  App.saveTimer = null;
   btns[0].emit('click');
   assert.equal(grid[0], target, '点击候选应提交改色');
   assert.equal(App.undoStack.length, 1, '提交应记一步撤销');
+  assert.equal(App.dirty, true, 'D 键改色应标记未保存修改');
+  assert.equal(App.projectDirty, true, 'D 键改色应标记项目文档未保存');
+  assert.equal(App.editedSinceSlider, true, 'D 键改色应标记滑块后编辑');
+  assert.ok(App.saveTimer != null, 'D 键改色应调度自动保存');
   hooks.doUndo();
   assert.equal(grid[0], 0, '撤销后应恢复原色');
   console.log('[OK] D 键九宫格：悬停预览 + 点击确认记一步');
+}
+
+// ---------------- 4.5 快捷键：Ctrl+Shift+Z 作为重做 ----------------
+{
+  seedProject();
+  App.tool = 'brush';
+  App.brushColor = 1;
+  App.strokeBuffer = [];
+  hooks.paintCell(0, 0);
+  App.undoStack.push({ changes: App.strokeBuffer });
+  App.strokeBuffer = null;
+  assert.equal(App.undoStack.length, 1, '前置：应存在一步撤销记录');
+  assert.equal(App.project.grid[0], 1, '前置：应先涂色');
+  hooks.doUndo();
+  assert.equal(App.project.grid[0], 0, '前置：应先撤销涂色');
+  assert.equal(App.redoStack.length, 1, '前置：撤销后应有重做记录');
+  const kd = windowListeners.keydown[0];
+  kd({
+    key: 'z',
+    ctrlKey: true,
+    shiftKey: true,
+    metaKey: false,
+    target: null,
+    preventDefault() {},
+  });
+  assert.equal(App.project.grid[0], 1, 'Ctrl+Shift+Z 应触发重做');
+  assert.equal(App.redoStack.length, 0, '重做后重做栈应清空');
+  console.log('[OK] 快捷键：Ctrl+Shift+Z 重做');
 }
 
 // ---------------- 5. 滑块调整：存在事务/记录时警告并清空 ----------------
@@ -592,7 +735,11 @@ function mouseAt(cellX, cellY) {
   assert.deepEqual(App.pan, { x: 12, y: 34 }, '恢复后应还原平移');
   assert.equal(App.tool, 'wand', '恢复后应还原魔棒工具');
   assert.equal(App.brushColor, 2, '恢复后应还原画笔颜色');
-  assert.deepEqual([...App.selection].sort((a, b) => a - b), [0, 3], '恢复后应还原选区');
+  assert.deepEqual(
+    [...App.selection].sort((a, b) => a - b),
+    [0, 3],
+    '恢复后应还原选区',
+  );
   assert.equal(App.dirty, true, '恢复后应保留未保存修改标记');
   assert.equal(App.undoStack.length, 1, '恢复后应还原单步撤销栈');
   assert.equal(App.originalId, fakeSha, '恢复后应还原后端原图引用');
@@ -623,16 +770,26 @@ function mouseAt(cellX, cellY) {
   };
   App.configs = configs.map((c) => ({ ...c }));
   await hooks.restoreState();
-  assert.ok(App.configName.startsWith('cfg (恢复 '), `应自动创建带后缀的恢复配置，实际 ${App.configName}`);
+  assert.ok(
+    App.configName.startsWith('cfg (恢复 '),
+    `应自动创建带后缀的恢复配置，实际 ${App.configName}`,
+  );
   assert.equal(App.palette[0].hex, '#123456', '可编辑色板应使用恢复配置');
   assert.ok(createdConfigs[App.configName], '后端应已创建恢复配置');
   assert.equal(createdConfigs[App.configName].length, 2, '恢复配置应包含快照色板');
-  const toastQueuedOrVisible = hooks.getToastQueue().some((m) => m.includes('已自动创建恢复色板'))
-    || elsMap['toast'].textContent.includes('已自动创建恢复色板');
-  assert.ok(toastQueuedOrVisible,
-    `自动创建恢复配置后应排队弹出提示，队列 ${JSON.stringify(hooks.getToastQueue())}，当前 ${elsMap['toast'].textContent}`);
+  const toastQueuedOrVisible =
+    hooks.getToastQueue().some((m) => m.includes('已自动创建恢复色板')) ||
+    elsMap.toast.textContent.includes('已自动创建恢复色板');
+  assert.ok(
+    toastQueuedOrVisible,
+    `自动创建恢复配置后应排队弹出提示，队列 ${JSON.stringify(hooks.getToastQueue())}，当前 ${elsMap.toast.textContent}`,
+  );
   await new Promise((r) => setTimeout(r, 950));
-  assert.equal(stateResponse.project.paletteName, App.configName, '自动保存应持久化新的 paletteName');
+  assert.equal(
+    stateResponse.project.paletteName,
+    App.configName,
+    '自动保存应持久化新的 paletteName',
+  );
   console.log('[OK] 色板恢复：配置不一致时自动创建恢复配置');
 }
 
@@ -676,7 +833,14 @@ function mouseAt(cellX, cellY) {
   App.zoom = 1.5;
   App.pan = { x: 20, y: 30 };
   App.history = {
-    items: [{ id: 1, createdAt: 1, label: '状态 #1', snapshot: { width: 2, height: 2, grid: [0, 1, 0, 1] } }],
+    items: [
+      {
+        id: 1,
+        createdAt: 1,
+        label: '状态 #1',
+        snapshot: { width: 2, height: 2, grid: [0, 1, 0, 1] },
+      },
+    ],
     currentId: 1,
     nextId: 2,
     baselineId: 1,
@@ -687,8 +851,10 @@ function mouseAt(cellX, cellY) {
   assert.equal(doc.history.baselineId, 1, '项目文档应包含事务基线标记');
   assert.equal(doc.viewport.zoom, 1.5, '项目文档应包含视口缩放');
   assert.deepEqual(doc.viewport.pan, { x: 20, y: 30 }, '项目文档应包含视口平移');
-  assert.ok(!('tool' in doc) && !('undo' in doc) && !('dirty' in doc),
-    '项目文档不应包含工具/撤销栈/dirty 等运行态');
+  assert.ok(
+    !('tool' in doc) && !('undo' in doc) && !('dirty' in doc),
+    '项目文档不应包含工具/撤销栈/dirty 等运行态',
+  );
   console.log('[OK] 项目文档载荷：文档数据 + 视口保留、其它运行态排除');
 }
 
@@ -708,9 +874,14 @@ function mouseAt(cellX, cellY) {
   elsMap['dlg-legend'].checked = true; // 桩默认未勾选，手动开启图例
   hooks.openExportDialog();
   await new Promise((r) => setTimeout(r, 60));
-  assert.ok(elsMap['dlg-preview'].width > 0 && elsMap['dlg-preview'].height > 0, '导出对话框应显示实时预览');
-  assert.ok(drawLog.texts.some((t) => /^\S+ × \d+$/.test(t.text)),
-    `图例文字应为「色号 × 数量」格式，实际 ${JSON.stringify(drawLog.texts.map((t) => t.text))}`);
+  assert.ok(
+    elsMap['dlg-preview'].width > 0 && elsMap['dlg-preview'].height > 0,
+    '导出对话框应显示实时预览',
+  );
+  assert.ok(
+    drawLog.texts.some((t) => /^\S+ × \d+$/.test(t.text)),
+    `图例文字应为「色号 × 数量」格式，实际 ${JSON.stringify(drawLog.texts.map((t) => t.text))}`,
+  );
   elsMap['export-dialog'].classList.add('hidden'); // 关闭弹窗，避免影响后续 Escape 测试
   console.log('[OK] 导出预览与「有未保存的修改」提示');
 }
@@ -735,8 +906,8 @@ function mouseAt(cellX, cellY) {
     const panel = elsMap[id];
     assert.ok(panel && !panel.classList.contains('collapsed'), `${id} 初始应处于展开状态`);
     // 左侧栏通过小按钮收起；颜色清单 / 事务历史通过点击标题栏收起
-    const trigger = elsMap[id + '-toggle'] || elsMap[id + '-head'];
-    const expand = elsMap[id + '-expand'];
+    const trigger = elsMap[`${id}-toggle`] || elsMap[`${id}-head`];
+    const expand = elsMap[`${id}-expand`];
     assert.ok(trigger && expand, `${id} 应包含可点击的收起触发与展开按钮`);
 
     trigger.emit('click');
@@ -820,7 +991,7 @@ function mouseAt(cellX, cellY) {
   canvasRectForCells();
 
   // 选择模式：黑白相间虚线
-  const mm = windowListeners['mousemove'][0];
+  const mm = windowListeners.mousemove[0];
   drawLog.strokes = [];
   mm(mouseAt(1, 1));
   assert.deepEqual(App.hoverCell, { x: 1, y: 1 }, '鼠标移动应记录指向的格子');
@@ -830,31 +1001,51 @@ function mouseAt(cellX, cellY) {
   assert.equal(rectStrokes[1].style.toLowerCase(), '#ffffff', '第二遍应为白色');
   assert.ok(rectStrokes[0].dash && rectStrokes[0].dash[0] > 0, '选择模式应使用虚线');
   assert.ok(rectStrokes[1].dashOffset > 0, '第二遍虚线应错开半个周期');
-  assert.ok(rectStrokes[0].x >= 56 && rectStrokes[0].y >= 56, 'hover 边框应位于指向格子的画布坐标（含 1 格行列号条）');
+  assert.ok(
+    rectStrokes[0].x >= 56 && rectStrokes[0].y >= 56,
+    'hover 边框应位于指向格子的画布坐标（含 1 格行列号条）',
+  );
 
   // 取色模式：3D 凸起效果（高光斜面 / 暗斜面 / 投影），不再使用虚线
   App.tool = 'picker';
   drawLog.strokes = [];
   hooks.renderAll();
-  const picker3D = drawLog.strokes.filter((s) =>
-    s.style.includes('rgba(255, 255, 255, 0.85)') ||
-    s.style.includes('rgba(0, 0, 0, 0.45)') ||
-    s.style.includes('rgba(0, 0, 0, 0.35)'));
+  const picker3D = drawLog.strokes.filter(
+    (s) =>
+      s.style.includes('rgba(255, 255, 255, 0.85)') ||
+      s.style.includes('rgba(0, 0, 0, 0.45)') ||
+      s.style.includes('rgba(0, 0, 0, 0.35)'),
+  );
   assert.ok(picker3D.length >= 3, '取色模式应绘制 3D 凸起（高光斜面 / 暗斜面 / 投影）');
-  assert.equal(drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba(')).length, 0,
-    '取色模式不应再绘制虚线边框');
+  assert.equal(
+    drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba(')).length,
+    0,
+    '取色模式不应再绘制虚线边框',
+  );
 
   // 画笔模式：每格颜色边框 + 外圈黑色细实线 + 右下阴影
   App.tool = 'brush';
   App.brushColor = 0; // 白色
   drawLog.strokes = [];
   hooks.renderAll();
-  const brushRects = drawLog.strokes.filter((s) => s.rect
-    && (s.style.toLowerCase() === 'rgb(255, 255, 255)' || s.style.toLowerCase() === '#000000'));
+  const brushRects = drawLog.strokes.filter(
+    (s) =>
+      s.rect &&
+      (s.style.toLowerCase() === 'rgb(255, 255, 255)' || s.style.toLowerCase() === '#000000'),
+  );
   assert.equal(brushRects.length, 2, '尺寸 1 画笔应绘制每格颜色边框 + 外圈黑色细实线');
-  assert.ok(brushRects.some((s) => s.style.toLowerCase() === 'rgb(255, 255, 255)'), '每格边框应为画笔颜色');
-  assert.ok(brushRects.some((s) => s.style.toLowerCase() === '#000000'), '外圈应为黑色细实线');
-  assert.ok(drawLog.strokes.some((s) => s.style.includes('rgba(0, 0, 0, 0.35)')), '画笔模式应有右下阴影');
+  assert.ok(
+    brushRects.some((s) => s.style.toLowerCase() === 'rgb(255, 255, 255)'),
+    '每格边框应为画笔颜色',
+  );
+  assert.ok(
+    brushRects.some((s) => s.style.toLowerCase() === '#000000'),
+    '外圈应为黑色细实线',
+  );
+  assert.ok(
+    drawLog.strokes.some((s) => s.style.includes('rgba(0, 0, 0, 0.35)')),
+    '画笔模式应有右下阴影',
+  );
 
   // 橡皮模式：非空位画边框 + X，空位不画
   App.tool = 'eraser';
@@ -870,12 +1061,15 @@ function mouseAt(cellX, cellY) {
   App.hoverCell = { x: 0, y: 0 };
   drawLog.strokes = [];
   hooks.renderAll();
-  assert.equal(drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba(')).length, 0,
-    '橡皮指向空位时不应绘制 hover 边框');
+  assert.equal(
+    drawLog.strokes.filter((s) => s.rect && s.style.startsWith('rgba(')).length,
+    0,
+    '橡皮指向空位时不应绘制 hover 边框',
+  );
 
   // 鼠标离开画布区应清除 hover
   App.hoverCell = { x: 1, y: 1 };
-  const leave = elsMap['canvas-scroll'].listeners['mouseleave'][0];
+  const leave = elsMap['canvas-scroll'].listeners.mouseleave[0];
   leave({});
   assert.equal(App.hoverCell, null, '鼠标离开画布区应清除 hover');
 
@@ -938,7 +1132,10 @@ function mouseAt(cellX, cellY) {
   const frameStyle = 'rgba(0, 0, 0, 0.9)'; // 白色格（亮色）用深色描边
   const blockEdges = drawLog.strokes.filter((s) => s.style.includes(frameStyle));
   assert.equal(blockEdges.length, 12, '3x3 整块外轮廓应为 12 条边');
-  assert.ok(blockEdges.every((s) => !s.rect), '高亮外轮廓应为线条绘制而非逐格描边');
+  assert.ok(
+    blockEdges.every((s) => !s.rect),
+    '高亮外轮廓应为线条绘制而非逐格描边',
+  );
 
   // 孤立单格 → 只有 4 条边
   App.project = { width: 3, height: 3, grid: Int16Array.from([0, -1, -1, -1, -1, -1, -1, -1, -1]) };
@@ -991,7 +1188,11 @@ function mouseAt(cellX, cellY) {
   App.settings.brushSize = 3;
   App.strokeBuffer = [];
   hooks.paintStamp({ x: 2, y: 2 });
-  assert.equal(Array.from(App.project.grid).filter((v) => v === 2).length, 25, '尺寸 3 在 (2,2) 应涂满 5x5（25 格）');
+  assert.equal(
+    Array.from(App.project.grid).filter((v) => v === 2).length,
+    25,
+    '尺寸 3 在 (2,2) 应涂满 5x5（25 格）',
+  );
   assert.equal(App.strokeBuffer.length, 25, '一次盖章应记录 25 个像素修改');
   App.strokeBuffer = null;
 
@@ -999,7 +1200,11 @@ function mouseAt(cellX, cellY) {
   App.brushColor = 1;
   App.strokeBuffer = [];
   hooks.paintStamp({ x: 0, y: 0 });
-  assert.equal(Array.from(App.project.grid).filter((v) => v === 1).length, 9, '角落盖章应裁剪为 3x3（9 格）');
+  assert.equal(
+    Array.from(App.project.grid).filter((v) => v === 1).length,
+    9,
+    '角落盖章应裁剪为 3x3（9 格）',
+  );
   App.strokeBuffer = null;
 
   // 橡皮尺寸：以 (3,3) 为中心擦除 5x5
@@ -1034,7 +1239,11 @@ function mouseAt(cellX, cellY) {
   const blackRects = brushLattice.filter((s) => s.style.toLowerCase() === '#000000');
   assert.equal(colorRects.length, 25, '尺寸 3 应绘制 25 个格子的颜色边框');
   assert.equal(blackRects.length, 1, '应绘制 1 条黑色外框');
-  assert.equal(brushLattice[brushLattice.length - 1].style.toLowerCase(), '#000000', '黑色外框应最后绘制');
+  assert.equal(
+    brushLattice[brushLattice.length - 1].style.toLowerCase(),
+    '#000000',
+    '黑色外框应最后绘制',
+  );
   App.hoverCell = null;
   App.settings.brushSize = 1;
   hooks.setTool('select');
@@ -1053,9 +1262,9 @@ function mouseAt(cellX, cellY) {
   App.strokeBuffer = null;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mm = windowListeners['mousemove'][0];
-  const mu = windowListeners['mouseup'][0];
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mm = windowListeners.mousemove[0];
+  const mu = windowListeners.mouseup[0];
 
   md({ ...mouseAt(0, 0), shiftKey: true });
   mm({ ...mouseAt(0, 2), shiftKey: true });
@@ -1075,8 +1284,8 @@ function mouseAt(cellX, cellY) {
   App.settings.sameColorSelect = false;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mu = windowListeners['mouseup'][0];
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mu = windowListeners.mouseup[0];
 
   md(mouseAt(0, 0));
   mu({});
@@ -1102,17 +1311,71 @@ function mouseAt(cellX, cellY) {
   App.settings.sameColorSelect = false;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mm = windowListeners['mousemove'][0];
-  const mu = windowListeners['mouseup'][0];
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mm = windowListeners.mousemove[0];
+  const mu = windowListeners.mouseup[0];
 
   md({ ...mouseAt(0, 0), ctrlKey: true });
   mm({ ...mouseAt(2, 0), ctrlKey: true });
   mm({ ...mouseAt(2, 2), ctrlKey: true });
   mu({});
-  assert.deepEqual([...App.selection].sort((a, b) => a - b), [0, 1, 5, 8],
-    'Ctrl 拖拽应反选鼠标经过的格子，拐点被经过两次后应取消选中');
+  assert.deepEqual(
+    [...App.selection].sort((a, b) => a - b),
+    [0, 1, 2, 5, 8],
+    'Ctrl 拖拽应反选鼠标经过的格子，拐点只经过一次应保持选中',
+  );
   console.log('[OK] 选择模式 Ctrl 拖拽批量反选');
+}
+
+// ---------------- 14.8 选择模式 Ctrl 连续拖拽：每格只反选一次 ----------------
+{
+  seedProject();
+  App.project = { width: 5, height: 1, grid: Int16Array.from(Array(5).fill(0)) };
+  App.baseGrid = App.project.grid.slice();
+  App.tool = 'select';
+  App.selection.clear();
+  App.settings.sameColorSelect = false;
+  hooks.renderAll();
+  canvasRectForCells();
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mm = windowListeners.mousemove[0];
+  const mu = windowListeners.mouseup[0];
+
+  md({ ...mouseAt(0, 0), ctrlKey: true });
+  for (let x = 1; x <= 4; x++) mm({ ...mouseAt(x, 0), ctrlKey: true });
+  mu({});
+  assert.deepEqual(
+    [...App.selection].sort((a, b) => a - b),
+    [0, 1, 2, 3, 4],
+    'Ctrl 连续拖拽逐格经过时，每个格子应恰好反选一次',
+  );
+  console.log('[OK] 选择模式 Ctrl 连续拖拽逐格反选');
+}
+
+// ---------------- 14.9 选择模式 Ctrl 往返拖拽：重新经过的格子再次反选 ----------------
+{
+  seedProject();
+  App.project = { width: 3, height: 1, grid: Int16Array.from(Array(3).fill(0)) };
+  App.baseGrid = App.project.grid.slice();
+  App.tool = 'select';
+  App.selection.clear();
+  App.settings.sameColorSelect = false;
+  hooks.renderAll();
+  canvasRectForCells();
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mm = windowListeners.mousemove[0];
+  const mu = windowListeners.mouseup[0];
+
+  md({ ...mouseAt(0, 0), ctrlKey: true });
+  mm({ ...mouseAt(2, 0), ctrlKey: true });
+  mm({ ...mouseAt(0, 0), ctrlKey: true });
+  mu({});
+  assert.deepEqual(
+    [...App.selection].sort((a, b) => a - b),
+    [2],
+    'Ctrl 往返拖拽时重新经过的格子应再次反选',
+  );
+  console.log('[OK] 选择模式 Ctrl 往返拖拽重新反选');
 }
 
 // ---------------- 15. 选择模式：单击 / 矩形 / 同色 / Shift / 填充 / 取色 / 九宫格 / 高亮转选区 ----------------
@@ -1123,16 +1386,19 @@ function mouseAt(cellX, cellY) {
   App.settings.sameColorSelect = false;
   App.settings.brushSize = 1;
   hooks.setTool('brush');
-  assert.ok(elsMap['selection-controls'].classList.contains('hidden'), '画笔模式应隐藏同色选区与选中高亮');
+  assert.ok(
+    elsMap['selection-controls'].classList.contains('hidden'),
+    '画笔模式应隐藏同色选区与选中高亮',
+  );
   hooks.setTool('select');
   assert.ok(!elsMap['selection-controls'].classList.contains('hidden'), '选择模式应显示选择控件');
   assert.ok(elsMap['brush-size-wrap'].classList.contains('hidden'), '选择模式应隐藏尺寸拖动条');
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mm = windowListeners['mousemove'][0];
-  const mu = windowListeners['mouseup'][0];
-  const kd = windowListeners['keydown'][0];
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mm = windowListeners.mousemove[0];
+  const mu = windowListeners.mouseup[0];
+  const kd = windowListeners.keydown[0];
 
   // 单击选择单格
   md(mouseAt(1, 1));
@@ -1254,7 +1520,7 @@ function mouseAt(cellX, cellY) {
   App.highlightColor = null;
   App.hoverCell = null;
   hooks.renderAll();
-  const kd = windowListeners['keydown'][0];
+  const kd = windowListeners.keydown[0];
   const esc = { key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault() {} };
   const d = { key: 'd', ctrlKey: false, metaKey: false, target: null, preventDefault() {} };
 
@@ -1265,10 +1531,12 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.pickerCell.p, 0, '单选一格时 D 应作用于选中格 (0,0)');
   drawLog.strokes = [];
   hooks.renderAll();
-  const raised = drawLog.strokes.filter((s) =>
-    s.style.includes('rgba(255, 255, 255, 0.85)') ||
-    s.style.includes('rgba(0, 0, 0, 0.45)') ||
-    s.style.includes('rgba(0, 0, 0, 0.35)'));
+  const raised = drawLog.strokes.filter(
+    (s) =>
+      s.style.includes('rgba(255, 255, 255, 0.85)') ||
+      s.style.includes('rgba(0, 0, 0, 0.45)') ||
+      s.style.includes('rgba(0, 0, 0, 0.35)'),
+  );
   assert.ok(raised.length >= 3, '九宫格打开时目标格应绘制浮起效果');
   kd(esc);
   assert.equal(App.pickerCell, null, '关闭九宫格后应清除目标格');
@@ -1306,8 +1574,8 @@ function mouseAt(cellX, cellY) {
   App.hoverCell = null;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mu = windowListeners['mouseup'][0];
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mu = windowListeners.mouseup[0];
 
   // 先左键选中一个格子
   md(mouseAt(0, 0));
@@ -1320,7 +1588,7 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.selection.size, 1, '右键单击不应改变选择');
 
   // 打开九宫格后调整滑块 → 应关闭九宫格并清空目标格
-  const kd = windowListeners['keydown'][0];
+  const kd = windowListeners.keydown[0];
   kd({ key: 'd', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
   assert.ok(App.pickerCell, '前置：九宫格应打开并设置目标格');
   hooks.applySlider(1);
@@ -1341,7 +1609,10 @@ function mouseAt(cellX, cellY) {
   elsMap['color-list'].children[2].emit('click'); // 蓝色
   assert.equal(App.undoStack.length, 1, '整块填充应记一步撤销');
   assert.equal(App.undoStack[0].changes.length, 4, '一步应包含 4 个像素的修改');
-  assert.ok([0, 1, 2, 3].every((p) => App.project.grid[p] === 2), '4 格都应填成蓝色');
+  assert.ok(
+    [0, 1, 2, 3].every((p) => App.project.grid[p] === 2),
+    '4 格都应填成蓝色',
+  );
   assert.equal(App.selection.size, 4, '填充后选区应保留');
   hooks.doUndo();
   assert.deepEqual(Array.from(App.project.grid), [0, 1, 0, 1], '撤销后应恢复原图');
@@ -1371,7 +1642,10 @@ function mouseAt(cellX, cellY) {
   await new Promise((r) => setTimeout(r, 10)); // 等待文档 fetch 完成
   assert.ok(!elsMap['doc-dialog'].classList.contains('hidden'), '点击菜单项应打开文档弹窗');
   assert.ok(elsMap['doc-content'].innerHTML.includes('问题现象'), '文档应渲染出「问题现象」');
-  assert.ok(elsMap['doc-content'].innerHTML.includes('问题修复方案'), '文档应渲染出「问题修复方案」');
+  assert.ok(
+    elsMap['doc-content'].innerHTML.includes('问题修复方案'),
+    '文档应渲染出「问题修复方案」',
+  );
   assert.ok(elsMap['doc-content'].innerHTML.includes('<li>'), '文档列表应被渲染');
   elsMap['doc-close'].emit('click');
   assert.ok(elsMap['doc-dialog'].classList.contains('hidden'), '点击关闭应隐藏文档弹窗');
@@ -1394,13 +1668,17 @@ function mouseAt(cellX, cellY) {
   seedProject();
   drawLog.fills = [];
   hooks.renderAll();
-  const blackCornerDay = drawLog.fills.filter((f) => f.style.toLowerCase() === '#000000' && f.x === 0 && f.y === 0);
+  const blackCornerDay = drawLog.fills.filter(
+    (f) => f.style.toLowerCase() === '#000000' && f.x === 0 && f.y === 0,
+  );
   assert.equal(blackCornerDay.length, 0, '日间模式不应绘制黑色四角');
   rootEl.dataset.theme = 'dark';
   seedProject();
   drawLog.fills = [];
   hooks.renderAll();
-  const blackCornerNight = drawLog.fills.filter((f) => f.style.toLowerCase() === '#000000' && f.x === 0 && f.y === 0);
+  const blackCornerNight = drawLog.fills.filter(
+    (f) => f.style.toLowerCase() === '#000000' && f.x === 0 && f.y === 0,
+  );
   assert.equal(blackCornerNight.length, 0, '夜间模式四角也不应绘制黑色（改为透明）');
   rootEl.dataset.theme = 'light';
   console.log('[OK] 日间/夜间模式：切换与按钮文案');
@@ -1408,7 +1686,7 @@ function mouseAt(cellX, cellY) {
 
 // ---------------- 22. 快捷键 Q/W/E 工具切换与 Delete 清除选区 ----------------
 {
-  const kd = windowListeners['keydown'][0];
+  const kd = windowListeners.keydown[0];
   const prevent = () => {};
   seedProject();
   hooks.setTool('select');
@@ -1423,7 +1701,13 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.tool, 'eraser', 'E 应切换到橡皮');
   // 输入框内不触发工具切换
   hooks.setTool('select');
-  kd({ key: 'q', ctrlKey: false, metaKey: false, target: { tagName: 'INPUT' }, preventDefault: prevent });
+  kd({
+    key: 'q',
+    ctrlKey: false,
+    metaKey: false,
+    target: { tagName: 'INPUT' },
+    preventDefault: prevent,
+  });
   assert.equal(App.tool, 'select', '输入框内 Q 不应切换工具');
   // Delete：清除选中格为空位，记一步撤销且保留选区
   hooks.setTool('select');
@@ -1432,7 +1716,10 @@ function mouseAt(cellX, cellY) {
   App.undoStack = [];
   App.redoStack = [];
   kd({ key: 'Delete', ctrlKey: false, metaKey: false, target: null, preventDefault: prevent });
-  assert.ok([0, 1, 2, 3].every((p) => App.project.grid[p] === -1), 'Delete 应把选中格清为空位');
+  assert.ok(
+    [0, 1, 2, 3].every((p) => App.project.grid[p] === -1),
+    'Delete 应把选中格清为空位',
+  );
   assert.equal(App.undoStack.length, 1, '清除选区应记一步撤销');
   assert.equal(App.undoStack[0].changes.length, 4, '一步应包含 4 个像素的修改');
   assert.equal(App.selection.size, 4, '清除后应保留选区');
@@ -1481,7 +1768,10 @@ function mouseAt(cellX, cellY) {
   seedProject(); // 2x2 grid [0,1,0,1]
   hooks.setTool('crop');
   assert.equal(App.tool, 'crop', '应能进入裁剪模式');
-  assert.ok(globalThis.document.body.classList.contains('crop-active'), '裁剪模式应给工作区加蒙版类');
+  assert.ok(
+    globalThis.document.body.classList.contains('crop-active'),
+    '裁剪模式应给工作区加蒙版类',
+  );
   assert.deepEqual(App.crop, { x0: 0, y0: 0, x1: 1, y1: 1 }, '初始矩形应为整图');
   hooks.moveCropEdgeTo('left', 1);
   assert.equal(App.crop.x0, 1, '左边应移动到第 1 条格线');
@@ -1500,14 +1790,20 @@ function mouseAt(cellX, cellY) {
   hooks.moveCropEdgeTo('right', 0);
   hooks.applyCrop();
   assert.equal(App.tool, 'select', '应用后应回到选择模式');
-  assert.ok(!globalThis.document.body.classList.contains('crop-active'), '退出裁剪后应移除工作区蒙版类');
+  assert.ok(
+    !globalThis.document.body.classList.contains('crop-active'),
+    '退出裁剪后应移除工作区蒙版类',
+  );
   assert.equal(App.project.width, 1, '应用后宽度应为 1');
   assert.equal(App.project.height, 1, '应用后高度应为 1');
   assert.deepEqual(Array.from(App.project.grid), [0], '应用后网格应为裁剪结果');
   assert.equal(App.history.items.length, 1, '应生成裁剪前事务快照');
   assert.ok(App.history.items[0].label.includes('裁剪前'), '快照标签应为「裁剪前」');
   assert.equal(App.undoStack.length, 1, '应记录一步结构型撤销');
-  assert.ok(elsMap['crop-controls'].classList.contains('hidden'), '退出裁剪后应隐藏自动裁剪/应用按钮');
+  assert.ok(
+    elsMap['crop-controls'].classList.contains('hidden'),
+    '退出裁剪后应隐藏自动裁剪/应用按钮',
+  );
   hooks.doUndo();
   assert.equal(App.project.width, 2, '撤销裁剪应恢复宽度');
   assert.deepEqual(Array.from(App.project.grid), [0, -1, -1, 2], '撤销应恢复网格');
@@ -1515,7 +1811,7 @@ function mouseAt(cellX, cellY) {
   // ESC 退出裁剪不应用
   hooks.setTool('crop');
   hooks.moveCropEdgeTo('left', 1);
-  const kd = windowListeners['keydown'][0];
+  const kd = windowListeners.keydown[0];
   kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault: () => {} });
   assert.equal(App.tool, 'select', 'ESC 应退出裁剪模式');
   assert.equal(App.crop, null, 'ESC 退出后裁剪状态应清空');
@@ -1523,7 +1819,7 @@ function mouseAt(cellX, cellY) {
 
   // 光标与预览：悬停边显示双箭头；图片之外取消选择；选中边时显示预览虚线
   hooks.setTool('crop');
-  const cv = elsMap['canvas'];
+  const cv = elsMap.canvas;
   canvasRectForCells();
   const cellSz = App.screenCell;
   const scale2 = cv.getBoundingClientRect().width / cv.width;
@@ -1535,7 +1831,10 @@ function mouseAt(cellX, cellY) {
   drawLog.strokes = [];
   hooks.updateCropPreview({ clientX: 2 * cellSz * scale2, clientY: midY });
   assert.deepEqual(App.cropPreview, { horizontal: true, pos: 1 }, '预览应记录水平格线位置 1');
-  assert.ok(drawLog.strokes.some((s) => s.style === '#ff3b30' && s.dash && s.dash.length), '应绘制红色预览虚线');
+  assert.ok(
+    drawLog.strokes.some((s) => s.style === '#ff3b30' && s.dash && s.dash.length),
+    '应绘制红色预览虚线',
+  );
   // 选中边且鼠标在图案内（不在线上）也显示双箭头
   App.cropActiveEdge = 'bottom';
   hooks.updateCropCursor({ clientX: 1.5 * cellSz * scale2, clientY: midY });
@@ -1546,10 +1845,13 @@ function mouseAt(cellX, cellY) {
   App.cropPreview = { horizontal: true, pos: 1 };
   drawLog.strokes = [];
   hooks.renderAll();
-  assert.ok(!drawLog.strokes.some((s) => s.style === '#ff3b30' && s.dash && s.dash.length), '拖拽中不应绘制红色预览虚线');
+  assert.ok(
+    !drawLog.strokes.some((s) => s.style === '#ff3b30' && s.dash && s.dash.length),
+    '拖拽中不应绘制红色预览虚线',
+  );
   globalThis.__dragState.cropEdge = null;
   // 拖拽结束后取消选中；单击（未拖拽）保持选中
-  const mu = windowListeners['mouseup'][0];
+  const mu = windowListeners.mouseup[0];
   App.cropActiveEdge = 'left';
   globalThis.__dragState.active = true;
   globalThis.__dragState.cropEdge = 'left';
@@ -1570,19 +1872,33 @@ function mouseAt(cellX, cellY) {
   assert.equal(cv.style.cursor, 'ew-resize', '图片之外选中左边时应继续显示左右调整光标');
   hooks.updateCropPreview({ clientX: -100, clientY: -100 });
   assert.deepEqual(App.cropPreview, { horizontal: true, pos: 1 }, '鼠标移出图片后预览位置应保留');
-  const mdOut = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  mdOut({ button: 0, clientX: -100, clientY: -100, target: elsMap['canvas'], shiftKey: false, preventDefault() {} });
+  const mdOut = elsMap['canvas-scroll'].listeners.mousedown[0];
+  mdOut({
+    button: 0,
+    clientX: -100,
+    clientY: -100,
+    target: elsMap.canvas,
+    shiftKey: false,
+    preventDefault() {},
+  });
   assert.equal(App.cropActiveEdge, null, '点击图片之外应取消边选择');
 
   // 拖拽移动边：按下命中边 → 拖动 → 松开
   App.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
   App.cropActiveEdge = null;
   App.cropPreview = null;
-  const mdDrag = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mmDrag = windowListeners['mousemove'][0];
-  const muDrag = windowListeners['mouseup'][0];
+  const mdDrag = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mmDrag = windowListeners.mousemove[0];
+  const muDrag = windowListeners.mouseup[0];
   const dragY = 1.5 * cellSz * scale2;
-  mdDrag({ button: 0, clientX: edgeX, clientY: dragY, target: elsMap['canvas'], shiftKey: false, preventDefault() {} });
+  mdDrag({
+    button: 0,
+    clientX: edgeX,
+    clientY: dragY,
+    target: elsMap.canvas,
+    shiftKey: false,
+    preventDefault() {},
+  });
   assert.equal(App.cropActiveEdge, 'left', '按下左边缘应选中该边');
   assert.equal(globalThis.__dragState.cropEdge, 'left', '按下左边缘应进入拖拽状态');
   mmDrag({ clientX: 2 * cellSz * scale2, clientY: dragY, button: 0 });
@@ -1630,24 +1946,34 @@ function mouseAt(cellX, cellY) {
   hooks.renderAll();
 
   hooks.setTool('select');
-  assert.ok(elsMap['wand-sensitivity-wrap'].classList.contains('hidden'), '选择模式应隐藏魔棒容差滑块');
+  assert.ok(
+    elsMap['wand-sensitivity-wrap'].classList.contains('hidden'),
+    '选择模式应隐藏魔棒容差滑块',
+  );
   elsMap['tool-wand'].emit('click');
   assert.equal(App.tool, 'wand', '点击魔棒按钮应进入魔棒模式');
   assert.equal(elsMap['mode-label'].textContent, '魔棒模式', '魔棒模式标签应为「魔棒模式」');
-  assert.ok(!elsMap['wand-sensitivity-wrap'].classList.contains('hidden'), '魔棒模式应显示容差滑块');
+  assert.ok(
+    !elsMap['wand-sensitivity-wrap'].classList.contains('hidden'),
+    '魔棒模式应显示容差滑块',
+  );
   assert.equal(elsMap['wand-sensitivity'].value, '0', '滑块值应与当前容差设置同步');
 
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
-  const mu = windowListeners['mouseup'][0];
-  const kd = windowListeners['keydown'][0];
+  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mu = windowListeners.mouseup[0];
+  const kd = windowListeners.keydown[0];
 
   // 容差 0：只选起点所在的同色四向连通块（左列 3 个白色，不跨过浅灰）
   App.selection.clear();
   md(mouseAt(0, 0));
   mu({});
   assert.equal(App.selection.size, 3, '容差 0 应只选起点所在同色连通块');
-  assert.deepEqual([...App.selection].sort((a, b) => a - b), [0, 3, 6], '应选中左列 3 个白色格');
+  assert.deepEqual(
+    [...App.selection].sort((a, b) => a - b),
+    [0, 3, 6],
+    '应选中左列 3 个白色格',
+  );
   assert.equal(App.tool, 'wand', '魔棒点击后应保持在魔棒模式');
 
   // 调高容差：浅灰作为桥接色，把左右两片白色一起选中
@@ -1697,14 +2023,20 @@ function mouseAt(cellX, cellY) {
   const isDash = (s) => s.dash && s.dash.length > 0;
   const thinGray = (arr) => arr.filter((s) => s.lineWidth === 1 && !isDash(s));
   assert.ok(thinGray(gray(drawLog.strokes)).length > 0, '正常缩放应绘制灰色细实线');
-  assert.ok(gray(drawLog.strokes).some((s) => isDash(s)), '正常缩放应绘制每 5 格虚线');
+  assert.ok(
+    gray(drawLog.strokes).some((s) => isDash(s)),
+    '正常缩放应绘制每 5 格虚线',
+  );
 
   App.zoom = Math.max(0.05, 7 / baseCell); // 格屏宽 ≈ 7：细线与色号隐藏，粗线保留
   drawLog.strokes = [];
   drawLog.texts = [];
   hooks.renderAll();
   assert.equal(thinGray(gray(drawLog.strokes)).length, 0, '格屏宽 < 8 时细线应隐藏');
-  assert.ok(gray(drawLog.strokes).some((s) => isDash(s)), '格屏宽 < 8 时每 5 格虚线仍应保留');
+  assert.ok(
+    gray(drawLog.strokes).some((s) => isDash(s)),
+    '格屏宽 < 8 时每 5 格虚线仍应保留',
+  );
   assert.ok(!drawLog.texts.some((t) => /^0/.test(String(t.text))), '格屏宽 < 8 时色号应隐藏');
 
   App.zoom = Math.max(0.05, 3 / baseCell); // 格屏宽 ≈ 3：粗虚线/实线也隐藏
@@ -1731,11 +2063,41 @@ function mouseAt(cellX, cellY) {
   // 箭头可再次展开；输入框文本区不弹菜单，仅直接编辑数值
   elsMap['target-pixels-menu'].classList.add('hidden');
   elsMap['target-pixels'].emit('mousedown', { button: 0 });
-  assert.ok(elsMap['target-pixels-menu'].classList.contains('hidden'), '点击输入框文本区不应展开菜单');
+  assert.ok(
+    elsMap['target-pixels-menu'].classList.contains('hidden'),
+    '点击输入框文本区不应展开菜单',
+  );
   elsMap['target-pixels'].value = '1234';
   elsMap['target-pixels'].emit('input');
   assert.equal(elsMap['target-pixels'].value, '1234', '输入框应仍可直接输入数值');
+  elsMap['target-pixels'].value = '50';
+  elsMap['target-pixels'].emit('change');
+  assert.equal(elsMap['target-pixels'].value, '100', '低于 100 的目标像素量应在失焦时夹到 100');
+  elsMap['target-pixels'].value = '100000';
+  elsMap['target-pixels'].emit('change');
+  assert.equal(elsMap['target-pixels'].value, '80000', '超过上限应在失焦时夹到 80000');
   console.log('[OK] 目标像素量下拉预设');
+}
+
+// ---------------- 28. 导出弹窗：Escape 关闭并重置状态 ----------------
+{
+  elsMap['export-dialog'].classList.add('hidden');
+  elsMap['fix-menu'].classList.add('hidden');
+  elsMap['target-pixels-menu'].classList.add('hidden');
+  hooks.openExportDialog();
+  assert.ok(!elsMap['export-dialog'].classList.contains('hidden'), '应能打开导出弹窗');
+  elsMap['dlg-busy'].classList.remove('hidden');
+  elsMap['dlg-status'].textContent = '正在导出…';
+  elsMap['dlg-pdf-pages'].classList.remove('hidden');
+  elsMap['dlg-preview-mask'].classList.remove('hidden');
+  const kd = windowListeners.keydown[0];
+  kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
+  assert.ok(elsMap['export-dialog'].classList.contains('hidden'), 'Escape 应关闭导出弹窗');
+  assert.ok(elsMap['dlg-busy'].classList.contains('hidden'), '关闭后应重置导出中状态');
+  assert.equal(elsMap['dlg-status'].textContent, '', '关闭后应清空状态文案');
+  assert.ok(elsMap['dlg-pdf-pages'].classList.contains('hidden'), '关闭后应重置 PDF 页码');
+  assert.ok(elsMap['dlg-preview-mask'].classList.contains('hidden'), '关闭后应重置预览遮罩');
+  console.log('[OK] 导出弹窗：Escape 关闭并重置状态');
 }
 
 console.log('\nDOM 行为测试全部通过');

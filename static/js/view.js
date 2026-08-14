@@ -1,13 +1,7 @@
 // 视图层：画布/原图的位移缩放变换、同步拖拽的坐标换算、适应窗口缩放。
 // 不依赖画布渲染管线，缩放结束后的联动（重绘、放大镜、镜像）由 main.js 注册钩子。
 
-import {
-  CANVAS_EDGE_CELLS,
-  CELL,
-  FIT_ZOOM_CAP,
-  ZOOM_MAX,
-  ZOOM_MIN,
-} from './constants.js';
+import { CANVAS_EDGE_CELLS, CELL, FIT_ZOOM_CAP, ZOOM_MAX, ZOOM_MIN } from './constants.js';
 import { els } from './els.js';
 import { App } from './state.js';
 import { fitToViewport, zoomAroundPoint } from './utils.js';
@@ -30,7 +24,7 @@ export function compareActive() {
 
 export function applyTransform() {
   els.canvas.style.transform = `translate(${App.pan.x}px, ${App.pan.y}px) scale(${App.zoom})`;
-  els.zoomLabel.textContent = Math.round(App.zoom * 100) + '%';
+  els.zoomLabel.textContent = `${Math.round(App.zoom * 100)}%`;
 }
 
 export function applyOriginalTransform() {
@@ -77,8 +71,8 @@ export function cellCenterToScreen(cell) {
   const sc = App.screenCell;
   const rect = els.canvas.getBoundingClientRect();
   return {
-    x: rect.left + ((cell.x + CANVAS_EDGE_CELLS + 0.5) * sc) * scale,
-    y: rect.top + ((cell.y + CANVAS_EDGE_CELLS + 0.5) * sc) * scale,
+    x: rect.left + (cell.x + CANVAS_EDGE_CELLS + 0.5) * sc * scale,
+    y: rect.top + (cell.y + CANVAS_EDGE_CELLS + 0.5) * sc * scale,
     scale,
   };
 }
@@ -152,7 +146,16 @@ export function zoomAtOriginal(clientX, clientY, factor) {
   const minZ = App.settings.syncPan ? beadCellPx() * origZoomRatio() * ZOOM_MIN : ZOOM_MIN;
   const maxZ = App.settings.syncPan ? beadCellPx() * origZoomRatio() * ZOOM_MAX : ZOOM_MAX;
   const newZ = Math.min(maxZ, Math.max(minZ, oldZ * factor));
-  const r = zoomAroundPoint(rect.left, rect.top, App.origPan.x, App.origPan.y, oldZ, clientX, clientY, newZ);
+  const r = zoomAroundPoint(
+    rect.left,
+    rect.top,
+    App.origPan.x,
+    App.origPan.y,
+    oldZ,
+    clientX,
+    clientY,
+    newZ,
+  );
   App.origZoom = r.zoom;
   App.origPan = r.pan;
   if (App.settings.syncPan) {
@@ -185,7 +188,16 @@ export function zoomAtCore(clientX, clientY, factor) {
   if (rect.width === 0) return;
   const oldZ = App.zoom;
   const newZ = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, oldZ * factor));
-  const r = zoomAroundPoint(rect.left, rect.top, App.pan.x, App.pan.y, oldZ, clientX, clientY, newZ);
+  const r = zoomAroundPoint(
+    rect.left,
+    rect.top,
+    App.pan.x,
+    App.pan.y,
+    oldZ,
+    clientX,
+    clientY,
+    newZ,
+  );
   App.zoom = r.zoom;
   App.pan = r.pan;
   applyTransform();

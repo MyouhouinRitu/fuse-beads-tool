@@ -36,7 +36,7 @@ const PANEL_DOM = {
 function readPanelPrefs() {
   try {
     return JSON.parse(localStorage.getItem(PANEL_STORAGE_KEY) || '{}');
-  } catch (e) {
+  } catch (_e) {
     return {};
   }
 }
@@ -44,7 +44,7 @@ function readPanelPrefs() {
 function writePanelPrefs(prefs) {
   try {
     localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify(prefs));
-  } catch (e) {
+  } catch (_e) {
     // localStorage 不可用时（如隐私模式）忽略，仅本次会话生效
   }
 }
@@ -56,7 +56,9 @@ export function setPanelCollapsed(id, collapsed) {
   if (id === 'left-panel' && App.project) {
     // 左侧栏收起/展开会平移整个工作区视口；
     // 反向补偿画布位移，让图案保持在屏幕上的绝对位置不变
-    const current = panel.classList.contains('collapsed') ? PANEL_COLLAPSED_WIDTH : PANEL_FULL_WIDTH[id];
+    const current = panel.classList.contains('collapsed')
+      ? PANEL_COLLAPSED_WIDTH
+      : PANEL_FULL_WIDTH[id];
     const target = collapsed ? PANEL_COLLAPSED_WIDTH : PANEL_FULL_WIDTH[id];
     panDelta = current - target;
   }
@@ -78,7 +80,7 @@ function animatePanCompensation(delta) {
   const origFrom = App.originalImage ? App.origPan.x : null;
   const start = performance.now();
   const dur = PANEL_ANIMATION_MS;
-  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
   const step = (now) => {
     const t = Math.min(1, (now - start) / dur);
     const k = ease(t);

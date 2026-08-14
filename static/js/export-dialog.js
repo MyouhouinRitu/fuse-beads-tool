@@ -1,5 +1,8 @@
 // 导出对话框：数据构建、实时预览与导出请求。
 
+import * as api from './api.js';
+import { buildCodes, buildDisplayData, buildLegend } from './canvas.js';
+import * as C from './colors.js';
 import {
   EXPORT_CELL_DEFAULT,
   EXPORT_CELL_MAX,
@@ -11,13 +14,10 @@ import {
   EXPORT_PREVIEW_MAX_W,
   EXPORT_QUALITY,
 } from './constants.js';
-import * as api from './api.js';
-import * as C from './colors.js';
 import { els } from './els.js';
+import { drawPattern } from './render.js';
 import { App } from './state.js';
 import { clampInt, codeOf, downloadDataUrl, toast } from './utils.js';
-import { drawPattern } from './render.js';
-import { buildCodes, buildDisplayData, buildLegend } from './canvas.js';
 
 let pdfPreviewPages = [];
 let pdfPreviewIndex = 0;
@@ -31,7 +31,10 @@ function buildExportData() {
   const paletteOut = []; // { index, hex, code, count }：导出专用紧凑调色板，图例与之共用索引
   for (let p = 0; p < n; p++) {
     const v = App.project.grid[p];
-    if (v < 0) { gridOut[p] = -1; continue; }
+    if (v < 0) {
+      gridOut[p] = -1;
+      continue;
+    }
     const hex = App.appliedPalette[v] ? App.appliedPalette[v].hex : '#FFFFFF';
     let i = hexMap.get(hex);
     if (i == null) {
@@ -53,12 +56,32 @@ function buildExportData() {
 }
 
 export function openExportDialog() {
-  if (!App.project) { toast('请先导入图片'); return; }
+  if (!App.project) {
+    toast('请先导入图片');
+    return;
+  }
+  clearTimeout(pdfPreviewTimer);
   pdfPreviewPages = [];
   pdfPreviewIndex = 0;
+  els.dlgBusy.classList.add('hidden');
+  els.dlgStatus.textContent = '';
+  els.dlgPdfPages.classList.add('hidden');
+  els.dlgPreviewMask.classList.add('hidden');
   els.dlgCodes.checked = App.settings.showCodes;
   els.exportDialog.classList.remove('hidden');
   renderExportPreview();
+}
+
+// 关闭导出弹窗并重置全部弹窗状态，避免下次打开残留进度 / 页码 / 状态文案
+export function closeExportDialog() {
+  clearTimeout(pdfPreviewTimer);
+  pdfPreviewPages = [];
+  pdfPreviewIndex = 0;
+  els.dlgBusy.classList.add('hidden');
+  els.dlgStatus.textContent = '';
+  els.dlgPdfPages.classList.add('hidden');
+  els.dlgPreviewMask.classList.add('hidden');
+  els.exportDialog.classList.add('hidden');
 }
 
 // 导出预览：用前端渲染器即时绘制一张小图（不经过后端，秒级响应）
@@ -76,11 +99,16 @@ export async function renderExportPreview() {
   const counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   const legend = buildLegend(counts);
   const display = buildDisplayData();
-  const cellSize = clampInt(els.dlgCell.value, EXPORT_CELL_MIN, EXPORT_CELL_MAX, EXPORT_CELL_DEFAULT);
+  const cellSize = clampInt(
+    els.dlgCell.value,
+    EXPORT_CELL_MIN,
+    EXPORT_CELL_MAX,
+    EXPORT_CELL_DEFAULT,
+  );
   const pad = clampInt(els.dlgPad.value, 0, EXPORT_PAD_MAX, 0);
   const showLegend = els.dlgLegend.checked;
   const previewCell = EXPORT_PREVIEW_CELL;
-  const previewPad = Math.round(pad * previewCell / cellSize);
+  const previewPad = Math.round((pad * previewCell) / cellSize);
   const off = document.createElement('canvas');
   const octx = off.getContext('2d');
   drawPattern(octx, App.project.width, App.project.height, display.idx, display.rgb, {
@@ -140,7 +168,7 @@ async function renderPdfPreview() {
     drawPdfPreviewPage();
   } catch (e) {
     els.dlgPdfPages.classList.add('hidden');
-    toast('PDF 预览生成失败：' + e.message);
+    toast(`PDF 预览生成失败：${e.message}`);
   } finally {
     els.dlgPreviewMask.classList.add('hidden');
   }
@@ -203,13 +231,13 @@ export async function doExport() {
       codes,
       options: buildExportOptions(fmt),
     });
-    const ext = fmt.startsWith('pdf-') ? 'pdf' : (fmt === 'png' ? 'png' : 'jpg');
+    const ext = fmt.startsWith('pdf-') ? 'pdf' : fmt === 'png' ? 'png' : 'jpg';
     downloadDataUrl(res.dataUrl, `拼豆图案.${ext}`);
     els.dlgStatus.textContent = '导出完成';
     await new Promise((r) => setTimeout(r, EXPORT_COMPLETE_DELAY_MS)); // 稍作停留显示完成状态
-    els.exportDialog.classList.add('hidden');
+    closeExportDialog();
   } catch (err) {
-    toast('导出失败：' + err.message);
+    toast(`导出失败：${err.message}`);
   } finally {
     els.dlgBusy.classList.add('hidden');
   }

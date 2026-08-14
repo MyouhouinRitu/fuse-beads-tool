@@ -35,7 +35,7 @@ export async function ensureAuth() {
   let status = { authenticated: true, requiresAuth: false };
   try {
     status = await api.authStatus();
-  } catch (e) {
+  } catch (_e) {
     // 后端不可用时按需展示登录框，由后续请求报错
   }
   if (status.authenticated) {

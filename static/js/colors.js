@@ -4,7 +4,11 @@ import { LUMINANCE_THRESHOLD } from './constants.js';
 
 export function hexToRgb(hex) {
   let h = String(hex || '').replace('#', '');
-  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length === 3)
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('');
   const n = parseInt(h, 16);
   if (Number.isNaN(n)) return [255, 255, 255];
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -21,15 +25,19 @@ export function luminance(rgb) {
 
 function srgbToLinear(v) {
   v = Math.max(0, Math.min(1, v / 255));
-  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 }
 
 export function rgbToLab(r, g, b) {
-  const rl = srgbToLinear(r), gl = srgbToLinear(g), bl = srgbToLinear(b);
+  const rl = srgbToLinear(r),
+    gl = srgbToLinear(g),
+    bl = srgbToLinear(b);
   const x = 0.4124564 * rl + 0.3575761 * gl + 0.1804375 * bl;
-  const y = 0.2126729 * rl + 0.7151522 * gl + 0.0721750 * bl;
-  const z = 0.0193339 * rl + 0.1191920 * gl + 0.9503041 * bl;
-  const xn = 0.95047, yn = 1.0, zn = 1.08883;
+  const y = 0.2126729 * rl + 0.7151522 * gl + 0.072175 * bl;
+  const z = 0.0193339 * rl + 0.119192 * gl + 0.9503041 * bl;
+  const xn = 0.95047,
+    yn = 1.0,
+    zn = 1.08883;
   const fx = x / xn > 0.008856 ? Math.cbrt(x / xn) : 7.787 * (x / xn) + 16 / 116;
   const fy = y / yn > 0.008856 ? Math.cbrt(y / yn) : 7.787 * (y / yn) + 16 / 116;
   const fz = z / zn > 0.008856 ? Math.cbrt(z / zn) : 7.787 * (z / zn) + 16 / 116;
@@ -40,10 +48,14 @@ export function colorDist2(rgb1, rgb2, useLab) {
   if (useLab) {
     const a = rgbToLab(rgb1[0], rgb1[1], rgb1[2]);
     const b = rgbToLab(rgb2[0], rgb2[1], rgb2[2]);
-    const dl = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
+    const dl = a[0] - b[0],
+      da = a[1] - b[1],
+      db = a[2] - b[2];
     return dl * dl + da * da + db * db;
   }
-  const dr = rgb1[0] - rgb2[0], dg = rgb1[1] - rgb2[1], db = rgb1[2] - rgb2[2];
+  const dr = rgb1[0] - rgb2[0],
+    dg = rgb1[1] - rgb2[1],
+    db = rgb1[2] - rgb2[2];
   const rm = (rgb1[0] + rgb2[0]) / 2;
   return (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
 }
@@ -56,11 +68,15 @@ function nearestIndices(r, g, b, palRgb, palLab, useLab) {
     let d;
     if (useLab) {
       const p = palLab[i];
-      const dl = lab[0] - p[0], da = lab[1] - p[1], db = lab[2] - p[2];
+      const dl = lab[0] - p[0],
+        da = lab[1] - p[1],
+        db = lab[2] - p[2];
       d = dl * dl + da * da + db * db;
     } else {
       const p = palRgb[i];
-      const dr = r - p[0], dg = g - p[1], db = b - p[2];
+      const dr = r - p[0],
+        dg = g - p[1],
+        db = b - p[2];
       const rm = (r + p[0]) / 2;
       d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
     }
@@ -91,7 +107,9 @@ export function computeInitialMapping(rgba, width, height, palette, useLab) {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
-      let r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      let r = rgba[i],
+        g = rgba[i + 1],
+        b = rgba[i + 2];
       const a = rgba[i + 3];
       if (a < TRANSPARENT_ALPHA) continue; // 透明像素：保留空位，不参与取色
       if (a < 255) {
@@ -131,7 +149,8 @@ export function computeInitialMapping(rgba, width, height, palette, useLab) {
 function tieBreakPass(items, counts, grid, positional) {
   const remain = [];
   for (const u of items) {
-    let best = -1, bestC = -1;
+    let best = -1,
+      bestC = -1;
     for (const c of u.list) {
       const cc = counts[c];
       if (cc > bestC || (positional && cc === bestC && (best < 0 || c < best))) {
@@ -173,7 +192,9 @@ export function countUsedColors(grid, width, height) {
 }
 
 class MinHeap {
-  constructor() { this.a = []; }
+  constructor() {
+    this.a = [];
+  }
   push(x) {
     const a = this.a;
     a.push(x);
@@ -194,7 +215,8 @@ class MinHeap {
       a[0] = last;
       let i = 0;
       for (;;) {
-        const l = i * 2 + 1, r = l + 1;
+        const l = i * 2 + 1,
+          r = l + 1;
         let m = i;
         if (l < a.length && a[l].d < a[m].d) m = l;
         if (r < a.length && a[r].d < a[m].d) m = r;
@@ -257,10 +279,16 @@ export function buildMergeMap(counts, palette, useLab, targetN) {
       e = heap.pop();
     } while (e && (!alive[e.a] || !alive[e.b] || e.va !== ver[e.a] || e.vb !== ver[e.b]));
     if (!e) break;
-    let keep = e.a, dead = e.b;
-    if (cnt[e.b] > cnt[e.a]) { keep = e.b; dead = e.a; }
-    const wKeep = cnt[keep], wDead = cnt[dead];
-    const kc = rgb[keep], dc = rgb[dead];
+    let keep = e.a,
+      dead = e.b;
+    if (cnt[e.b] > cnt[e.a]) {
+      keep = e.b;
+      dead = e.a;
+    }
+    const wKeep = cnt[keep],
+      wDead = cnt[dead];
+    const kc = rgb[keep],
+      dc = rgb[dead];
     rgb[keep] = [
       (kc[0] * wKeep + dc[0] * wDead) / (wKeep + wDead),
       (kc[1] * wKeep + dc[1] * wDead) / (wKeep + wDead),
@@ -273,7 +301,13 @@ export function buildMergeMap(counts, palette, useLab, targetN) {
     ver[keep]++;
     for (let k = 0; k < total; k++) {
       if (alive[k] && k !== keep) {
-        heap.push({ d: colorDist2(rgb[keep], rgb[k], useLab), a: keep, b: k, va: ver[keep], vb: ver[k] });
+        heap.push({
+          d: colorDist2(rgb[keep], rgb[k], useLab),
+          a: keep,
+          b: k,
+          va: ver[keep],
+          vb: ver[k],
+        });
       }
     }
     aliveCount--;

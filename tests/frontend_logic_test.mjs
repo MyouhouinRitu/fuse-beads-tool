@@ -4,19 +4,19 @@ import { createHash } from 'node:crypto';
 import * as C from '../static/js/colors.js';
 import { paletteHash, sha256Hex } from '../static/js/hash.js';
 import {
+  applyStepToGrid,
+  applyStructuralStep,
   createEmptyHistory,
   createTransaction,
   deleteTransaction,
   findTransaction,
-  sanitizeHistory,
-  recordStep,
-  undoStep,
-  redoStep,
-  applyStepToGrid,
-  recordStructuralStep,
-  applyStructuralStep,
   MAX_UNDO_STEPS,
+  recordStep,
+  recordStructuralStep,
+  redoStep,
+  sanitizeHistory,
   sanitizeUndoStack,
+  undoStep,
 } from '../static/js/history.js';
 
 // ---- 哈希工具：SHA-256 与色板规范化哈希 ----
@@ -33,10 +33,17 @@ import {
     { index: 1, code: 'A', name: '白', hex: '#FFFFFF' },
   ];
   const expected = createHash('sha256')
-    .update('[{"index":1,"code":"A","name":"白","hex":"#FFFFFF"},{"index":2,"code":"B","name":"蓝","hex":"#0000FF"}]', 'utf8')
+    .update(
+      '[{"index":1,"code":"A","name":"白","hex":"#FFFFFF"},{"index":2,"code":"B","name":"蓝","hex":"#0000FF"}]',
+      'utf8',
+    )
     .digest('hex');
   assert.equal(paletteHash(palette), expected, '色板哈希应按 index 排序并统一 hex 大写');
-  assert.equal(paletteHash(palette), paletteHash([...palette].reverse()), '色板哈希应与输入顺序无关');
+  assert.equal(
+    paletteHash(palette),
+    paletteHash([...palette].reverse()),
+    '色板哈希应与输入顺序无关',
+  );
   console.log('[OK] 哈希工具：SHA-256 与色板规范化哈希');
 }
 
@@ -50,10 +57,7 @@ import {
   ];
   // 2x2 图像：红、红、蓝、纯黑（黑与红/蓝距离不同，唯一最近色？黑到红蓝均为 255 距离）
   const rgba = new Uint8ClampedArray([
-    255, 0, 0, 255,
-    255, 0, 0, 255,
-    0, 0, 255, 255,
-    0, 0, 0, 255,
+    255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255,
   ]);
   const { grid, counts } = C.computeInitialMapping(rgba, 2, 2, palette, false);
   assert.equal(grid[0], 0, '红色像素应映射到红色豆');
@@ -72,12 +76,7 @@ import {
     { index: 1, hex: '#FF0000' },
     { index: 2, hex: '#FFFFFF' },
   ];
-  const rgba = new Uint8ClampedArray([
-    255, 0, 0, 255,
-    0, 0, 0, 0,
-    255, 0, 0, 128,
-    255, 0, 0, 64,
-  ]);
+  const rgba = new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 128, 255, 0, 0, 64]);
   const { grid, counts } = C.computeInitialMapping(rgba, 2, 2, palette, false);
   assert.equal(grid[0], 0, '不透明红色像素应映射到红色豆');
   assert.equal(grid[1], -1, '完全透明像素应为空位');
@@ -103,7 +102,11 @@ import {
   const rep2 = m.rep.get(2);
   assert.equal(rep0, rep1, '相近两色应合并');
   assert.notEqual(rep0, rep2, '蓝色应保持独立');
-  assert.deepEqual(m.color.get(rep0).map((v) => Math.round(v)), [255, 9, 9], '合并色应为加权平均');
+  assert.deepEqual(
+    m.color.get(rep0).map((v) => Math.round(v)),
+    [255, 9, 9],
+    '合并色应为加权平均',
+  );
   console.log('[OK] 贪心合并（滑动条）');
 }
 
@@ -142,7 +145,12 @@ import {
 
 // ---- 旧版树形结构数据兼容：直接清空，不崩溃 ----
 {
-  const legacy = { nodes: { 1: { id: 1, children: [2] }, 2: { id: 2, children: [] } }, rootId: 1, currentId: 2, nextId: 3 };
+  const legacy = {
+    nodes: { 1: { id: 1, children: [2] }, 2: { id: 2, children: [] } },
+    rootId: 1,
+    currentId: 2,
+    nextId: 3,
+  };
   const h = sanitizeHistory(legacy);
   assert.equal(h.items.length, 0);
   assert.equal(h.currentId, null);
@@ -168,7 +176,8 @@ import {
 
 // ---- 单步撤销/重做：增量记录 + 20 步上限 ----
 {
-  const undo = [], redo = [];
+  const undo = [],
+    redo = [];
   const step1 = recordStep(undo, redo, [{ x: 0, y: 0, from: 0, to: 1 }]);
   assert.ok(step1, '应记录第一步');
   const step2 = recordStep(undo, redo, [{ x: 1, y: 0, from: 1, to: 2 }]);
@@ -191,7 +200,8 @@ import {
   assert.equal(grid[1], 2);
 
   // 20 步上限：记录 25 步后只保留最近 20 步
-  const u2 = [], r2 = [];
+  const u2 = [],
+    r2 = [];
   for (let i = 0; i < 25; i++) recordStep(u2, r2, [{ x: 0, y: 0, from: i, to: i + 1 }]);
   assert.equal(u2.length, MAX_UNDO_STEPS, '撤销栈不应超过 20 步');
   assert.equal(u2[0].changes[0].from, 5, '应丢弃最旧的 5 步');
@@ -222,7 +232,11 @@ import {
   applyStructuralStep(holder, undoStack[0], 'undo');
   assert.equal(holder.width, 4, '撤销应恢复宽度');
   assert.equal(holder.height, 3, '撤销应恢复高度');
-  assert.deepEqual(Array.from(holder.grid), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], '撤销应恢复网格');
+  assert.deepEqual(
+    Array.from(holder.grid),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    '撤销应恢复网格',
+  );
 
   undoStep(undoStack, redoStack);
   applyStructuralStep(holder, redoStack[0], 'redo');
@@ -243,7 +257,12 @@ import {
 // ---- 恢复用撤销/重做栈清洗：丢弃损坏步骤、保留结构型快照 ----
 {
   const raw = [
-    { changes: [{ x: 0, y: 0, from: 1, to: 2 }, { x: 1, y: 0, from: 2, to: 3 }] },
+    {
+      changes: [
+        { x: 0, y: 0, from: 1, to: 2 },
+        { x: 1, y: 0, from: 2, to: 3 },
+      ],
+    },
     { changes: [{ x: 0, y: 1, from: 3, to: 'bad' }] },
     'junk',
     null,
@@ -262,7 +281,10 @@ import {
   ];
   const cleaned = sanitizeUndoStack(raw);
   assert.equal(cleaned.length, 2, '应保留 1 个有效增量步骤和 1 个有效结构型步骤');
-  assert.deepEqual(cleaned[0].changes, [{ x: 0, y: 0, from: 1, to: 2 }, { x: 1, y: 0, from: 2, to: 3 }]);
+  assert.deepEqual(cleaned[0].changes, [
+    { x: 0, y: 0, from: 1, to: 2 },
+    { x: 1, y: 0, from: 2, to: 3 },
+  ]);
   assert.equal(cleaned[1].structural, true);
   assert.deepEqual(Array.from(cleaned[1].before.grid), [0, 1]);
   assert.equal(sanitizeUndoStack('bad').length, 0, '非数组输入应返回空栈');

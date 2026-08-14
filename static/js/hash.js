@@ -26,8 +26,14 @@ export function sha256Hex(text) {
   dv.setUint32(paddedLen - 8, Math.floor(bitLen / 0x100000000));
   dv.setUint32(paddedLen - 4, bitLen >>> 0);
 
-  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
-  let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  let h0 = 0x6a09e667,
+    h1 = 0xbb67ae85,
+    h2 = 0x3c6ef372,
+    h3 = 0xa54ff53a;
+  let h4 = 0x510e527f,
+    h5 = 0x9b05688c,
+    h6 = 0x1f83d9ab,
+    h7 = 0x5be0cd19;
   const w = new Uint32Array(64);
 
   for (let i = 0; i < paddedLen; i += 64) {
@@ -40,7 +46,14 @@ export function sha256Hex(text) {
       w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;
     }
 
-    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    let a = h0,
+      b = h1,
+      c = h2,
+      d = h3,
+      e = h4,
+      f = h5,
+      g = h6,
+      h = h7;
     for (let t = 0; t < 64; t++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const ch = (e & f) ^ (~e & g);
@@ -68,9 +81,7 @@ export function sha256Hex(text) {
     h7 = (h7 + h) >>> 0;
   }
 
-  return [h0, h1, h2, h3, h4, h5, h6, h7]
-    .map((x) => x.toString(16).padStart(8, '0'))
-    .join('');
+  return [h0, h1, h2, h3, h4, h5, h6, h7].map((x) => x.toString(16).padStart(8, '0')).join('');
 }
 
 // 色板规范化：按 index 升序，只取 index/code/name/hex，hex 统一大写

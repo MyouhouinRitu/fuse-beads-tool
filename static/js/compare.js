@@ -1,11 +1,11 @@
 // 对比原图：IndexedDB 缓存、原图绘制、对比开关与同步拖拽开关。
 
+import { scheduleAutosave } from './autosave.js';
 import { ORIG_MAX_DIM } from './constants.js';
 import { els } from './els.js';
 import { App } from './state.js';
 import { toast } from './utils.js';
 import { applyOriginalTransform, fitOriginal, mirrorBeadToOrig } from './view.js';
-import { scheduleAutosave } from './autosave.js';
 
 // ---------- 原图缓存（IndexedDB，刷新后对比功能仍可用） ----------
 
@@ -40,7 +40,7 @@ async function saveOriginalCache(blob) {
       tx.onerror = () => reject(tx.error);
     });
     db.close();
-  } catch (e) {
+  } catch (_e) {
     // 缓存不可用时（隐私模式等）忽略，对比功能仅在本会话生效
   }
 }
@@ -56,7 +56,7 @@ async function readOriginalCache() {
     });
     db.close();
     return blob;
-  } catch (e) {
+  } catch (_e) {
     return null;
   }
 }
@@ -70,14 +70,24 @@ export async function restoreOriginalFromCache() {
 
 export function loadOriginalImage(file) {
   return new Promise((resolve) => {
-    if (!file) { resolve(false); return; }
+    if (!file) {
+      resolve(false);
+      return;
+    }
     App.originalFile = file; // 缓存恢复时也保留原图句柄，刷新后「重新压缩」仍可用
     if (App.originalUrl) {
-      try { URL.revokeObjectURL(App.originalUrl); } catch (e) { /* ignore */ }
+      try {
+        URL.revokeObjectURL(App.originalUrl);
+      } catch (_e) {
+        /* ignore */
+      }
     }
     App.originalUrl = null;
     App.originalImage = null;
-    if (typeof URL.createObjectURL !== 'function') { resolve(false); return; }
+    if (typeof URL.createObjectURL !== 'function') {
+      resolve(false);
+      return;
+    }
     saveOriginalCache(file); // 缓存原图，刷新后仍可对比
     const url = URL.createObjectURL(file);
     App.originalUrl = url;

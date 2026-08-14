@@ -1,6 +1,8 @@
 // 画布工作区交互：画笔/橡皮/取色、选区体系、鼠标拖拽、同步拖拽、九宫格联动。
 // 只依赖视图/裁剪/快捷选色等下层模块，不反向依赖主入口。
 
+import { scheduleAutosave } from './autosave.js';
+import * as C from './colors.js';
 import {
   DRAG_THRESHOLD_PX,
   TOOLS,
@@ -9,24 +11,6 @@ import {
   WAND_SENSITIVITY_MIN,
   ZOOM_WHEEL_FACTOR,
 } from './constants.js';
-import * as C from './colors.js';
-import { els } from './els.js';
-import { recordStep } from './history.js';
-import { renderHistoryUI } from './history-ui.js';
-import { findConnectedComponents } from './render.js';
-import { App, dragState, setDirty, setProjectDirty } from './state.js';
-import { blurActive, clampInt, codeOf, countBadge, hideCropMagnifier, rectCells, titleOf, toast } from './utils.js';
-import { scheduleAutosave } from './autosave.js';
-import { scheduleCanvasRender, scheduleRender } from './render-queue.js';
-import { setTool } from './tool-state.js';
-import {
-  applyOriginalTransform,
-  applyTransform,
-  eventToCell,
-  mirrorBeadToOrig,
-  zoomAtCore,
-  zoomAtOriginal,
-} from './view.js';
 import {
   handleCropMouseDown,
   rememberCropMouse,
@@ -35,7 +19,32 @@ import {
   updateCropMagnifier,
   updateCropPreview,
 } from './crop.js';
+import { els } from './els.js';
+import { recordStep } from './history.js';
+import { renderHistoryUI } from './history-ui.js';
 import { closeQuickPicker } from './quick-picker.js';
+import { findConnectedComponents } from './render.js';
+import { scheduleCanvasRender, scheduleRender } from './render-queue.js';
+import { App, dragState, setDirty, setProjectDirty } from './state.js';
+import { setTool } from './tool-state.js';
+import {
+  blurActive,
+  clampInt,
+  codeOf,
+  countBadge,
+  hideCropMagnifier,
+  rectCells,
+  titleOf,
+  toast,
+} from './utils.js';
+import {
+  applyOriginalTransform,
+  applyTransform,
+  eventToCell,
+  mirrorBeadToOrig,
+  zoomAtCore,
+  zoomAtOriginal,
+} from './view.js';
 
 // ---------- 画笔 ----------
 
@@ -67,7 +76,7 @@ function darkestPaletteIndex() {
   let best = 0;
   let bestLum = Infinity;
   App.appliedPalette.forEach((c, i) => {
-    if (!c || !c.hex) return;
+    if (!c?.hex) return;
     const [r, g, b] = C.hexToRgb(c.hex);
     const lum = C.luminance([r, g, b]);
     if (lum < bestLum) {
@@ -128,7 +137,7 @@ export function renderColorList(counts) {
   const frag = document.createDocumentFragment();
   App.appliedPalette.forEach((c, i) => {
     const item = document.createElement('div');
-    item.className = 'color-item' + (App.brushColor === i ? ' selected' : '');
+    item.className = `color-item${App.brushColor === i ? ' selected' : ''}`;
     item.dataset.index = String(i);
     item.title = titleOf(c);
     const sw = document.createElement('span');
@@ -142,7 +151,7 @@ export function renderColorList(counts) {
     sw.appendChild(codeLabel);
     const count = document.createElement('span');
     count.className = 'ci-count';
-    count.textContent = counts && counts[i] ? countBadge(counts[i]) : '';
+    count.textContent = counts?.[i] ? countBadge(counts[i]) : '';
     item.append(sw, count);
     frag.appendChild(item);
   });
@@ -166,7 +175,7 @@ function cellFromEvent(e) {
 export function paintCell(x, y, { silent = false } = {}) {
   const { grid, width } = App.project;
   const p = y * width + x;
-  const v = App.tool === TOOLS.ERASER ? -1 : (App.brushColor != null ? App.brushColor : -2);
+  const v = App.tool === TOOLS.ERASER ? -1 : App.brushColor != null ? App.brushColor : -2;
   if (v === -2) return; // 未选择颜色
   if (grid[p] === v) return null;
   const from = grid[p];
@@ -235,7 +244,7 @@ function wandDistanceThreshold() {
 }
 
 function similarColorCells(x, y) {
-  const { grid, width, height } = App.project;
+  const { grid, width } = App.project;
   const p0 = y * width + x;
   const seed = grid[p0];
   if (seed < 0) return new Set([p0]);
@@ -243,9 +252,9 @@ function similarColorCells(x, y) {
   if (!seedColor) return new Set([p0]);
 
   const seedRgb = C.hexToRgb(seedColor.hex);
-  const dist = App.appliedPalette.map((c) => (
-    c ? C.colorDist2(seedRgb, C.hexToRgb(c.hex), App.settings.useLab) : Infinity
-  ));
+  const dist = App.appliedPalette.map((c) =>
+    c ? C.colorDist2(seedRgb, C.hexToRgb(c.hex), App.settings.useLab) : Infinity,
+  );
   const threshold = wandDistanceThreshold();
   const visited = new Uint8Array(grid.length);
   const cells = new Set([p0]);
@@ -389,16 +398,27 @@ function applyPickerColor(cell) {
 
 function lineCells(a, b) {
   const cells = [];
-  let x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
-  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let x0 = a.x,
+    y0 = a.y,
+    x1 = b.x,
+    y1 = b.y;
+  const dx = Math.abs(x1 - x0),
+    dy = -Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1,
+    sy = y0 < y1 ? 1 : -1;
   let err = dx + dy;
   for (;;) {
     cells.push({ x: x0, y: y0 });
     if (x0 === x1 && y0 === y1) break;
     const e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x0 += sx; }
-    if (e2 <= dx) { err += dx; y0 += sy; }
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
   }
   return cells;
 }
@@ -458,7 +478,7 @@ function resetDragState() {
 // hover 边框定位：只在工作区图案上更新，拖拽平移或指向对比原图时隐藏
 function updateHoverCell(e) {
   if (!App.project) return;
-  if (e.target && e.target.closest && e.target.closest('#compare-original')) {
+  if (e.target?.closest?.('#compare-original')) {
     if (App.hoverCell != null) {
       App.hoverCell = null;
       scheduleCanvasRender();
@@ -525,20 +545,29 @@ function updateDragMove(e) {
     const cell = cellFromEvent(e);
     if (!cell) return;
     const from = dragState.toggleLast || dragState.selectionAnchor;
-    toggleSelectionCells(lineCells(from, cell).map((c) => c.y * App.project.width + c.x));
+    const cells = lineCells(from, cell);
+    if (dragState.toggleLast) cells.shift(); // 上一段终点已反选过，避免重复反选
+    toggleSelectionCells(cells.map((c) => c.y * App.project.width + c.x));
     dragState.toggleLast = cell;
     scheduleCanvasRender();
     return;
   }
-  if (App.tool === TOOLS.SELECT && dragState.moved && dragState.selectionAnchor
-    && !dragState.ctrl && !App.settings.sameColorSelect) {
+  if (
+    App.tool === TOOLS.SELECT &&
+    dragState.moved &&
+    dragState.selectionAnchor &&
+    !dragState.ctrl &&
+    !App.settings.sameColorSelect
+  ) {
     // 矩形拖选实时预览（裁剪到图案边界）
     const cell = cellFromEvent(e);
     if (!cell) return;
     const a = dragState.selectionAnchor;
     App.dragPreview = {
-      x0: Math.min(a.x, cell.x), y0: Math.min(a.y, cell.y),
-      x1: Math.max(a.x, cell.x), y1: Math.max(a.y, cell.y),
+      x0: Math.min(a.x, cell.x),
+      y0: Math.min(a.y, cell.y),
+      x1: Math.max(a.x, cell.x),
+      y1: Math.max(a.y, cell.y),
     };
     scheduleCanvasRender();
     return;
@@ -574,8 +603,15 @@ export function onWindowMouseUp() {
     } else if (App.tool === TOOLS.PICKER && dragState.downCell) {
       applyPickerColor(dragState.downCell);
     }
-  } else if (dragState.active && dragState.moved && App.tool === TOOLS.SELECT
-    && dragState.selectionAnchor && App.dragPreview && !dragState.ctrl && !App.settings.sameColorSelect) {
+  } else if (
+    dragState.active &&
+    dragState.moved &&
+    App.tool === TOOLS.SELECT &&
+    dragState.selectionAnchor &&
+    App.dragPreview &&
+    !dragState.ctrl &&
+    !App.settings.sameColorSelect
+  ) {
     // 选择模式：左键拖拽 = 矩形选区（Shift 追加并集）
     selectRect(App.dragPreview, dragState.shift);
   }
@@ -595,7 +631,7 @@ export function onWindowMouseUp() {
 
 export function onCanvasScrollMouseDown(e) {
   if (!App.project) return;
-  const inOrig = e.target && e.target.closest && e.target.closest('#compare-original');
+  const inOrig = e.target?.closest?.('#compare-original');
   if (e.button === 2) {
     // 右键：工作区内任意位置拖拽平移（对比原图由自己的右键处理）
     e.preventDefault();
@@ -623,10 +659,14 @@ export function onCanvasScrollMouseDown(e) {
       dragState.selectionAnchor = cell;
       dragState.shift = !!e.shiftKey;
       dragState.ctrl = !!(e.ctrlKey || e.metaKey);
-      if (dragState.ctrl) dragState.toggleLast = cell;
-      if (App.tool === TOOLS.SELECT && !e.shiftKey && !e.ctrlKey && !e.metaKey
-        && !App.settings.sameColorSelect
-        && (App.selection.size || App.dragPreview)) {
+      if (
+        App.tool === TOOLS.SELECT &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !App.settings.sameColorSelect &&
+        (App.selection.size || App.dragPreview)
+      ) {
         // 非 Shift 新选区开始时立即清空旧选区（Shift 追加并集则保留；同色选区拖拽无效不清空）
         App.selection = new Set();
         App.dragPreview = null;
@@ -669,7 +709,7 @@ export function onCanvasScrollMouseLeave() {
 
 export function onCanvasWheel(e) {
   if (!App.project) return;
-  if (e.target && e.target.closest && e.target.closest('#compare-original')) return;
+  if (e.target?.closest?.('#compare-original')) return;
   if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
   e.preventDefault();
   zoomAtCore(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
