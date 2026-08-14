@@ -1,6 +1,6 @@
 // 工具模式状态与相关控件：切换工具、模式控件显隐、模式标签。
 
-import { TOOLS } from './constants.js';
+import { TOOLS, WAND_SENSITIVITY_DEFAULT } from './constants.js';
 import { els } from './els.js';
 import { App } from './state.js';
 import { hideCropMagnifier, toast } from './utils.js';
@@ -12,6 +12,7 @@ const TOOL_UI = [
   { tool: TOOLS.PICKER, btn: 'toolPicker', modeClass: 'mode-picker', label: '取色模式' },
   { tool: TOOLS.ERASER, btn: 'toolEraser', modeClass: 'mode-eraser', label: '橡皮模式' },
   { tool: TOOLS.CROP, btn: 'toolCrop', modeClass: 'mode-crop', label: '裁剪模式' },
+  { tool: TOOLS.WAND, btn: 'toolWand', modeClass: 'mode-wand', label: '魔棒模式' },
 ];
 const TOOL_LABELS = { [TOOLS.SELECT]: '选择模式' };
 for (const u of TOOL_UI) TOOL_LABELS[u.tool] = u.label;
@@ -22,6 +23,12 @@ export function updateModeControls() {
   if (els.brushSize.value !== size) els.brushSize.value = size;
   if (els.brushSizeValue.textContent !== size) els.brushSizeValue.textContent = size;
   els.brushSizeWrap.classList.toggle('hidden', App.tool !== TOOLS.BRUSH && App.tool !== TOOLS.ERASER);
+  const sens = Number.isFinite(App.settings.wandSensitivity)
+    ? App.settings.wandSensitivity
+    : WAND_SENSITIVITY_DEFAULT;
+  if (els.wandSensitivity.value !== String(sens)) els.wandSensitivity.value = String(sens);
+  if (els.wandSensitivityValue.textContent !== String(sens)) els.wandSensitivityValue.textContent = String(sens);
+  els.wandSensitivityWrap.classList.toggle('hidden', App.tool !== TOOLS.WAND);
   els.selectionControls.classList.toggle('hidden', App.tool !== TOOLS.SELECT);
   els.cropControls.classList.toggle('hidden', App.tool !== TOOLS.CROP);
   const disabled = App.highlightColor == null;

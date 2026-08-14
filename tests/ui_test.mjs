@@ -167,6 +167,11 @@ async function main() {
       hasHistoryList: !!document.querySelector('#right-panel #history-list'),
       hasExportEmptyStyle: !!document.getElementById('dlg-empty-style'),
       hasExportPreview: !!document.getElementById('dlg-preview'),
+      hasWandTool: !!document.getElementById('tool-wand'),
+      editToolCount: document.querySelectorAll('.tool-row .tool').length,
+      hasOpenProject: !!document.getElementById('btn-open-project'),
+      hasSaveProject: !!document.getElementById('btn-save-project'),
+      saveProjectEnabled: !document.getElementById('btn-save-project')?.disabled,
     };
   });
   assert.ok(layout.outlineRemoved, '描边控件应已整体移除');
@@ -174,6 +179,14 @@ async function main() {
   assert.ok(layout.codesAfterZoom && layout.emptyAfterCodes, '显示色号/透明色应在画布工具栏缩放按钮右侧且顺序正确');
   assert.ok(layout.noRecordsTitle && layout.hasHistoryTitle && layout.hasDirtyIndicator && layout.hasHistoryList, '右侧面板应为单一事务历史块并带未保存提示');
   assert.ok(layout.hasExportEmptyStyle && layout.hasExportPreview, '导出对话框应包含独立透明色选项与预览');
+  assert.ok(layout.hasWandTool && layout.editToolCount === 5, `编辑工具行应包含魔棒且共 5 个工具，实际 ${layout.editToolCount}`);
+  assert.ok(layout.hasOpenProject && layout.hasSaveProject && layout.saveProjectEnabled,
+    '导入图片后应显示打开/保存项目按钮，且保存项目可用');
+  // 等待提示队列清空，避免切换 48 色配置时排队的「重新压缩」提示残留
+  await page.waitForFunction(() => {
+    const queue = window.__testHooks.getToastQueue();
+    return queue.length === 0 && !document.querySelector('#toast').textContent.includes('重新压缩');
+  }, null, { timeout: 8000 });
   assert.ok(!(await page.textContent('#toast')).includes('重新压缩'), '首次打开网站不应弹出色板配置提示');
   console.log('[OK] 工具栏 / 画布工具栏 / 右侧面板布局');
 
@@ -220,7 +233,8 @@ async function main() {
     assert.equal(await page.evaluate(() => window.__app.settings.useLab), false, '修改颜色距离后应保存设置');
     const gridAfter = await page.evaluate(() => Array.from(window.__app.project.grid));
     assert.deepEqual(gridAfter, gridBefore, '修改颜色距离后不应立即重新生成图案');
-    assert.ok((await page.textContent('#toast')).includes('重新压缩'), '修改颜色距离后应提示需重新压缩');
+    await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('重新压缩'),
+      null, { timeout: 3000 });
     await page.selectOption('#sel-distance', 'lab');
     await page.waitForTimeout(200);
     console.log('[OK] 颜色距离延迟生效');
@@ -454,7 +468,22 @@ async function main() {
   assert.equal(await page.textContent('#mode-label'), '选择模式', '取色模式 ESC 应返回选择模式');
   console.log('[OK] 取色工具');
 
-  // 5.6 选择模式单击像素 = 选中（虚线选区）
+  // 5.6 魔棒：模式行显示「容差」且与「当前模式」同一行
+  await page.click('#tool-wand');
+  await page.waitForTimeout(100);
+  assert.equal(await page.textContent('#mode-label'), '魔棒模式', '魔棒按钮应切换到魔棒模式');
+  const wandModeBox = await page.locator('#mode-label').boundingBox();
+  const wandTolBox = await page.locator('#wand-sensitivity-wrap').boundingBox();
+  assert.ok(wandModeBox && wandTolBox && Math.abs(wandModeBox.y - wandTolBox.y) < 2,
+    `「当前模式」与「容差」应在同一行，实际 y=${wandModeBox?.y} / ${wandTolBox?.y}`);
+  assert.ok(wandTolBox.x > wandModeBox.x, '容差滑块应位于模式标签右侧');
+  const wandTolText = await page.textContent('#wand-sensitivity-wrap');
+  assert.ok(wandTolText.includes('容差'), `魔棒模式行应显示「容差」，实际 ${wandTolText.trim()}`);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.textContent('#mode-label'), '选择模式', '魔棒模式 ESC 应返回选择模式');
+  console.log('[OK] 魔棒：容差与当前模式同行');
+
+  // 5.7 选择模式单击像素 = 选中（虚线选区）
   const hlPt = await canvasPoint(page, 5, 5);
   await page.mouse.click(hlPt.x, hlPt.y);
   await page.waitForTimeout(150);
@@ -473,7 +502,7 @@ async function main() {
     `选区边框应为黑/白虚线像素，实际 ${selPx}`);
   console.log('[OK] 选择模式单击选择（虚线选区）');
 
-  // 5.7 工作区空白处拖拽 = 平移图片
+  // 5.8 工作区空白处拖拽 = 平移图片
   const beforePan = await page.evaluate(() => window.__app.pan.x);
   const vp = await page.locator('#canvas-scroll').boundingBox();
   await page.mouse.move(vp.x + 8, vp.y + 8);
@@ -485,7 +514,7 @@ async function main() {
   assert.ok(Math.abs(afterPan - beforePan) > 20, `工作区拖拽应平移图片：${beforePan} -> ${afterPan}`);
   console.log('[OK] 工作区拖拽平移');
 
-  // 5.8 颜色清单高亮：点击色号 → 图中对应像素出现覆盖层+亮度自适应描边，再点/切换模式取消
+  // 5.9 颜色清单高亮：点击色号 → 图中对应像素出现覆盖层+亮度自适应描边，再点/切换模式取消
   assert.ok(await page.locator('#highlight-color-list .hc-item').count() >= 2, '颜色清单应显示已用颜色');
   const hcCounts = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#highlight-color-list .hc-count'))
@@ -561,6 +590,7 @@ async function main() {
   await page.keyboard.press('Control+s');
   await page.waitForTimeout(250);
   assert.equal(await page.locator('#history-list .history-item').count(), 2, '保存两次应有 2 个状态');
+  assert.equal(await page.locator('#history-list .hi-baseline-dot').count(), 1, '当前事务应显示红色基线圆点');
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dirty-indicator')).display), 'none',
     '保存事务后应隐藏「有未保存的修改」提示');
   page.once('dialog', (d) => d.accept());
@@ -736,7 +766,8 @@ async function main() {
   const pixelAfterEdit = await px(page, ccx(5), ccy(5));
   assert.deepEqual(pixelAfterEdit, pixelBeforeEdit, '修改色板后画布不应立即变化');
   assert.equal(await page.evaluate(() => window.__app.palette[0].hex), '#00FF00', '色板配置本身应已更新');
-  assert.ok((await page.textContent('#toast')).includes('重新压缩'), '修改色板后应弹出「重新压缩后生效」提示');
+  await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('重新压缩'),
+    null, { timeout: 3000 });
   page.on('dialog', onDlg);
   await page.click('#btn-recompress');
   await page.waitForTimeout(1500);

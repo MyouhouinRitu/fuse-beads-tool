@@ -17,7 +17,7 @@ import {
 import * as C from './colors.js';
 import { els } from './els.js';
 import { createTransaction, recordStructuralStep } from './history.js';
-import { App, dragState, setDirty } from './state.js';
+import { App, dragState, setDirty, setProjectDirty } from './state.js';
 import { clampInt, hideCropMagnifier, toast } from './utils.js';
 import { buildDisplayData, clearProjectEditingState } from './canvas.js';
 import { drawPatternBase } from './render.js';
@@ -237,10 +237,11 @@ export function applyCrop() {
   App.maxColors = Math.max(2, C.countUsedColors(newGrid, w, h));
   clearProjectEditingState();
   setTool(TOOLS.SELECT);
+  setDirty(true);
+  setProjectDirty(true);
   renderHistoryUI();
   renderAllNow();
   fitViewportToCanvas();
-  setDirty(true);
   scheduleAutosave();
   toast(`已裁剪为 ${w} × ${h}`);
 }

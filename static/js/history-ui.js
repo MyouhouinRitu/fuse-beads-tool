@@ -3,6 +3,7 @@
 import * as api from './api.js';
 import * as C from './colors.js';
 import { els } from './els.js';
+import { paletteHash } from './hash.js';
 import {
   createEmptyHistory,
   createTransaction,
@@ -10,10 +11,10 @@ import {
   findTransaction,
   MAX_UNDO_STEPS,
 } from './history.js';
-import { App, clearHistoryRecords, hasPendingRecords, setDirty } from './state.js';
+import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
 import { toast } from './utils.js';
 import { resetProjectEditingState } from './canvas.js';
-import { renderColorTable } from './palette.js';
+import { ensurePaletteConfig, renderColorTable } from './palette.js';
 import { renderAllNow } from './render-queue.js';
 import { scheduleAutosave } from './autosave.js';
 
@@ -31,9 +32,11 @@ export function saveTransaction() {
     height: App.project.height,
     paletteName: App.configName,
     palette: App.appliedPalette.map((c) => ({ ...c })),
+    paletteHash: paletteHash(App.appliedPalette),
     maxColors: App.maxColors,
   };
   const item = createTransaction(App.history, snapshot);
+  setProjectDirty(true);
   setDirty(false);
   renderHistoryUI();
   toast(`已保存状态#${item.id}（Ctrl+S）`);
@@ -50,15 +53,20 @@ export async function switchHistoryItem(id) {
   App.sliderN = null;
   App.editedSinceSlider = false;
   App.history.currentId = id;
+  App.history.baselineId = id;
+  setProjectDirty(true);
   // 切换到其它事务后，以该事务快照中的色板作为已应用色板渲染画布
   App.appliedPalette = (snap.palette || []).map((c) => ({ ...c }));
   // 切换到其它事务后，工作网格整体被替换，旧的单步记录不再有效
   resetProjectEditingState();
 
-  const exists = snap.paletteName && App.configs.some((c) => c.name === snap.paletteName);
-  if (exists) {
+  const snapPalette = snap.palette && snap.palette.length ? snap.palette : null;
+  if (snapPalette) {
     try {
-      const res = await api.getConfig(snap.paletteName);
+      const preferred = snap.paletteName || App.configName || '恢复色板';
+      const { name } = await ensurePaletteConfig(snapPalette, preferred);
+      snap.paletteName = name;
+      const res = await api.getConfig(name);
       App.palette = res.colors;
       App.configName = res.name;
       els.configSelect.value = res.name;
@@ -66,8 +74,18 @@ export async function switchHistoryItem(id) {
     } catch (e) {
       App.palette = (snap.palette || []).map((c) => ({ ...c }));
     }
+  } else if (snap.paletteName && App.configs.some((c) => c.name === snap.paletteName)) {
+    try {
+      const res = await api.getConfig(snap.paletteName);
+      App.palette = res.colors;
+      App.configName = res.name;
+      els.configSelect.value = res.name;
+      renderColorTable();
+    } catch (e) {
+      App.palette = [];
+    }
   } else {
-    App.palette = (snap.palette || []).map((c) => ({ ...c }));
+    App.palette = [];
   }
   renderAllNow();
   renderHistoryUI();
@@ -81,6 +99,8 @@ export function deleteHistoryItem(id) {
   if (!confirm(`确定删除事务「${node.label}」吗？此操作不可恢复。`)) return;
   const prev = App.history.currentId;
   const { newCurrent } = deleteTransaction(App.history, id);
+  setProjectDirty(true);
+  if (App.history.baselineId === id) App.history.baselineId = null;
   if (newCurrent != null && newCurrent !== prev) {
     switchHistoryItem(newCurrent);
   } else {
@@ -95,13 +115,24 @@ export function deleteHistoryItem(id) {
   scheduleAutosave();
 }
 
-export function clearAll() {
-  if (!App.project && App.history.items.length === 0) { toast('当前没有可清空的内容'); return; }
-  if (!confirm('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。')) return;
+export function clearAll({ silent = false } = {}) {
+  if (!App.project && App.history.items.length === 0) {
+    if (!silent) toast('当前没有可清空的内容');
+    return;
+  }
+  if (!silent && !confirm('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。')) return;
   App.project = null;
   App.baseGrid = null;
   App.compressed = null;
   App.originalFile = null;
+  const oldOriginalId = App.originalId;
+  App.originalId = null;
+  App.originalName = null;
+  App.originalSha256 = null;
+  App.originalSize = null;
+  App.projectName = null;
+  if (oldOriginalId) api.deleteOriginal(oldOriginalId).catch(() => {});
+  setProjectDirty(false);
   App.history = createEmptyHistory();
   App.maxColors = 2;
   App.sliderN = null;
@@ -166,6 +197,12 @@ function renderHistoryItem(item) {
   del.title = '仅删除该事务节点';
   actions.append(del);
   div.append(head, actions);
+  if (App.history.baselineId === id) {
+    const dot = document.createElement('span');
+    dot.className = 'hi-baseline-dot';
+    dot.title = '当前修改基于此事务';
+    div.appendChild(dot);
+  }
   return div;
 }
 

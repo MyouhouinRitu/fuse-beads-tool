@@ -1,6 +1,8 @@
 // 前端纯算法逻辑测试：颜色映射、贪心合并、扁平事务历史、单步撤销/重做
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as C from '../static/js/colors.js';
+import { paletteHash, sha256Hex } from '../static/js/hash.js';
 import {
   createEmptyHistory,
   createTransaction,
@@ -14,7 +16,29 @@ import {
   recordStructuralStep,
   applyStructuralStep,
   MAX_UNDO_STEPS,
+  sanitizeUndoStack,
 } from '../static/js/history.js';
+
+// ---- 哈希工具：SHA-256 与色板规范化哈希 ----
+{
+  for (const text of ['', 'abc', '你好', '{"index":1,"code":"001"}']) {
+    assert.equal(
+      sha256Hex(text),
+      createHash('sha256').update(text, 'utf8').digest('hex'),
+      `sha256Hex 应与 Node crypto 一致：${text}`,
+    );
+  }
+  const palette = [
+    { index: 2, code: 'B', name: '蓝', hex: '#0000ff' },
+    { index: 1, code: 'A', name: '白', hex: '#FFFFFF' },
+  ];
+  const expected = createHash('sha256')
+    .update('[{"index":1,"code":"A","name":"白","hex":"#FFFFFF"},{"index":2,"code":"B","name":"蓝","hex":"#0000FF"}]', 'utf8')
+    .digest('hex');
+  assert.equal(paletteHash(palette), expected, '色板哈希应按 index 排序并统一 hex 大写');
+  assert.equal(paletteHash(palette), paletteHash([...palette].reverse()), '色板哈希应与输入顺序无关');
+  console.log('[OK] 哈希工具：SHA-256 与色板规范化哈希');
+}
 
 // ---- 最近色映射（功能三第 1~4 步）----
 {
@@ -91,6 +115,7 @@ import {
   assert.equal(h.items.length, 2, '扁平历史按保存顺序存放');
   assert.equal(t2.id, t1.id + 1, '节点编号递增');
   assert.equal(h.currentId, t2.id, '新保存的节点成为当前节点');
+  assert.equal(h.baselineId, t2.id, '新保存的节点也应成为基线事务');
   assert.ok(!('parentId' in t1) && !('children' in t2), '节点之间没有父子关系');
   assert.equal(findTransaction(h, t1.id).id, t1.id);
   assert.equal(findTransaction(h, 999), null);
@@ -130,10 +155,13 @@ import {
       { id: 3, snapshot: { grid: 'bad' } },
     ],
     currentId: 2,
+    baselineId: 2,
     nextId: 10,
   });
   assert.equal(h2.items.length, 2, '应过滤掉非法节点');
   assert.equal(h2.currentId, 2);
+  assert.equal(h2.baselineId, 2, '有效的基线事务应保留');
+  assert.equal(sanitizeHistory({ ...h2, baselineId: 99 }).baselineId, null, '失效的基线事务应清空');
   assert.equal(h2.nextId, 3, 'nextId 应根据现有节点推导');
   console.log('[OK] 历史数据清洗与旧树兼容');
 }
@@ -210,6 +238,35 @@ import {
   assert.ok(popped && !popped.structural, '撤销应先取增量步骤');
   assert.equal(undoStack.length, 1, '撤销增量步骤后回到裁剪步骤');
   console.log('[OK] 结构型步骤：裁剪撤销/重做与增量叠加');
+}
+
+// ---- 恢复用撤销/重做栈清洗：丢弃损坏步骤、保留结构型快照 ----
+{
+  const raw = [
+    { changes: [{ x: 0, y: 0, from: 1, to: 2 }, { x: 1, y: 0, from: 2, to: 3 }] },
+    { changes: [{ x: 0, y: 1, from: 3, to: 'bad' }] },
+    'junk',
+    null,
+    {
+      structural: true,
+      type: 'crop',
+      before: { width: 2, height: 1, grid: [0, 1], baseGrid: [0, 1] },
+      after: { width: 1, height: 1, grid: [1], baseGrid: [1] },
+    },
+    {
+      structural: true,
+      type: 'crop',
+      before: { width: 2, height: 2, grid: [0, 1] }, // grid 长度错误
+      after: { width: 1, height: 1, grid: [1] },
+    },
+  ];
+  const cleaned = sanitizeUndoStack(raw);
+  assert.equal(cleaned.length, 2, '应保留 1 个有效增量步骤和 1 个有效结构型步骤');
+  assert.deepEqual(cleaned[0].changes, [{ x: 0, y: 0, from: 1, to: 2 }, { x: 1, y: 0, from: 2, to: 3 }]);
+  assert.equal(cleaned[1].structural, true);
+  assert.deepEqual(Array.from(cleaned[1].before.grid), [0, 1]);
+  assert.equal(sanitizeUndoStack('bad').length, 0, '非数组输入应返回空栈');
+  console.log('[OK] 撤销/重做栈清洗：损坏步骤丢弃、结构型快照保留');
 }
 
 console.log('\n前端逻辑测试全部通过');

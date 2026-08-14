@@ -9,15 +9,20 @@ import {
   QUICK_PICKER_MAX,
   TARGET_PIXEL_PRESETS,
   TOOLS,
+  WAND_SENSITIVITY_DEFAULT,
+  WAND_SENSITIVITY_MAX,
+  WAND_SENSITIVITY_MIN,
   ZOOM_BUTTON_FACTOR,
+  ZOOM_MAX,
+  ZOOM_MIN,
 } from './constants.js';
-import { sanitizeHistory } from './history.js';
-import { App, dragState, hasPendingRecords, clearHistoryRecords } from './state.js';
+import { sanitizeHistory, sanitizeUndoStack } from './history.js';
+import { App, dragState, hasPendingRecords, clearHistoryRecords, setDirty, setProjectDirty } from './state.js';
 import { assertElements, els } from './els.js';
-import { clampInt, downloadUrl, hintDistanceDeferred, toast } from './utils.js';
+import { clampInt, downloadDataUrl, downloadUrl, hintDistanceDeferred, toast } from './utils.js';
 import { renderAllNow, scheduleCanvasRender, setRenderers } from './render-queue.js';
 import * as auth from './auth.js';
-import { scheduleAutosave } from './autosave.js';
+import { buildProjectDocument, defaultProjectFileName, scheduleAutosave } from './autosave.js';
 import * as canvas from './canvas.js';
 import * as compare from './compare.js';
 import * as crop from './crop.js';
@@ -36,14 +41,28 @@ import * as view from './view.js';
 import * as workspace from './workspace.js';
 import { installTestHooks } from './test-hooks.js';
 
+let nativeDialogs = false; // 后端明确告知是否支持 Windows 系统文件对话框
+
+function projectNameStem(name) {
+  return String(name || '').replace(/\.[^.]+$/, '').trim();
+}
+
+function updateProjectNameLabel() {
+  const name = App.projectName
+    || (App.originalName ? projectNameStem(App.originalName) : '');
+  els.projectNameLabel.textContent = name ? `· ${name}` : '';
+}
+
 // ---------------- 全量刷新（面板 + 画布） ----------------
 
 function renderAll() {
   const project = App.project;
   if (!project) {
+    updateProjectNameLabel();
     canvas.clearWorkspace();
     els.emptyHint.style.display = '';
     els.colorSlider.disabled = true;
+    els.btnSaveProject.disabled = true;
     els.cellInfo.textContent = '';
     els.usedColors.textContent = '';
     els.sliderValue.textContent = '2';
@@ -64,6 +83,7 @@ function renderAll() {
   els.colorSlider.disabled = baseUsed <= 1;
   els.sliderValue.textContent = String(App.maxColors);
   els.usedColors.textContent = `当前使用 ${used} 种颜色`;
+  updateProjectNameLabel();
   canvas.redrawCanvas();
   els.emptyHint.style.display = 'none';
 
@@ -73,6 +93,7 @@ function renderAll() {
   workspace.renderColorList(counts);
   highlight.renderHighlightColorList(counts);
   canvas.syncHighlightBlink();
+  els.btnSaveProject.disabled = false;
   toolState.updateModeControls();
   historyUI.updateUndoUI();
 }
@@ -114,6 +135,7 @@ function applySlider(n) {
   App.project.grid = canvas.mergeGrid(App.baseGrid, App.appliedPalette, App.settings.useLab, n);
   App.sliderN = n;
   App.editedSinceSlider = false;
+  setProjectDirty(true);
   canvas.resetProjectEditingState();
   renderAllNow();
   scheduleAutosave();
@@ -132,6 +154,14 @@ function applySettingsToControls() {
   els.emptyStyle.value = ['default', 'black', 'white'].includes(App.settings.emptyStyle)
     ? App.settings.emptyStyle
     : 'default';
+  App.settings.wandSensitivity = clampInt(
+    App.settings.wandSensitivity,
+    WAND_SENSITIVITY_MIN,
+    WAND_SENSITIVITY_MAX,
+    WAND_SENSITIVITY_DEFAULT,
+  );
+  els.wandSensitivity.value = String(App.settings.wandSensitivity);
+  els.wandSensitivityValue.textContent = String(App.settings.wandSensitivity);
   // 对比/同步状态随设置持久化；原图从缓存恢复后再真正开启对比
   els.chkCompare.checked = !!App.settings.compare;
   els.chkSyncPan.checked = !!App.settings.syncPan;
@@ -157,20 +187,73 @@ async function restoreProjectState(st) {
   App.appliedPalette = (st.project.palette && st.project.palette.length)
     ? st.project.palette.map((c) => ({ ...c }))
     : App.appliedPalette.map((c) => ({ ...c }));
-  // 色板配置（可编辑）以磁盘上的配置为准；仅当配置不存在时回退到快照色板
-  const configExists = App.configName && App.configs.some((c) => c.name === App.configName);
-  if (configExists) {
+  // 色板配置（可编辑）以磁盘上的配置为准；快照与配置不一致时自动创建恢复配置
+  const snapPalette = st.project.palette && st.project.palette.length
+    ? st.project.palette
+    : null;
+  if (snapPalette) {
+    const preferred = App.configName || '恢复色板';
+    const { name, created } = await palette.ensurePaletteConfig(snapPalette, preferred);
+    App.configName = name;
+    try {
+      const res = await api.getConfig(name);
+      App.palette = res.colors;
+    } catch (e) {
+      App.palette = snapPalette.map((c) => ({ ...c }));
+    }
+    if (created || name !== preferred) scheduleAutosave();
+  } else if (App.configName && App.configs.some((c) => c.name === App.configName)) {
     try {
       const res = await api.getConfig(App.configName);
       App.palette = res.colors;
     } catch (e) {
-      // 保留已加载的配置色板
+      App.palette = [];
     }
-  } else if (st.project.palette && st.project.palette.length) {
-    App.palette = st.project.palette.map((c) => ({ ...c }));
+  } else {
+    App.palette = [];
   }
   els.configSelect.value = App.configName || '';
   palette.renderColorTable();
+}
+
+const RESTORABLE_TOOLS = new Set([TOOLS.SELECT, TOOLS.BRUSH, TOOLS.ERASER, TOOLS.PICKER, TOOLS.WAND]);
+
+function restoreSelection(raw, project) {
+  if (!project || !Array.isArray(raw)) return new Set();
+  const n = project.width * project.height;
+  const sel = new Set();
+  for (const v of raw) {
+    const p = Number(v);
+    if (Number.isInteger(p) && p >= 0 && p < n) sel.add(p);
+  }
+  return sel;
+}
+
+function applySavedOriginalViewport(vp) {
+  const oz = Number(vp && vp.origZoom);
+  const op = vp && vp.origPan;
+  if (!Number.isFinite(oz) || oz <= 0 || !op
+    || !Number.isFinite(Number(op.x)) || !Number.isFinite(Number(op.y))) {
+    return false;
+  }
+  App.origZoom = oz;
+  App.origPan = { x: Number(op.x), y: Number(op.y) };
+  view.applyOriginalTransform();
+  return true;
+}
+
+function restoreViewport(vp) {
+  const zoom = Number(vp && vp.zoom);
+  const pan = vp && vp.pan;
+  if (!Number.isFinite(zoom) || zoom <= 0 || !pan
+    || !Number.isFinite(Number(pan.x)) || !Number.isFinite(Number(pan.y))) {
+    return false;
+  }
+  App.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+  App.pan = { x: Number(pan.x), y: Number(pan.y) };
+  view.applyTransform();
+  applySavedOriginalViewport(vp);
+  return true;
 }
 
 async function restoreState() {
@@ -183,21 +266,186 @@ async function restoreState() {
   if (st.settings) Object.assign(App.settings, st.settings);
   applySettingsToControls();
   await restoreProjectState(st);
+
   App.history = sanitizeHistory(st.history);
+  App.undoStack = sanitizeUndoStack(st.undo && st.undo.undoStack);
+  App.redoStack = sanitizeUndoStack(st.undo && st.undo.redoStack);
   historyUI.renderHistoryUI();
+
+  App.originalId = st.original && st.original.id ? String(st.original.id) : null;
+  App.originalName = st.original && st.original.name ? String(st.original.name) : null;
+  App.originalSha256 = st.original && st.original.sha256 ? String(st.original.sha256) : null;
+  App.originalSize = st.original && Number.isFinite(Number(st.original.size))
+    ? Number(st.original.size)
+    : null;
+  App.projectName = st.projectName
+    || (st.original && st.original.name ? projectNameStem(st.original.name) : null);
+
+  const editor = st.editor || {};
+  App.selection = restoreSelection(editor.selection, App.project);
+  App.brushColor = (App.project && Number.isInteger(editor.brushColor)
+    && editor.brushColor >= 0 && editor.brushColor < App.appliedPalette.length)
+    ? editor.brushColor
+    : null;
+  App.dirty = !!editor.dirty && !!App.project;
+  setDirty(App.dirty);
+  App.projectDirty = !!st.projectDirty && !!App.project;
+
   renderAllNow();
-  if (App.project) view.fitViewportToCanvas();
-  // 从浏览器缓存恢复原图：刷新后对比功能仍可用
-  const originalRestored = await compare.restoreOriginalFromCache();
+  if (App.project) {
+    if (!restoreViewport(st.viewport)) view.fitViewportToCanvas();
+  }
+
+  const storedTool = editor.tool;
+  const tool = App.project && RESTORABLE_TOOLS.has(storedTool) ? storedTool : TOOLS.SELECT;
+  toolState.setTool(tool);
+  if (tool === TOOLS.BRUSH && App.brushColor == null) workspace.ensureBrushColor();
+
+  // 先从浏览器缓存恢复原图；缓存缺失时回退到后端保存的原图
+  let originalRestored = await compare.restoreOriginalFromCache();
+  if (!originalRestored && App.originalId) {
+    try {
+      const blob = await api.getOriginalBlob(App.originalId);
+      originalRestored = await compare.loadOriginalImage(blob);
+    } catch (e) { /* 忽略：无原图时对比保持关闭 */ }
+  }
+
   if (App.settings.compare) {
     if (App.project && originalRestored) {
       compare.setCompareEnabled(true, { silent: true });
+      if (App.settings.syncPan) {
+        view.mirrorBeadToOrig();
+        view.applyOriginalTransform();
+      } else {
+        applySavedOriginalViewport(st.viewport);
+      }
     } else {
       App.settings.compare = false;
       App.settings.syncPan = false;
       els.chkCompare.checked = false;
       els.chkSyncPan.checked = false;
     }
+  }
+}
+
+async function applyProjectDocument(doc, path = null) {
+  if (!doc || !doc.project) {
+    toast('项目文件缺少画布数据');
+    return;
+  }
+  // 打开项目后运行态全部重置，文档状态以文件为准
+  App.selection = new Set();
+  App.undoStack = [];
+  App.redoStack = [];
+  App.brushColor = null;
+  App.dragPreview = null;
+  App.crop = null;
+  App.cropActiveEdge = null;
+  App.cropPreview = null;
+  App.highlightColor = null;
+  App.compressed = null;
+  if (App.originalUrl) {
+    try { URL.revokeObjectURL(App.originalUrl); } catch (e) { /* ignore */ }
+  }
+  App.originalFile = null;
+  App.originalImage = null;
+  App.originalUrl = null;
+  App.tool = TOOLS.SELECT;
+
+  if (doc.settings) Object.assign(App.settings, doc.settings);
+  applySettingsToControls();
+  await restoreProjectState({ project: doc.project, settings: doc.settings });
+
+  App.history = sanitizeHistory(doc.history);
+  historyUI.renderHistoryUI();
+
+  App.originalId = doc.original && doc.original.id ? String(doc.original.id) : null;
+  App.originalName = doc.original && doc.original.name ? String(doc.original.name) : null;
+  App.originalSha256 = doc.original && doc.original.sha256 ? String(doc.original.sha256) : null;
+  App.originalSize = doc.original && Number.isFinite(Number(doc.original.size))
+    ? Number(doc.original.size)
+    : null;
+  App.projectName = path
+    ? projectNameStem(String(path).split(/[\\/]/).pop())
+    : (doc.original && doc.original.name ? projectNameStem(doc.original.name) : '未命名');
+
+  setDirty(false);
+  setProjectDirty(false);
+  renderAllNow();
+  if (!restoreViewport(doc.viewport)) view.fitViewportToCanvas();
+  toolState.setTool(TOOLS.SELECT);
+
+  let originalRestored = false;
+  if (App.originalId) {
+    try {
+      const blob = await api.getOriginalBlob(App.originalId);
+      originalRestored = await compare.loadOriginalImage(blob);
+    } catch (e) { /* 忽略 */ }
+  }
+  if (App.settings.compare) {
+    if (App.project && originalRestored) {
+      compare.setCompareEnabled(true, { silent: true });
+      if (App.settings.syncPan) {
+        view.mirrorBeadToOrig();
+        view.applyOriginalTransform();
+      } else {
+        applySavedOriginalViewport(doc.viewport);
+      }
+    } else {
+      App.settings.compare = false;
+      App.settings.syncPan = false;
+      els.chkCompare.checked = false;
+      els.chkSyncPan.checked = false;
+    }
+  }
+  scheduleAutosave();
+  toast('已打开项目');
+}
+
+async function saveProjectFile() {
+  if (!App.project) return;
+  try {
+    const isTest = typeof location !== 'undefined' && new URLSearchParams(location.search).has('test');
+    const res = await api.saveProject(
+      buildProjectDocument(),
+      defaultProjectFileName(),
+      isTest ? 'download' : undefined,
+    );
+    if (res.cancelled) return;
+    if (res.mode === 'download') {
+      downloadDataUrl('data:application/octet-stream;base64,' + res.dataBase64, res.filename);
+      App.projectName = projectNameStem(res.filename);
+      toast('已生成项目文件（浏览器下载）');
+    } else if (res.mode === 'saved') {
+      App.projectName = projectNameStem(String(res.path).split(/[\\/]/).pop());
+      toast(`已保存项目：${res.path}`);
+    }
+    setDirty(false);
+    setProjectDirty(false);
+    updateProjectNameLabel();
+  } catch (e) {
+    toast('保存项目失败：' + e.message);
+  }
+}
+
+async function openProjectViaDialog() {
+  if (App.projectDirty && !confirm('当前项目有未保存的更改，打开新项目将覆盖。是否继续？')) return;
+  const isTest = typeof location !== 'undefined' && new URLSearchParams(location.search).has('test');
+  if (!nativeDialogs || isTest) {
+    els.projectFileInput.click();
+    return;
+  }
+  try {
+    const pick = await api.pickOpenProject();
+    if (pick.cancelled) return;
+    if (pick.error) {
+      els.projectFileInput.click();
+      return;
+    }
+    const res = await api.openProjectPath(pick.path);
+    await applyProjectDocument(res.document, res.path);
+  } catch (e) {
+    toast('打开项目失败：' + e.message);
   }
 }
 
@@ -217,6 +465,7 @@ function renderTargetPixelOptions() {
     btn.addEventListener('click', () => {
       els.targetPixels.value = String(p.value);
       els.targetPixelsMenu.classList.add('hidden');
+      setProjectDirty(true);
     });
     menu.appendChild(btn);
   });
@@ -250,10 +499,28 @@ function bindEvents() {
     location.reload();
   });
 
-  els.btnImport.addEventListener('click', () => els.fileInput.click());
+  els.btnOpenProject.addEventListener('click', openProjectViaDialog);
+  els.projectFileInput.addEventListener('change', async () => {
+    const f = els.projectFileInput.files[0];
+    els.projectFileInput.value = '';
+    if (!f) return;
+    if (App.projectDirty && !confirm('当前项目有未保存的更改，打开新项目将覆盖。是否继续？')) return;
+    try {
+      const res = await api.openProjectUpload(f);
+      await applyProjectDocument(res.document);
+    } catch (e) {
+      toast('打开项目失败：' + e.message);
+    }
+  });
+  els.btnSaveProject.addEventListener('click', saveProjectFile);
+  els.btnImport.addEventListener('click', () => {
+    if (App.projectDirty && !confirm('当前项目有未保存的更改，导入新图片将覆盖。是否继续？')) return;
+    els.fileInput.click();
+  });
   els.fileInput.addEventListener('change', () => {
     const f = els.fileInput.files[0];
     if (f) {
+      historyUI.clearAll({ silent: true });
       App.originalFile = f;
       compare.loadOriginalImage(f);
       upload.processUpload();
@@ -263,13 +530,25 @@ function bindEvents() {
   els.btnRecompress.addEventListener('click', upload.recompress);
   els.chkCompare.addEventListener('change', () => {
     compare.setCompareEnabled(els.chkCompare.checked);
+    setProjectDirty(true);
   });
   els.chkSyncPan.addEventListener('change', () => {
     compare.setSyncPan(els.chkSyncPan.checked);
+    setProjectDirty(true);
   });
   els.chkCodes.addEventListener('change', () => {
     App.settings.showCodes = els.chkCodes.checked;
     canvas.redrawCanvas();
+    setProjectDirty(true);
+    scheduleAutosave();
+  });
+  els.chkSharpen.addEventListener('change', () => {
+    App.settings.sharpen = els.chkSharpen.checked;
+    setProjectDirty(true);
+    scheduleAutosave();
+  });
+  els.targetPixels.addEventListener('input', () => {
+    setProjectDirty(true);
     scheduleAutosave();
   });
   els.selDistance.addEventListener('change', () => {
@@ -277,6 +556,7 @@ function bindEvents() {
     if (App.settings.useLab === useLab) return;
     // 颜色距离只保存设置，不立即重算；单击「重新压缩」后按新算法生成图案
     App.settings.useLab = useLab;
+    setProjectDirty(true);
     scheduleAutosave();
     hintDistanceDeferred();
   });
@@ -287,6 +567,7 @@ function bindEvents() {
   els.emptyStyle.addEventListener('change', () => {
     App.settings.emptyStyle = els.emptyStyle.value;
     canvas.redrawCanvas();
+    setProjectDirty(true);
     scheduleAutosave();
   });
 
@@ -313,6 +594,10 @@ function bindEvents() {
     els.fixMenu.classList.add('hidden');
     markdown.openFixDoc('right-drag-gesture-fix');
   });
+  els.fixItemShortcuts.addEventListener('click', () => {
+    els.fixMenu.classList.add('hidden');
+    markdown.openFixDoc('shortcuts');
+  });
   els.docClose.addEventListener('click', markdown.closeFixDoc);
   els.btnTheme.addEventListener('click', theme.toggleTheme);
   document.addEventListener('click', () => {
@@ -322,7 +607,10 @@ function bindEvents() {
 
   els.configSelect.addEventListener('change', () => {
     const name = els.configSelect.value;
-    if (name) palette.loadConfigDetail(name);
+    if (name) {
+      setProjectDirty(true);
+      palette.loadConfigDetail(name);
+    }
   });
   els.btnNewConfig.addEventListener('click', async () => {
     const name = prompt('新配置名称：');
@@ -333,6 +621,7 @@ function bindEvents() {
     try {
       await api.createConfig(name, colors);
       await palette.selectAndLoad(name);
+      setProjectDirty(true);
       toast(`已创建配置「${name}」`);
     } catch (err) {
       toast('创建失败：' + err.message);
@@ -346,6 +635,7 @@ function bindEvents() {
     try {
       const res = await api.importConfig(f);
       await palette.selectAndLoad(res.name);
+      setProjectDirty(true);
       toast(`已导入配置「${res.name}」（${res.colors.length}色）`);
     } catch (err) {
       toast('导入失败：' + err.message);
@@ -362,6 +652,7 @@ function bindEvents() {
     try {
       await api.renameConfig(App.configName, newName);
       await palette.selectAndLoad(newName);
+      setProjectDirty(true);
       toast('已重命名');
     } catch (err) {
       toast('重命名失败：' + err.message);
@@ -375,6 +666,7 @@ function bindEvents() {
       await api.deleteConfig(App.configName);
       const remaining = App.configs.filter((c) => c.name !== App.configName);
       await palette.selectAndLoad(remaining[0] ? remaining[0].name : null);
+      setProjectDirty(true);
       toast('已删除配置');
     } catch (err) {
       toast('删除失败：' + err.message);
@@ -388,6 +680,7 @@ function bindEvents() {
     ['toolEraser', TOOLS.ERASER],
     ['toolPicker', TOOLS.PICKER],
     ['toolCrop', TOOLS.CROP],
+    ['toolWand', TOOLS.WAND],
   ]) {
     els[btnKey].addEventListener('click', () => {
       if (tool === TOOLS.BRUSH && !workspace.ensureBrushColor()) return;
@@ -398,6 +691,7 @@ function bindEvents() {
   els.btnApplyCrop.addEventListener('click', crop.applyCrop);
   els.sameColorChk.addEventListener('change', () => {
     App.settings.sameColorSelect = els.sameColorChk.checked;
+    setProjectDirty(true);
     scheduleAutosave();
   });
   els.selectHighlightBtn.addEventListener('click', () => {
@@ -420,7 +714,19 @@ function bindEvents() {
   els.brushSize.addEventListener('input', () => {
     App.settings.brushSize = clampInt(els.brushSize.value, BRUSH_SIZE_MIN, BRUSH_SIZE_MAX, BRUSH_SIZE_MIN);
     toolState.updateModeControls();
+    setProjectDirty(true);
     scheduleCanvasRender();
+    scheduleAutosave();
+  });
+  els.wandSensitivity.addEventListener('input', () => {
+    App.settings.wandSensitivity = clampInt(
+      els.wandSensitivity.value,
+      WAND_SENSITIVITY_MIN,
+      WAND_SENSITIVITY_MAX,
+      WAND_SENSITIVITY_DEFAULT,
+    );
+    toolState.updateModeControls();
+    setProjectDirty(true);
     scheduleAutosave();
   });
 
@@ -433,9 +739,13 @@ function bindEvents() {
       const vp = els.canvasScroll;
       const r = vp.getBoundingClientRect();
       view.zoomAtCore(r.left + r.width / 2, r.top + r.height / 2, factor);
+      setProjectDirty(true);
     });
   }
-  els.zoomFit.addEventListener('click', view.fitViewportToCanvas);
+  els.zoomFit.addEventListener('click', () => {
+    view.fitViewportToCanvas();
+    setProjectDirty(true);
+  });
 
   els.canvasScroll.addEventListener('mousedown', workspace.onCanvasScrollMouseDown);
   window.addEventListener('mousemove', workspace.onWindowMouseMove);
@@ -505,7 +815,12 @@ function bindEvents() {
       e.preventDefault();
       return;
     }
-    // Ctrl+S 与 Ctrl+Z/Y 同样遵循焦点守卫：输入框内不拦截浏览器快捷键
+    // Ctrl+Shift+S 保存项目；Ctrl+S 保存事务；两者都遵循焦点守卫
+    if (mod && e.shiftKey && e.key.toLowerCase() === 's' && !inField) {
+      e.preventDefault();
+      saveProjectFile();
+      return;
+    }
     if (mod && e.key.toLowerCase() === 's' && !inField) {
       e.preventDefault();
       historyUI.saveTransaction();
@@ -535,6 +850,7 @@ function bindEvents() {
     if (!mod && !dragState.active && e.key.toLowerCase() === 'w') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.PICKER); return; }
     if (!mod && !dragState.active && e.key.toLowerCase() === 'e') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.ERASER); return; }
     if (!mod && !dragState.active && e.key.toLowerCase() === 'r') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.CROP); return; }
+    if (!mod && !dragState.active && e.key.toLowerCase() === 'm') { e.preventDefault(); workspace.switchToolShortcut(TOOLS.WAND); return; }
     if (e.key === 'Delete') { e.preventDefault(); workspace.clearSelectionToEmpty(); return; }
     if (e.key.toLowerCase() === 'd' && App.tool === TOOLS.SELECT && App.project && !dragState.active) {
       // 单选一格时作用于选中格，否则作用于当前悬停格（拖拽中忽略）
@@ -557,6 +873,10 @@ function bindEvents() {
 
 async function init() {
   assertElements();
+  try {
+    const info = await api.getAppInfo();
+    nativeDialogs = !!info.nativeDialogs;
+  } catch (e) { /* 保持默认 false */ }
   panel.applyPanelPrefs();
   theme.applyTheme(theme.currentTheme());
   bindEvents();

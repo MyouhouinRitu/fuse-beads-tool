@@ -253,6 +253,7 @@ const configColors = {
     { index: 2, code: 'X2', name: 'B', hex: '#654321' },
   ],
 };
+const createdConfigs = {};
 
 globalThis.fetch = async (url, options = {}) => {
   const u = String(url);
@@ -261,14 +262,25 @@ globalThis.fetch = async (url, options = {}) => {
   if (u === '/api/configs' && (!options.method || options.method === 'GET')) {
     return json({ configs });
   }
+  if (u === '/api/configs' && options.method === 'POST') {
+    const body = JSON.parse(options.body);
+    createdConfigs[body.name] = body.colors;
+    return json({ ok: true, name: body.name, colors: body.colors });
+  }
   if (u.startsWith('/api/configs/') && !options.method) {
     const name = decodeURIComponent(u.split('/api/configs/')[1]);
-    return json({ name, colors: configColors[name] || [] });
+    return json({ name, colors: createdConfigs[name] || configColors[name] || [] });
   }
   if (u === '/api/state' && (!options.method || options.method === 'GET')) return json(stateResponse);
   if (u === '/api/state' && options.method === 'PUT') {
     stateResponse = JSON.parse(options.body);
     return json({ ok: true });
+  }
+  if (u.startsWith('/api/originals/') && options.method === 'DELETE') {
+    return json({ ok: true });
+  }
+  if (u.startsWith('/api/originals/')) {
+    return { ok: true, status: 200, blob: async () => new Blob(['fake']) };
   }
   if (u === '/api/export') {
     return json({ dataUrl: 'data:image/jpeg;base64,ZmFrZQ==' });
@@ -383,6 +395,38 @@ function mouseAt(cellX, cellY) {
   assert.equal(App.history.currentId, null);
   assert.equal(elsMap['history-list'].children.length, 0, '历史面板应显示空状态');
   console.log('[OK] 扁平事务：保存、只删单个节点、切换当前节点');
+}
+
+// ---------------- 2.5 事务基线标记：选中/编辑/新建的红色圆点 ----------------
+{
+  seedProject();
+  App.brushColor = 1;
+  hooks.saveTransaction();
+  const firstId = App.history.items[0].id;
+  let itemEl = elsMap['history-list'].children[0];
+  assert.equal(App.history.currentId, firstId, '新建事务后应选中该事务');
+  assert.equal(App.history.baselineId, firstId, '新建事务后应作为基线事务');
+  assert.ok(itemEl.classList.contains('current'), '新建事务应保持选中态');
+  assert.ok(itemEl.querySelector('.hi-baseline-dot'), '新建事务应显示红色基线圆点');
+
+  // 修改后：取消选中，但圆点保留
+  hooks.paintCell(0, 0);
+  hooks.renderHistoryUI();
+  itemEl = elsMap['history-list'].children[0];
+  assert.equal(App.history.currentId, null, '修改后应取消选中当前事务');
+  assert.equal(App.history.baselineId, firstId, '修改后基线事务应保持不变');
+  assert.ok(!itemEl.classList.contains('current'), '修改后事务不应再有选中态');
+  assert.ok(itemEl.querySelector('.hi-baseline-dot'), '修改后红色圆点应保留');
+
+  // 再新建事务：新事务选中并带圆点，旧事务圆点消失
+  hooks.saveTransaction();
+  const secondId = App.history.items[1].id;
+  assert.equal(App.history.currentId, secondId, '新建第二个事务后应选中新事务');
+  assert.equal(App.history.baselineId, secondId, '新建第二个事务后基线应指向新事务');
+  assert.ok(elsMap['history-list'].children[1].classList.contains('current'), '新事务应保持选中态');
+  assert.ok(elsMap['history-list'].children[1].querySelector('.hi-baseline-dot'), '新事务应显示红色圆点');
+  assert.ok(!elsMap['history-list'].children[0].querySelector('.hi-baseline-dot'), '旧事务圆点应消失');
+  console.log('[OK] 事务基线标记：选中 / 编辑取消选中 / 新建事务圆点迁移');
 }
 
 // ---------------- 3. 单步撤销 / 重做（画笔整段一笔） ----------------
@@ -504,10 +548,148 @@ function mouseAt(cellX, cellY) {
   };
   App.configs = configs;
   await hooks.restoreState();
-  assert.equal(App.palette[0].hex, '#FFFFFF', '恢复后待应用的色板配置以磁盘配置为准');
-  assert.equal(App.palette.length, 3);
+  assert.ok(App.configName.startsWith('cfg (恢复 '), '快照与磁盘配置不一致时应创建恢复配置');
+  assert.equal(App.palette[0].hex, '#000000', '恢复后可编辑色板应以快照色板为准');
+  assert.equal(App.palette.length, 1);
   assert.equal(App.appliedPalette[0].hex, '#000000', '恢复后画布应使用状态里保存的已应用色板');
-  console.log('[OK] 恢复状态：配置色板（待应用）与已应用色板分离');
+  console.log('[OK] 恢复状态：快照与磁盘配置不一致时创建恢复配置');
+}
+
+// ---------------- 6.5 恢复运行态：视口 / 工具 / 画笔色 / 选区 / dirty / 撤销栈 / 原图引用 ----------------
+{
+  seedProject();
+  const fakeSha = 'a'.repeat(64);
+  stateResponse = {
+    settings: { targetPixels: 40000, useLab: true },
+    viewport: { zoom: 1.25, pan: { x: 12, y: 34 }, origZoom: 2, origPan: { x: 5, y: 6 } },
+    editor: {
+      tool: 'wand',
+      brushColor: 2,
+      dirty: true,
+      selection: [0, 3],
+    },
+    project: {
+      width: 2,
+      height: 2,
+      grid: [0, 1, 0, 1],
+      baseGrid: [0, 1, 0, 1],
+      sliderN: 2,
+      editedSinceSlider: false,
+      paletteName: 'cfg',
+      palette: palette3.map((c) => ({ ...c })),
+      maxColors: 2,
+    },
+    undo: {
+      undoStack: [{ changes: [{ x: 0, y: 0, from: 0, to: 1 }] }],
+      redoStack: [],
+    },
+    history: { items: [], currentId: null, nextId: 1 },
+    original: { id: fakeSha, name: 't.png', sha256: fakeSha, size: 123 },
+  };
+  App.configs = configs;
+  await hooks.restoreState();
+  assert.equal(App.zoom, 1.25, '恢复后应还原缩放');
+  assert.deepEqual(App.pan, { x: 12, y: 34 }, '恢复后应还原平移');
+  assert.equal(App.tool, 'wand', '恢复后应还原魔棒工具');
+  assert.equal(App.brushColor, 2, '恢复后应还原画笔颜色');
+  assert.deepEqual([...App.selection].sort((a, b) => a - b), [0, 3], '恢复后应还原选区');
+  assert.equal(App.dirty, true, '恢复后应保留未保存修改标记');
+  assert.equal(App.undoStack.length, 1, '恢复后应还原单步撤销栈');
+  assert.equal(App.originalId, fakeSha, '恢复后应还原后端原图引用');
+  console.log('[OK] 恢复运行态：视口 / 工具 / 画笔色 / 选区 / dirty / 撤销栈 / 原图引用');
+}
+
+// ---------------- 6.6 色板恢复：配置不一致时自动创建恢复配置 ----------------
+{
+  seedProject();
+  const snapshotPalette = [
+    { index: 1, code: 'R1', name: '恢复红', hex: '#123456' },
+    { index: 2, code: 'B1', name: '恢复蓝', hex: '#654321' },
+  ];
+  stateResponse = {
+    settings: { targetPixels: 40000 },
+    project: {
+      width: 2,
+      height: 2,
+      grid: [0, 1, 0, 1],
+      baseGrid: [0, 1, 0, 1],
+      sliderN: 2,
+      editedSinceSlider: false,
+      paletteName: 'cfg',
+      palette: snapshotPalette.map((c) => ({ ...c })),
+      maxColors: 2,
+    },
+    history: { items: [], currentId: null, nextId: 1 },
+  };
+  App.configs = configs.map((c) => ({ ...c }));
+  await hooks.restoreState();
+  assert.ok(App.configName.startsWith('cfg (恢复 '), `应自动创建带后缀的恢复配置，实际 ${App.configName}`);
+  assert.equal(App.palette[0].hex, '#123456', '可编辑色板应使用恢复配置');
+  assert.ok(createdConfigs[App.configName], '后端应已创建恢复配置');
+  assert.equal(createdConfigs[App.configName].length, 2, '恢复配置应包含快照色板');
+  const toastQueuedOrVisible = hooks.getToastQueue().some((m) => m.includes('已自动创建恢复色板'))
+    || elsMap['toast'].textContent.includes('已自动创建恢复色板');
+  assert.ok(toastQueuedOrVisible,
+    `自动创建恢复配置后应排队弹出提示，队列 ${JSON.stringify(hooks.getToastQueue())}，当前 ${elsMap['toast'].textContent}`);
+  await new Promise((r) => setTimeout(r, 950));
+  assert.equal(stateResponse.project.paletteName, App.configName, '自动保存应持久化新的 paletteName');
+  console.log('[OK] 色板恢复：配置不一致时自动创建恢复配置');
+}
+
+// ---------------- 6.7 自动保存载荷：包含 schema / 视口 / 编辑状态 / 撤销栈 / 原图引用 ----------------
+{
+  seedProject();
+  App.tool = 'wand';
+  App.brushColor = 2;
+  App.dirty = true;
+  App.selection = new Set([0, 3]);
+  App.undoStack = [{ changes: [{ x: 0, y: 0, from: 0, to: 1 }] }];
+  App.redoStack = [];
+  App.pan = { x: 12, y: 34 };
+  App.zoom = 1.25;
+  App.originalId = 'a'.repeat(64);
+  App.originalName = 't.png';
+  App.originalSha256 = 'a'.repeat(64);
+  App.originalSize = 123;
+  hooks.paintCell(0, 0);
+  await new Promise((r) => setTimeout(r, 950));
+  assert.equal(stateResponse.schemaVersion, 1, '自动保存应带 schemaVersion');
+  assert.equal(stateResponse.viewport.zoom, 1.25, '自动保存应记录缩放');
+  assert.deepEqual(stateResponse.viewport.pan, { x: 12, y: 34 }, '自动保存应记录平移');
+  assert.equal(stateResponse.editor.tool, 'wand', '自动保存应记录当前工具');
+  assert.equal(stateResponse.editor.brushColor, 2, '自动保存应记录画笔颜色');
+  assert.equal(stateResponse.editor.dirty, true, '自动保存应记录未保存修改标记');
+  assert.deepEqual(stateResponse.editor.selection, [0, 3], '自动保存应记录选区');
+  assert.equal(stateResponse.undo.undoStack.length, 1, '自动保存应记录撤销栈');
+  assert.equal(stateResponse.original.id, 'a'.repeat(64), '自动保存应记录后端原图引用');
+  assert.equal(stateResponse.projectDirty, true, '自动保存应记录 projectDirty');
+  console.log('[OK] 自动保存载荷：schema / 视口 / 编辑状态 / 撤销栈 / 原图引用');
+}
+
+// ---------------- 6.8 项目文档载荷：只包含文档数据，不包含运行态 ----------------
+{
+  seedProject();
+  App.tool = 'brush';
+  App.brushColor = 2;
+  App.selection = new Set([0, 3]);
+  App.undoStack = [{ changes: [{ x: 0, y: 0, from: 0, to: 1 }] }];
+  App.zoom = 1.5;
+  App.pan = { x: 20, y: 30 };
+  App.history = {
+    items: [{ id: 1, createdAt: 1, label: '状态 #1', snapshot: { width: 2, height: 2, grid: [0, 1, 0, 1] } }],
+    currentId: 1,
+    nextId: 2,
+    baselineId: 1,
+  };
+  const doc = hooks.buildProjectDocument();
+  assert.equal(doc.project.width, 2, '项目文档应包含画布尺寸');
+  assert.equal(doc.settings.wandSensitivity, 20, '项目文档应包含魔棒容差设置');
+  assert.equal(doc.history.baselineId, 1, '项目文档应包含事务基线标记');
+  assert.equal(doc.viewport.zoom, 1.5, '项目文档应包含视口缩放');
+  assert.deepEqual(doc.viewport.pan, { x: 20, y: 30 }, '项目文档应包含视口平移');
+  assert.ok(!('tool' in doc) && !('undo' in doc) && !('dirty' in doc),
+    '项目文档不应包含工具/撤销栈/dirty 等运行态');
+  console.log('[OK] 项目文档载荷：文档数据 + 视口保留、其它运行态排除');
 }
 
 // ---------------- 7. 导出预览与「有未保存的修改」提示 ----------------
@@ -726,6 +908,23 @@ function mouseAt(cellX, cellY) {
   console.log('[OK] 颜色清单高亮闪烁定时器不被重绘重置');
 }
 
+// ---------------- 12.5 点击颜色清单：应启动闪烁定时器，再次点击取消 ----------------
+{
+  seedProject();
+  App.highlightColor = null;
+  App.highlightTimer = null;
+  hooks.renderAll();
+  assert.equal(App.highlightTimer, null, '未点击前不应有闪烁定时器');
+  const item = elsMap['highlight-color-list'].children[0];
+  item.emit('click');
+  assert.equal(App.highlightColor, Number(item.dataset.index), '点击颜色清单应选中该色号');
+  assert.ok(App.highlightTimer, '点击颜色清单应启动闪烁定时器');
+  item.emit('click');
+  assert.equal(App.highlightColor, null, '再次点击应取消高亮');
+  assert.equal(App.highlightTimer, null, '取消高亮后应停止闪烁定时器');
+  console.log('[OK] 点击颜色清单：启动/停止闪烁定时器');
+}
+
 // ---------------- 13. 色号高亮连通块：相连像素描边合并为一个整块 ----------------
 {
   seedProject();
@@ -840,6 +1039,80 @@ function mouseAt(cellX, cellY) {
   App.settings.brushSize = 1;
   hooks.setTool('select');
   console.log('[OK] 画笔 / 橡皮尺寸：拖动条显示与矩形涂色');
+}
+
+// ---------------- 14.5 画笔 / 橡皮 Shift 直线 ----------------
+{
+  seedProject();
+  App.project = { width: 3, height: 3, grid: Int16Array.from(Array(9).fill(0)) };
+  App.baseGrid = App.project.grid.slice();
+  App.tool = 'brush';
+  App.brushColor = 2;
+  App.settings.brushSize = 1;
+  App.selection.clear();
+  App.strokeBuffer = null;
+  hooks.renderAll();
+  canvasRectForCells();
+  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
+  const mm = windowListeners['mousemove'][0];
+  const mu = windowListeners['mouseup'][0];
+
+  md({ ...mouseAt(0, 0), shiftKey: true });
+  mm({ ...mouseAt(0, 2), shiftKey: true });
+  mm({ ...mouseAt(2, 2), shiftKey: true });
+  mu({});
+  assert.equal(App.project.grid[3], 2, 'Shift 直线应约束为横平竖直，先画水平线到 (1,0)');
+  assert.notEqual(App.project.grid[4], 2, 'Shift 直线不应画对角中间格 (1,1)');
+  assert.notEqual(App.project.grid[5], 2, 'Shift 直线不应沿鼠标经过的横向路径画出 (1,2)');
+  console.log('[OK] 画笔 / 橡皮 Shift 直线');
+}
+
+// ---------------- 14.6 选择模式 Ctrl 反选当前格 ----------------
+{
+  seedProject();
+  App.tool = 'select';
+  App.selection.clear();
+  App.settings.sameColorSelect = false;
+  hooks.renderAll();
+  canvasRectForCells();
+  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
+  const mu = windowListeners['mouseup'][0];
+
+  md(mouseAt(0, 0));
+  mu({});
+  assert.ok(App.selection.has(0), '普通单击应选中 (0,0)');
+
+  md({ ...mouseAt(0, 0), ctrlKey: true });
+  mu({});
+  assert.ok(!App.selection.has(0), 'Ctrl 单击已选中格应取消选中');
+
+  md({ ...mouseAt(0, 0), metaKey: true });
+  mu({});
+  assert.ok(App.selection.has(0), 'Cmd/Ctrl 单击未选中格应重新选中');
+  console.log('[OK] 选择模式 Ctrl 反选当前格');
+}
+
+// ---------------- 14.7 选择模式 Ctrl 拖拽：批量反选经过的格子 ----------------
+{
+  seedProject();
+  App.project = { width: 3, height: 3, grid: Int16Array.from(Array(9).fill(0)) };
+  App.baseGrid = App.project.grid.slice();
+  App.tool = 'select';
+  App.selection.clear();
+  App.settings.sameColorSelect = false;
+  hooks.renderAll();
+  canvasRectForCells();
+  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
+  const mm = windowListeners['mousemove'][0];
+  const mu = windowListeners['mouseup'][0];
+
+  md({ ...mouseAt(0, 0), ctrlKey: true });
+  mm({ ...mouseAt(2, 0), ctrlKey: true });
+  mm({ ...mouseAt(2, 2), ctrlKey: true });
+  mu({});
+  assert.deepEqual([...App.selection].sort((a, b) => a - b), [0, 1, 5, 8],
+    'Ctrl 拖拽应反选鼠标经过的格子，拐点被经过两次后应取消选中');
+  console.log('[OK] 选择模式 Ctrl 拖拽批量反选');
 }
 
 // ---------------- 15. 选择模式：单击 / 矩形 / 同色 / Shift / 填充 / 取色 / 九宫格 / 高亮转选区 ----------------
@@ -1333,7 +1606,80 @@ function mouseAt(cellX, cellY) {
   console.log('[OK] 裁剪工具：进入/移动边/自动裁剪/应用/退出与放大镜');
 }
 
-// ---------------- 25. 缩放细节阈值：细线/色号与粗虚线/实线分层隐藏 ----------------
+// ---------------- 25. 魔棒：容差 / 四向连通 / Shift 追加 / 滑块显隐 ----------------
+{
+  seedProject();
+  App.project = {
+    width: 3,
+    height: 3,
+    grid: Int16Array.from([0, 1, 0, 0, 1, 0, 0, 2, 3]),
+  };
+  App.baseGrid = App.project.grid.slice();
+  App.appliedPalette = [
+    { index: 1, code: 'W', name: '白', hex: '#FFFFFF' },
+    { index: 2, code: 'G', name: '浅灰', hex: '#EDEDED' },
+    { index: 3, code: 'R', name: '红', hex: '#FF0000' },
+    { index: 4, code: 'B', name: '蓝', hex: '#0000FF' },
+  ];
+  App.palette = App.appliedPalette.map((c) => ({ ...c }));
+  App.settings.useLab = true;
+  App.settings.wandSensitivity = 0;
+  App.selection.clear();
+  App.highlightColor = null;
+  App.brushColor = 0;
+  hooks.renderAll();
+
+  hooks.setTool('select');
+  assert.ok(elsMap['wand-sensitivity-wrap'].classList.contains('hidden'), '选择模式应隐藏魔棒容差滑块');
+  elsMap['tool-wand'].emit('click');
+  assert.equal(App.tool, 'wand', '点击魔棒按钮应进入魔棒模式');
+  assert.equal(elsMap['mode-label'].textContent, '魔棒模式', '魔棒模式标签应为「魔棒模式」');
+  assert.ok(!elsMap['wand-sensitivity-wrap'].classList.contains('hidden'), '魔棒模式应显示容差滑块');
+  assert.equal(elsMap['wand-sensitivity'].value, '0', '滑块值应与当前容差设置同步');
+
+  canvasRectForCells();
+  const md = elsMap['canvas-scroll'].listeners['mousedown'][0];
+  const mu = windowListeners['mouseup'][0];
+  const kd = windowListeners['keydown'][0];
+
+  // 容差 0：只选起点所在的同色四向连通块（左列 3 个白色，不跨过浅灰）
+  App.selection.clear();
+  md(mouseAt(0, 0));
+  mu({});
+  assert.equal(App.selection.size, 3, '容差 0 应只选起点所在同色连通块');
+  assert.deepEqual([...App.selection].sort((a, b) => a - b), [0, 3, 6], '应选中左列 3 个白色格');
+  assert.equal(App.tool, 'wand', '魔棒点击后应保持在魔棒模式');
+
+  // 调高容差：浅灰作为桥接色，把左右两片白色一起选中
+  elsMap['wand-sensitivity'].value = '30';
+  elsMap['wand-sensitivity'].emit('input', { target: elsMap['wand-sensitivity'] });
+  assert.equal(App.settings.wandSensitivity, 30, '容差滑块应更新设置');
+  assert.equal(elsMap['wand-sensitivity-value'].textContent, '30', '容差数值标签应同步');
+  App.selection.clear();
+  md(mouseAt(0, 0));
+  mu({});
+  assert.equal(App.selection.size, 7, '容差 30 应把浅灰桥接的相似色一起选中');
+  assert.ok(!App.selection.has(7) && !App.selection.has(8), '红色/蓝色不应被选中');
+
+  // Shift 追加：把红色连通块并入选区
+  md({ ...mouseAt(1, 2), shiftKey: true });
+  mu({});
+  assert.equal(App.selection.size, 8, 'Shift + 魔棒点击应追加选区');
+  assert.ok(App.selection.has(7), 'Shift 后应包含红色格');
+
+  // ESC 返回选择模式但保留选区；M 键再切回魔棒
+  kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
+  assert.equal(App.tool, 'select', 'ESC 应返回选择模式');
+  assert.equal(App.selection.size, 8, '返回选择模式后应保留魔棒选区');
+  kd({ key: 'm', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
+  assert.equal(App.tool, 'wand', 'M 键应切换到魔棒');
+
+  App.selection.clear();
+  hooks.setTool('select');
+  console.log('[OK] 魔棒：容差 / 四向连通 / Shift 追加 / 滑块显隐');
+}
+
+// ---------------- 26. 缩放细节阈值：细线/色号与粗虚线/实线分层隐藏 ----------------
 {
   seedProject();
   hooks.setTool('select');
@@ -1369,7 +1715,7 @@ function mouseAt(cellX, cellY) {
   console.log('[OK] 缩放细节阈值：细线/色号与粗虚线/实线分层隐藏');
 }
 
-// ---------------- 26. 目标像素量下拉预设 ----------------
+// ---------------- 27. 目标像素量下拉预设 ----------------
 {
   elsMap['target-pixels-menu'].classList.add('hidden');
   elsMap['target-pixels-btn'].emit('click');

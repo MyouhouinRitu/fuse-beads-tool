@@ -1,14 +1,21 @@
 // 画布工作区交互：画笔/橡皮/取色、选区体系、鼠标拖拽、同步拖拽、九宫格联动。
 // 只依赖视图/裁剪/快捷选色等下层模块，不反向依赖主入口。
 
-import { DRAG_THRESHOLD_PX, TOOLS, ZOOM_WHEEL_FACTOR } from './constants.js';
+import {
+  DRAG_THRESHOLD_PX,
+  TOOLS,
+  WAND_SENSITIVITY_DEFAULT,
+  WAND_SENSITIVITY_MAX,
+  WAND_SENSITIVITY_MIN,
+  ZOOM_WHEEL_FACTOR,
+} from './constants.js';
 import * as C from './colors.js';
 import { els } from './els.js';
 import { recordStep } from './history.js';
 import { renderHistoryUI } from './history-ui.js';
 import { findConnectedComponents } from './render.js';
-import { App, dragState, setDirty } from './state.js';
-import { blurActive, codeOf, countBadge, hideCropMagnifier, rectCells, titleOf, toast } from './utils.js';
+import { App, dragState, setDirty, setProjectDirty } from './state.js';
+import { blurActive, clampInt, codeOf, countBadge, hideCropMagnifier, rectCells, titleOf, toast } from './utils.js';
 import { scheduleAutosave } from './autosave.js';
 import { scheduleCanvasRender, scheduleRender } from './render-queue.js';
 import { setTool } from './tool-state.js';
@@ -101,8 +108,8 @@ export function bindColorList() {
     if (!Number.isInteger(i)) return;
     App.brushColor = i;
     updateBrush();
-    if (App.tool === TOOLS.SELECT && App.selection.size > 0) {
-      // 选择模式且有选区：将选区填充为该颜色，保持选择与模式，整块记一步撤销
+    if ((App.tool === TOOLS.SELECT || App.tool === TOOLS.WAND) && App.selection.size > 0) {
+      // 选择 / 魔棒模式且有选区：将选区填充为该颜色，保持当前模式，整块记一步撤销
       fillSelectionWithBrush();
     } else {
       // 无选区：切换为画笔模式
@@ -212,6 +219,60 @@ function connectedColorCells(x, y) {
   return new Set([p0]);
 }
 
+// 魔棒：以 (x,y) 的颜色为种子，按容差阈值选取四方向连通的相似色；
+// 空位与同色选区一致，只选自身一格。
+const WAND_DIST2_AT_MAX = 10000; // 容差 100 对应的 Lab 距离平方上限
+
+function wandDistanceThreshold() {
+  const s = clampInt(
+    App.settings.wandSensitivity,
+    WAND_SENSITIVITY_MIN,
+    WAND_SENSITIVITY_MAX,
+    WAND_SENSITIVITY_DEFAULT,
+  );
+  const ratio = (s / WAND_SENSITIVITY_MAX) ** 2;
+  return WAND_DIST2_AT_MAX * ratio;
+}
+
+function similarColorCells(x, y) {
+  const { grid, width, height } = App.project;
+  const p0 = y * width + x;
+  const seed = grid[p0];
+  if (seed < 0) return new Set([p0]);
+  const seedColor = App.appliedPalette[seed];
+  if (!seedColor) return new Set([p0]);
+
+  const seedRgb = C.hexToRgb(seedColor.hex);
+  const dist = App.appliedPalette.map((c) => (
+    c ? C.colorDist2(seedRgb, C.hexToRgb(c.hex), App.settings.useLab) : Infinity
+  ));
+  const threshold = wandDistanceThreshold();
+  const visited = new Uint8Array(grid.length);
+  const cells = new Set([p0]);
+  const stack = [p0];
+  visited[p0] = 1;
+
+  while (stack.length) {
+    const p = stack.pop();
+    const px = p % width;
+    const neighbors = [];
+    if (px > 0) neighbors.push(p - 1);
+    if (px < width - 1) neighbors.push(p + 1);
+    if (p >= width) neighbors.push(p - width);
+    if (p < grid.length - width) neighbors.push(p + width);
+    for (const q of neighbors) {
+      if (visited[q]) continue;
+      visited[q] = 1;
+      const v = grid[q];
+      if (v >= 0 && dist[v] <= threshold) {
+        cells.add(q);
+        stack.push(q);
+      }
+    }
+  }
+  return cells;
+}
+
 function addToSelection(cells) {
   const next = new Set(App.selection);
   for (const p of cells) next.add(p);
@@ -222,16 +283,43 @@ function replaceSelection(cells) {
   App.selection = new Set(cells);
 }
 
-// 单击选择：同色选区勾选时选连通块，否则选单格；Shift 追加并集，非 Shift 替换
-function selectClick(cell, shift) {
+// 单击选择：同色选区勾选时选连通块，否则选单格；Shift 追加并集，非 Shift 替换；Ctrl 反选当前格
+function selectClick(cell, shift, ctrl = false) {
+  const p = cell.y * App.project.width + cell.x;
+  if (ctrl) {
+    const next = new Set(App.selection);
+    if (next.has(p)) next.delete(p);
+    else next.add(p);
+    App.selection = next;
+    scheduleCanvasRender();
+    return;
+  }
   let cells;
   if (App.settings.sameColorSelect) {
     cells = connectedColorCells(cell.x, cell.y);
   } else {
-    cells = new Set([cell.y * App.project.width + cell.x]);
+    cells = new Set([p]);
   }
   if (shift) addToSelection(cells);
   else replaceSelection(cells);
+  scheduleCanvasRender();
+}
+
+function toggleSelectionCells(cells) {
+  const next = new Set(App.selection);
+  for (const p of cells) {
+    if (next.has(p)) next.delete(p);
+    else next.add(p);
+  }
+  App.selection = next;
+}
+
+// 魔棒单击：按当前容差选择四向连通的相似色；Shift 追加并集，非 Shift 替换
+function selectWand(cell, shift) {
+  const cells = similarColorCells(cell.x, cell.y);
+  if (shift) addToSelection(cells);
+  else replaceSelection(cells);
+  App.dragPreview = null;
   scheduleCanvasRender();
 }
 
@@ -299,18 +387,31 @@ function applyPickerColor(cell) {
   }
 }
 
-function strokeLine(a, b) {
+function lineCells(a, b) {
+  const cells = [];
   let x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
   const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx + dy;
   for (;;) {
-    paintStamp({ x: x0, y: y0 });
+    cells.push({ x: x0, y: y0 });
     if (x0 === x1 && y0 === y1) break;
     const e2 = 2 * err;
     if (e2 >= dy) { err += dy; x0 += sx; }
     if (e2 <= dx) { err += dx; y0 += sy; }
   }
+  return cells;
+}
+
+function strokeLine(a, b) {
+  for (const c of lineCells(a, b)) paintStamp(c);
+}
+
+function axisConstrainedEnd(start, current) {
+  const dx = Math.abs(current.x - start.x);
+  const dy = Math.abs(current.y - start.y);
+  if (dx >= dy) return { x: current.x, y: start.y };
+  return { x: start.x, y: current.y };
 }
 
 // ---------- 鼠标拖拽 ----------
@@ -329,6 +430,9 @@ function beginDrag(e, { orig = false, panning = false, downCell = null } = {}) {
   dragState.downCell = downCell; // 右键平移时 downCell 为 null，不参与选择/取色
   dragState.selectionAnchor = null;
   dragState.shift = false;
+  dragState.ctrl = false;
+  dragState.straightStart = null;
+  dragState.toggleLast = null;
 }
 
 // 一次交互结束后统一复位拖拽状态
@@ -342,6 +446,9 @@ function resetDragState() {
   dragState.selectionAnchor = null;
   dragState.downCell = null;
   dragState.shift = false;
+  dragState.ctrl = false;
+  dragState.straightStart = null;
+  dragState.toggleLast = null;
   App.painting = false;
   App.lastCell = null;
   els.canvas.style.cursor = '';
@@ -386,6 +493,7 @@ function updateDragMove(e) {
       } else {
         App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
       }
+      setProjectDirty(true);
       applyOriginalTransform();
       if (App.settings.syncPan) applyTransform();
       els.canvasOriginal.style.cursor = 'grabbing';
@@ -398,6 +506,7 @@ function updateDragMove(e) {
   if (!dragState.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) dragState.moved = true;
   if (dragState.moved && dragState.panning) {
     App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
+    setProjectDirty(true);
     if (App.settings.syncPan && App.originalImage) {
       mirrorBeadToOrig();
       applyOriginalTransform();
@@ -411,7 +520,18 @@ function updateDragMove(e) {
     updateCropEdgeDrag(e);
     return;
   }
-  if (App.tool === TOOLS.SELECT && dragState.moved && dragState.selectionAnchor && !App.settings.sameColorSelect) {
+  if (App.tool === TOOLS.SELECT && dragState.ctrl && dragState.moved && dragState.selectionAnchor) {
+    // Ctrl 拖拽：反选鼠标经过的格子
+    const cell = cellFromEvent(e);
+    if (!cell) return;
+    const from = dragState.toggleLast || dragState.selectionAnchor;
+    toggleSelectionCells(lineCells(from, cell).map((c) => c.y * App.project.width + c.x));
+    dragState.toggleLast = cell;
+    scheduleCanvasRender();
+    return;
+  }
+  if (App.tool === TOOLS.SELECT && dragState.moved && dragState.selectionAnchor
+    && !dragState.ctrl && !App.settings.sameColorSelect) {
     // 矩形拖选实时预览（裁剪到图案边界）
     const cell = cellFromEvent(e);
     if (!cell) return;
@@ -426,7 +546,11 @@ function updateDragMove(e) {
   if (!App.painting) return;
   const cell = cellFromEvent(e);
   if (!cell) return;
-  if (App.lastCell) strokeLine(App.lastCell, cell);
+  if (dragState.straightStart && e.shiftKey) {
+    strokeLine(dragState.straightStart, axisConstrainedEnd(dragState.straightStart, cell));
+  } else if (App.lastCell) {
+    strokeLine(App.lastCell, cell);
+  }
   App.lastCell = cell;
 }
 
@@ -444,12 +568,14 @@ export function onWindowMouseUp() {
   if (dragState.active && !dragState.moved) {
     if (App.tool === TOOLS.SELECT && dragState.downCell) {
       // 选择模式：单击选中（同色选区勾选时选连通块）
-      selectClick(dragState.downCell, dragState.shift);
+      selectClick(dragState.downCell, dragState.shift, dragState.ctrl);
+    } else if (App.tool === TOOLS.WAND && dragState.downCell) {
+      selectWand(dragState.downCell, dragState.shift);
     } else if (App.tool === TOOLS.PICKER && dragState.downCell) {
       applyPickerColor(dragState.downCell);
     }
   } else if (dragState.active && dragState.moved && App.tool === TOOLS.SELECT
-    && dragState.selectionAnchor && App.dragPreview && !App.settings.sameColorSelect) {
+    && dragState.selectionAnchor && App.dragPreview && !dragState.ctrl && !App.settings.sameColorSelect) {
     // 选择模式：左键拖拽 = 矩形选区（Shift 追加并集）
     selectRect(App.dragPreview, dragState.shift);
   }
@@ -491,12 +617,16 @@ export function onCanvasScrollMouseDown(e) {
     handleCropMouseDown(e);
     return;
   }
-  if (App.tool === TOOLS.SELECT) {
-    // 选择模式：左键单击/拖拽选择区域（同色选区勾选时拖拽无效，仅单击）
+  if (App.tool === TOOLS.SELECT || App.tool === TOOLS.WAND) {
+    // 选择模式：左键单击/拖拽选矩形（同色选区勾选时仅单击）；魔棒：单击后按容差选相似色
     if (cell) {
       dragState.selectionAnchor = cell;
       dragState.shift = !!e.shiftKey;
-      if (!e.shiftKey && !App.settings.sameColorSelect && (App.selection.size || App.dragPreview)) {
+      dragState.ctrl = !!(e.ctrlKey || e.metaKey);
+      if (dragState.ctrl) dragState.toggleLast = cell;
+      if (App.tool === TOOLS.SELECT && !e.shiftKey && !e.ctrlKey && !e.metaKey
+        && !App.settings.sameColorSelect
+        && (App.selection.size || App.dragPreview)) {
         // 非 Shift 新选区开始时立即清空旧选区（Shift 追加并集则保留；同色选区拖拽无效不清空）
         App.selection = new Set();
         App.dragPreview = null;
@@ -510,6 +640,7 @@ export function onCanvasScrollMouseDown(e) {
     if (cell) {
       App.painting = true;
       App.lastCell = cell;
+      dragState.straightStart = cell;
       // 一次按下到放开的全部像素修改记为一 step
       App.strokeBuffer = [];
       paintStamp(cell);
@@ -542,6 +673,7 @@ export function onCanvasWheel(e) {
   if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
   e.preventDefault();
   zoomAtCore(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
+  setProjectDirty(true);
 }
 
 export function onCompareWheel(e) {
@@ -549,4 +681,5 @@ export function onCompareWheel(e) {
   e.preventDefault();
   e.stopPropagation();
   zoomAtOriginal(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
+  setProjectDirty(true);
 }

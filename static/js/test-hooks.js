@@ -10,6 +10,7 @@
 //   修改 App / dragState 的字段结构前需先确认测试用法。
 
 import { drawPattern } from './render.js';
+import { buildProjectDocument } from './autosave.js';
 import { App, dragState } from './state.js';
 import * as canvas from './canvas.js';
 import * as crop from './crop.js';
@@ -22,6 +23,7 @@ import * as theme from './theme.js';
 import * as toolState from './tool-state.js';
 import * as view from './view.js';
 import * as workspace from './workspace.js';
+import { getToastQueue } from './utils.js';
 
 export function installTestHooks({ renderAll, applySlider, restoreState }) {
   const expose = (
@@ -66,5 +68,7 @@ export function installTestHooks({ renderAll, applySlider, restoreState }) {
     renderExportPreview: exportDialog.renderExportPreview,
     mirrorBeadToOrig: view.mirrorBeadToOrig,
     mirrorOrigToBead: view.mirrorOrigToBead,
+    getToastQueue,
+    buildProjectDocument,
   };
 }

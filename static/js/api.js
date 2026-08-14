@@ -32,18 +32,46 @@ export const importConfig = (file) => {
   fd.append('file', file);
   return request('/api/configs/import', { method: 'POST', body: fd });
 };
-export const uploadImage = (file, targetPixels, sharpen) => {
+export const uploadImage = (file, targetPixels, sharpen, originalId = null) => {
   const fd = new FormData();
-  fd.append('image', file);
+  if (file) fd.append('image', file);
+  if (originalId) fd.append('originalId', originalId);
   fd.append('targetPixels', String(targetPixels));
   fd.append('sharpen', sharpen ? '1' : '0');
   return request('/api/upload', { method: 'POST', body: fd });
 };
+export const getOriginalBlob = async (originalId) => {
+  const res = await fetch('/api/originals/' + encodeURIComponent(originalId));
+  if (!res.ok) {
+    let msg = '原图不存在';
+    try {
+      const j = await res.json();
+      if (j && j.error) msg = j.error;
+    } catch (e) { /* ignore */ }
+    throw new Error(msg);
+  }
+  return res.blob();
+};
+export const deleteOriginal = (originalId) =>
+  request('/api/originals/' + encodeURIComponent(originalId), { method: 'DELETE' });
+export const saveProject = (document, filename, mode) =>
+  request('/api/project/save', json({ document, filename, mode }));
+export const pickOpenProject = () =>
+  request('/api/project/pick-open', { method: 'POST' });
+export const openProjectPath = (path) =>
+  request('/api/project/open-path', json({ path }));
+export const openProjectUpload = (file) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return request('/api/project/open-upload', { method: 'POST', body: fd });
+};
 export const exportImage = (payload) => request('/api/export', json(payload));
+export const exportPdfPreview = (payload) => request('/api/export-preview', json(payload));
 export const getState = () => request('/api/state');
 export const putState = (state) =>
   request('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
 export const authStatus = () => request('/api/auth/status');
+export const getAppInfo = () => request('/api/app-info');
 export const login = (token) =>
   request('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
 export const logout = () => request('/api/auth/logout', { method: 'POST' });

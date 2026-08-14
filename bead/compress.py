@@ -10,6 +10,8 @@ from PIL import Image, ImageFilter, ImageOps
 # 目标像素量上下限：与前端 #target-pixels 输入框的 min/max 保持一致
 MIN_TARGET_PIXELS = 100
 HARD_CAP_PIXELS = 80000
+# 中间画布上限：透明占比很高时，需要比目标豆量更大的中间像素量才能补回非透明豆量
+MAX_INTERMEDIATE_PIXELS = 500000
 
 # 锐化参数（UnsharpMask）
 SHARPEN_RADIUS = 2
@@ -28,14 +30,41 @@ def open_image(data: bytes) -> Image.Image:
     return img
 
 
+def opaque_ratio(img: Image.Image) -> float:
+    """计算会被映射为非空位的像素比例（alpha >= 128 与前端一致）。"""
+    if img.mode not in ("RGBA", "LA"):
+        return 1.0
+    alpha = img.getchannel("A")
+    hist = alpha.histogram()
+    total = sum(hist)
+    if total <= 0:
+        return 1.0
+    return max(0.0, sum(hist[128:]) / total)
+
+
+def adjust_target_for_transparency(
+    img: Image.Image,
+    target: int,
+    intermediate_cap: int = MAX_INTERMEDIATE_PIXELS,
+) -> int:
+    """根据透明比例放大中间目标像素量，使压缩后的非空豆量接近 target。"""
+    ratio = opaque_ratio(img)
+    if ratio <= 0:
+        return max(MIN_TARGET_PIXELS, target)
+    effective = target / ratio
+    return max(MIN_TARGET_PIXELS, min(round(effective), intermediate_cap))
+
+
 def compress(
     img: Image.Image,
     target_pixels: int,
     sharpen: bool = False,
     hard_cap: int = HARD_CAP_PIXELS,
+    intermediate_cap: int = MAX_INTERMEDIATE_PIXELS,
 ) -> Image.Image:
     w, h = img.size
     target = max(MIN_TARGET_PIXELS, min(int(target_pixels), hard_cap))
+    target = adjust_target_for_transparency(img, target, intermediate_cap)
     scale = math.sqrt(target / (w * h))
     nw = max(1, round(w * scale))
     nh = max(1, round(h * scale))

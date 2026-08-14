@@ -8,7 +8,7 @@ import {
   PANEL_STORAGE_KEY,
 } from './constants.js';
 import { $ } from './els.js';
-import { App } from './state.js';
+import { App, setProjectDirty } from './state.js';
 import { applyOriginalTransform, applyTransform } from './view.js';
 
 // 面板 DOM 集中引用：与 els.js 一致，避免散落的 document.getElementById
@@ -61,7 +61,10 @@ export function setPanelCollapsed(id, collapsed) {
     panDelta = current - target;
   }
   panel.classList.toggle('collapsed', collapsed);
-  if (panDelta) animatePanCompensation(panDelta);
+  if (panDelta) {
+    setProjectDirty(true);
+    animatePanCompensation(panDelta);
+  }
   const prefs = readPanelPrefs();
   prefs[id] = collapsed;
   writePanelPrefs(prefs);

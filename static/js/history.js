@@ -5,7 +5,7 @@
 export const MAX_UNDO_STEPS = 20;
 
 export function createEmptyHistory() {
-  return { items: [], currentId: null, nextId: 1 };
+  return { items: [], currentId: null, nextId: 1, baselineId: null };
 }
 
 // 历史数据清洗：仅保留含完整快照的合法节点；
@@ -29,11 +29,69 @@ export function sanitizeHistory(h) {
   }
   let currentId = h.currentId;
   if (currentId != null && !ids.has(Number(currentId))) currentId = null;
+  const baselineId = h.baselineId != null && ids.has(Number(h.baselineId))
+    ? Number(h.baselineId)
+    : null;
   return {
     items,
     currentId,
+    baselineId,
     nextId: items.reduce((m, it) => Math.max(m, it.id + 1), 1),
   };
+}
+
+function sanitizeSnapshot(s) {
+  if (!s || typeof s !== 'object') return null;
+  const width = Number(s.width);
+  const height = Number(s.height);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
+  if (!Array.isArray(s.grid) || s.grid.length !== width * height) return null;
+  const norm = (arr) => arr.map((v) => {
+    const n = Number(v);
+    return Number.isInteger(n) ? n : -1;
+  });
+  const grid = norm(s.grid);
+  const baseGrid = Array.isArray(s.baseGrid) && s.baseGrid.length === width * height
+    ? norm(s.baseGrid)
+    : grid.slice();
+  return { width, height, grid, baseGrid };
+}
+
+// 恢复单步撤销/重做栈：丢弃结构损坏、坐标/快照不完整的步骤，并限制在 MAX_UNDO_STEPS 内
+export function sanitizeUndoStack(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    if (item.structural) {
+      const before = sanitizeSnapshot(item.before);
+      const after = sanitizeSnapshot(item.after);
+      if (!before || !after) continue;
+      out.push({
+        structural: true,
+        type: String(item.type || 'crop'),
+        before,
+        after,
+      });
+    } else {
+      const changes = [];
+      if (Array.isArray(item.changes)) {
+        for (const c of item.changes) {
+          if (!c || typeof c !== 'object') continue;
+          const x = Number(c.x);
+          const y = Number(c.y);
+          const from = Number(c.from);
+          const to = Number(c.to);
+          if (Number.isInteger(x) && Number.isInteger(y) && Number.isInteger(from) && Number.isInteger(to)) {
+            changes.push({ x, y, from, to });
+          }
+        }
+      }
+      if (changes.length) out.push({ changes });
+    }
+    if (out.length >= MAX_UNDO_STEPS) break;
+  }
+  return out;
 }
 
 export function findTransaction(history, id) {
@@ -45,6 +103,7 @@ export function createTransaction(history, snapshot) {
   const item = { id, createdAt: Date.now(), label: `状态 #${id}`, snapshot };
   history.items.push(item);
   history.currentId = id;
+  history.baselineId = id;
   return item;
 }
 

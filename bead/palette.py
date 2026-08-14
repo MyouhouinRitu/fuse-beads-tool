@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
+import json
 import os
 import re
 from typing import TypedDict
@@ -16,6 +18,27 @@ class Color(TypedDict):
     hex: str
 
 HEADER = ["编号", "色号", "名称", "颜色"]
+
+
+def palette_hash(colors: list[Color]) -> str:
+    """色板规范化哈希：与 static/js/hash.js 的 paletteHash 保持一致。"""
+    norm = []
+    for c in colors or []:
+        if not c or "index" not in c:
+            continue
+        try:
+            idx = int(c["index"])
+        except (TypeError, ValueError):
+            continue
+        norm.append({
+            "index": idx,
+            "code": str(c.get("code") or ""),
+            "name": str(c.get("name") or ""),
+            "hex": str(c.get("hex") or "").upper(),
+        })
+    norm.sort(key=lambda c: c["index"])
+    text = json.dumps(norm, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 DEFAULT_PALETTE = [
     {"index": 1, "code": "001", "name": "白色", "hex": "#FFFFFF"},

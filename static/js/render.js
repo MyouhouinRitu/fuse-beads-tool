@@ -69,8 +69,11 @@ export function canvasMetrics(width, height, cell = CELL, legendCount = 0, outer
   const gridW = width * cell;
   const gridH = height * cell;
   const rows = legendRows(legendCount, gridW, cell);
+  const font = Math.max(LEGEND_FONT_MIN, Math.round(cell * LEGEND_FONT_RATIO));
+  const sw = Math.max(LEGEND_SWATCH_MIN, Math.round(cell * LEGEND_SWATCH_RATIO));
+  const rowH = Math.max(sw + LEGEND_ROW_EXTRA_H, font + LEGEND_ROW_FONT_EXTRA);
   const legendH = rows
-    ? rows * (cell * LEGEND_ROW_HEIGHT_CELLS + LEGEND_ROW_GAP) + cell * LEGEND_BOTTOM_GAP_RATIO
+    ? rows * rowH + cell * LEGEND_BOTTOM_GAP_RATIO
     : 0;
   return {
     w: gridW + 2 * edge + 2 * outerPad,
@@ -485,8 +488,8 @@ function drawHover(ctx, state) {
   const hlw = Math.max(1, Math.round(cell * HOVER_STROKE_RATIO));
   const inset = hlw / 2;
 
-  if (tool === TOOLS.SELECT) {
-    // 双色错位虚线：黑先画，白偏移半个虚线周期后叠加，形成相间效果
+  if (tool === TOOLS.SELECT || tool === TOOLS.WAND) {
+    // 选择模式 / 魔棒：双色错位虚线，黑先画，白偏移半个虚线周期后叠加，形成相间效果
     const dash = Math.max(HOVER_DASH_MIN, Math.round(cell * HOVER_DASH_RATIO));
     ctx.save();
     ctx.lineWidth = hlw;

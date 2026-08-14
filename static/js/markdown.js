@@ -4,6 +4,7 @@ import { els } from './els.js';
 
 const FIX_DOCS = {
   'right-drag-gesture-fix': '/static/docs/right-drag-gesture-fix.md',
+  'shortcuts': '/static/docs/shortcuts.md',
 };
 
 // 极简 Markdown 渲染：仅覆盖文档用到的标题/列表/引用/加粗/行内代码/代码块

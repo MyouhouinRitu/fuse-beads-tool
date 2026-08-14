@@ -3,7 +3,8 @@
 import { CONFIG_SAVE_DELAY_MS } from './constants.js';
 import * as api from './api.js';
 import { els } from './els.js';
-import { App } from './state.js';
+import { paletteHash } from './hash.js';
+import { App, setProjectDirty } from './state.js';
 import { hintPaletteDeferred, toast } from './utils.js';
 import { scheduleAutosave } from './autosave.js';
 
@@ -30,6 +31,9 @@ export async function loadConfigs(selectName) {
 export async function loadConfigDetail(name) {
   const res = await api.getConfig(name);
   const hadPalette = App.palette.length > 0;
+  const hash = paletteHash(res.colors);
+  const cfg = App.configs.find((c) => c.name === res.name);
+  if (cfg) cfg.paletteHash = hash;
   // 色板配置修改（含切换配置）只更新配置本身，画布与编辑工具保持不变；
   // 单击「重新压缩」后才会按新配置重新生成图案
   App.palette = res.colors;
@@ -39,6 +43,51 @@ export async function loadConfigDetail(name) {
   scheduleAutosave();
   // 首次打开加载默认配置不算「更改」，不弹提示
   if (hadPalette) hintPaletteDeferred();
+}
+
+async function configHashByName(name) {
+  const cfg = App.configs.find((c) => c.name === name);
+  if (!cfg) return null;
+  if (cfg.paletteHash) return cfg.paletteHash;
+  try {
+    const res = await api.getConfig(name);
+    const hash = paletteHash(res.colors);
+    cfg.paletteHash = hash;
+    return hash;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 恢复色板：优先复用已有同 hash 配置；缺失/不一致时自动创建带后缀的恢复配置
+export async function ensurePaletteConfig(colors, preferredName) {
+  const hash = paletteHash(colors);
+  const byHash = App.configs.find((c) => c.paletteHash === hash);
+  if (byHash) return { name: byHash.name, hash, created: false };
+
+  const preferred = String(preferredName || '恢复色板').trim() || '恢复色板';
+  if (await configHashByName(preferred) === hash) {
+    return { name: preferred, hash, created: false };
+  }
+
+  let name = preferred;
+  let attempt = 1;
+  while (App.configs.some((c) => c.name === name)) {
+    name = `${preferred} (恢复 ${hash.slice(0, 8)})${attempt > 1 ? ` ${attempt}` : ''}`;
+    attempt++;
+  }
+  const res = await api.createConfig(name, colors);
+  App.configs.push({
+    name: res.name,
+    colorCount: res.colors.length,
+    paletteHash: hash,
+  });
+  toast(`已自动创建恢复色板「${res.name}」，原配置未覆盖`, { important: true });
+  const opt = document.createElement('option');
+  opt.value = res.name;
+  opt.textContent = `${res.name}（${res.colors.length}色）`;
+  els.configSelect.appendChild(opt);
+  return { name: res.name, hash, created: true };
 }
 
 export async function selectAndLoad(name) {
@@ -52,6 +101,8 @@ function scheduleConfigSave() {
   App.configTimer = setTimeout(async () => {
     try {
       await api.saveConfig(App.configName, App.palette);
+      const cfg = App.configs.find((c) => c.name === App.configName);
+      if (cfg) cfg.paletteHash = paletteHash(App.palette);
     } catch (err) {
       toast('配置保存失败：' + err.message);
     }
@@ -74,6 +125,7 @@ export function bindColorTable() {
       App.palette[i].hex = e.target.value.toUpperCase();
       const hexInput = row.querySelector('.c-hex');
       if (hexInput) hexInput.value = App.palette[i].hex;
+      setProjectDirty(true);
       scheduleConfigSave();
       hintPaletteDeferred();
     }
@@ -90,6 +142,7 @@ export function bindColorTable() {
       e.target.value = h;
       const colorInput = row.querySelector('input[type="color"]');
       if (colorInput) colorInput.value = h;
+      setProjectDirty(true);
       scheduleConfigSave();
       hintPaletteDeferred();
     } else if (e.target.classList.contains('c-code') || e.target.classList.contains('c-name')) {
@@ -97,6 +150,7 @@ export function bindColorTable() {
       const nameInput = row.querySelector('.c-name');
       App.palette[i].code = codeInput ? codeInput.value.trim() : '';
       App.palette[i].name = nameInput ? nameInput.value.trim() : '';
+      setProjectDirty(true);
       scheduleConfigSave();
     }
   });
@@ -170,6 +224,7 @@ function removeColor(i) {
   renumberPalette();
   // 只修改色板配置本身，画布保持不变，重新压缩后才会按新配置生成
   renderColorTable();
+  setProjectDirty(true);
   scheduleConfigSave();
   hintPaletteDeferred();
 }
@@ -178,6 +233,7 @@ export function addColor() {
   const n = App.palette.length + 1;
   App.palette.push({ index: n, code: String(n).padStart(3, '0'), name: '', hex: '#FFFFFF' });
   renderColorTable();
+  setProjectDirty(true);
   scheduleConfigSave();
   hintPaletteDeferred();
 }

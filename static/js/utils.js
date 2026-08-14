@@ -4,11 +4,60 @@ import { DEFAULT_TARGET_PIXELS, TARGET_PIXELS_MAX, TOAST_DURATION_MS, HINT_THROT
 import { els } from './els.js';
 import { App } from './state.js';
 
-export function toast(msg) {
-  els.toast.textContent = msg;
-  els.toast.classList.add('show');
+let toastQueue = [];
+let toastVisible = false;
+let toastImportant = false;
+let pendingNormal = null;
+const TOAST_FADE_MS = 250; // 与 #toast 的 opacity transition 时长一致
+
+export function toast(msg, { important = false } = {}) {
+  const text = String(msg);
+  if (important) {
+    toastQueue.push(text);
+    if (!toastVisible) showNextToast();
+    return;
+  }
+  if (!toastVisible) {
+    showToast(text, false);
+    return;
+  }
+  if (toastImportant) {
+    pendingNormal = text;
+    return;
+  }
   clearTimeout(App.toastTimer);
-  App.toastTimer = setTimeout(() => els.toast.classList.remove('show'), TOAST_DURATION_MS);
+  showToast(text, false);
+}
+
+function showNextToast() {
+  if (toastQueue.length) {
+    showToast(toastQueue.shift(), true);
+    return;
+  }
+  if (pendingNormal) {
+    const text = pendingNormal;
+    pendingNormal = null;
+    showToast(text, false);
+    return;
+  }
+  toastVisible = false;
+}
+
+function showToast(text, important) {
+  els.toast.textContent = text;
+  els.toast.classList.add('show');
+  toastVisible = true;
+  toastImportant = important;
+  clearTimeout(App.toastTimer);
+  App.toastTimer = setTimeout(() => {
+    els.toast.classList.remove('show');
+    // 等淡出动画结束后再显示下一条，保证队列衔接也有完整淡入淡出
+    App.toastTimer = setTimeout(showNextToast, TOAST_FADE_MS);
+  }, TOAST_DURATION_MS);
+}
+
+export function getToastQueue() {
+  return [...toastQueue, ...(pendingNormal ? [pendingNormal] : [])];
 }
 
 let paletteHintShownAt = 0;

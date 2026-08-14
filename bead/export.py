@@ -18,7 +18,7 @@ LEGEND_ENTRY_W = 7.0                 # 图例每项预估宽度（格）
 LEGEND_PAD_RATIO = 0.9               # 图例左右留白（格）
 LEGEND_ROW_HEIGHT_CELLS = 2.0        # 图例每行高度（格）
 LEGEND_ROW_GAP = 8                   # 图例行间距（像素）
-LEGEND_BOTTOM_GAP_RATIO = 1.2        # 图例下方留白（格）
+LEGEND_BOTTOM_GAP_RATIO = 0.6        # 图例下方留白（格）
 LEGEND_TOP_OFFSET_RATIO = 0.6        # 图例起始纵偏移（格）
 LEGEND_FONT_RATIO = 0.9              # 图例字体大小（格）
 LEGEND_FONT_MIN = 12
@@ -42,7 +42,15 @@ GRID_BOUNDARY_COLOR = "#000000"      # 图片边缘粗黑线
 CODE_MIN_CELL = 8                    # 格尺寸小于该值时不在格内显示色号
 CODE_FONT_RATIO = 0.5                # 格内色号字号（格）
 FONT_MIN = 8
-FONT_CANDIDATES = ("arial.ttf", "segoeui.ttf", "msyh.ttc")
+FONT_CANDIDATES = (
+    "msyh.ttc",
+    "msyhbd.ttc",
+    "simhei.ttf",
+    "simsun.ttc",
+    "notosanscjksc.ttf",
+    "arial.ttf",
+    "segoeui.ttf",
+)
 
 # 边缘行列号
 EDGE_NUMBER_BG = "#D6E6F7"           # 行列号格底色（浅蓝）
@@ -131,6 +139,9 @@ def render_pattern(
     show_codes: bool = True,
     show_legend: bool = True,
     edge_numbers: bool = False,
+    col_offset: int = 0,
+    row_offset: int = 0,
+    page_label: str | None = None,
 ) -> Image.Image:
     legend = sorted(legend or [], key=lambda e: (-e.get("count", 0), e.get("code", "")))
     edge = cell if edge_numbers else 0
@@ -139,9 +150,11 @@ def render_pattern(
     grid_w = width * cell
     grid_h = height * cell
     rows = _legend_rows(len(legend), grid_w, cell) if show_legend else 0
+    legend_font_size = max(LEGEND_FONT_MIN, int(cell * LEGEND_FONT_RATIO))
+    legend_sw = max(LEGEND_SWATCH_MIN, int(cell * LEGEND_SWATCH_RATIO))
+    legend_row_h = max(legend_sw + LEGEND_ROW_EXTRA_H, legend_font_size + LEGEND_ROW_FONT_EXTRA)
     legend_h = (
-        rows * int(cell * LEGEND_ROW_HEIGHT_CELLS + LEGEND_ROW_GAP)
-        + int(cell * LEGEND_BOTTOM_GAP_RATIO)
+        rows * legend_row_h + int(cell * LEGEND_BOTTOM_GAP_RATIO)
         if rows
         else 0
     )
@@ -257,12 +270,12 @@ def render_pattern(
         font = _font(cell, EDGE_NUMBER_FONT_RATIO)
         for x in range(width):
             cx = ox + x * cell + cell / 2
-            draw.text((cx, oy - cell / 2), str(x + 1), fill="#000000", font=font, anchor="mm")
-            draw.text((cx, oy + grid_h + cell / 2), str(x + 1), fill="#000000", font=font, anchor="mm")
+            draw.text((cx, oy - cell / 2), str(x + 1 + col_offset), fill="#000000", font=font, anchor="mm")
+            draw.text((cx, oy + grid_h + cell / 2), str(x + 1 + col_offset), fill="#000000", font=font, anchor="mm")
         for y in range(height):
             cy = oy + y * cell + cell / 2
-            draw.text((ox - cell / 2, cy), str(y + 1), fill="#000000", font=font, anchor="mm")
-            draw.text((ox + grid_w + cell / 2, cy), str(y + 1), fill="#000000", font=font, anchor="mm")
+            draw.text((ox - cell / 2, cy), str(y + 1 + row_offset), fill="#000000", font=font, anchor="mm")
+            draw.text((ox + grid_w + cell / 2, cy), str(y + 1 + row_offset), fill="#000000", font=font, anchor="mm")
 
     # 格子内色号
     if show_codes and codes and cell >= CODE_MIN_CELL:
@@ -289,8 +302,8 @@ def render_pattern(
         pad = int(cell * LEGEND_PAD_RATIO)
         entry_w = cell * LEGEND_ENTRY_W
         per_row = max(1, int((grid_w - 2 * pad) // entry_w))
-        sw = max(LEGEND_SWATCH_MIN, int(cell * LEGEND_SWATCH_RATIO))
-        row_h = max(sw + LEGEND_ROW_EXTRA_H, font.size + LEGEND_ROW_FONT_EXTRA)
+        sw = legend_sw
+        row_h = legend_row_h
         # 图例横向与外部白边对齐（与前端预览一致，不受行列号条影响）
         max_x = outer_pad + grid_w - pad
         x = outer_pad + pad
@@ -311,5 +324,17 @@ def render_pattern(
                 font=font,
             )
             x += entry_w
+
+    # 页码标签：绝对定位在右上角留白区域，不参与布局占位
+    if page_label and outer_pad > 0:
+        label_size = max(24, int(outer_pad * 2.5))
+        label_font = _font(cell, label_size / cell)
+        draw.text(
+            (total_w - outer_pad * 0.15, outer_pad * 0.05),
+            page_label,
+            fill="#000000",
+            font=label_font,
+            anchor="ra",
+        )
 
     return img

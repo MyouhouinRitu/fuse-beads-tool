@@ -26,7 +26,13 @@ export const TOOLS = {
   ERASER: 'eraser',
   PICKER: 'picker',
   CROP: 'crop',
+  WAND: 'wand',
 };
+
+// ---------- 魔棒 ----------
+export const WAND_SENSITIVITY_MIN = 0;        // 容差最小值：只选同色
+export const WAND_SENSITIVITY_MAX = 100;      // 容差最大值（与模板中滑块 max 一致）
+export const WAND_SENSITIVITY_DEFAULT = 20;   // 默认容差
 
 // ---------- 通用交互阈值 ----------
 export const DRAG_THRESHOLD_PX = 4; // 判定为拖拽的最小位移（屏幕像素）
@@ -119,7 +125,7 @@ export const LEGEND_ENTRY_W = 7.0;           // 图例每项预估宽度（以�
 export const LEGEND_PAD_RATIO = 0.9;         // 图例左右留白（格）
 export const LEGEND_ROW_HEIGHT_CELLS = 2.0;  // 图例每行高度（格）
 export const LEGEND_ROW_GAP = 8;             // 图例行间距（像素）
-export const LEGEND_BOTTOM_GAP_RATIO = 1.2;  // 图例下方留白（格）
+export const LEGEND_BOTTOM_GAP_RATIO = 0.6;  // 图例下方留白（格）
 export const LEGEND_TOP_OFFSET_RATIO = 0.6;  // 图例起始纵偏移（格）
 export const LEGEND_FONT_RATIO = 0.9;        // 图例字体大小（格）
 export const LEGEND_FONT_MIN = 12;           // 图例字号下限（PIL 侧共用 FONT_MIN=8，见 sync 测试例外表）

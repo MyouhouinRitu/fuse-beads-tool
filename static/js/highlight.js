@@ -1,6 +1,7 @@
 // 颜色清单高亮面板：按数量列出已用色号，点击高亮对应像素。
 
 import * as C from './colors.js';
+import * as canvas from './canvas.js';
 import { els } from './els.js';
 import { App } from './state.js';
 import { codeOf, countBadge, titleOf } from './utils.js';
@@ -16,6 +17,7 @@ export function bindHighlightList() {
     const i = Number(item.dataset.index);
     // 单选：再次点击取消，选择其它色号则替换
     App.highlightColor = App.highlightColor === i ? null : i;
+    canvas.syncHighlightBlink();
     renderHighlightColorList();
     scheduleCanvasRender();
     updateModeControls();

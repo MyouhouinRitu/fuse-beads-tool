@@ -19,6 +19,10 @@ import { clampInt, codeOf, downloadDataUrl, toast } from './utils.js';
 import { drawPattern } from './render.js';
 import { buildCodes, buildDisplayData, buildLegend } from './canvas.js';
 
+let pdfPreviewPages = [];
+let pdfPreviewIndex = 0;
+let pdfPreviewTimer = null;
+
 function buildExportData() {
   const n = App.project.width * App.project.height;
   const gridOut = new Int16Array(n);
@@ -50,14 +54,25 @@ function buildExportData() {
 
 export function openExportDialog() {
   if (!App.project) { toast('请先导入图片'); return; }
+  pdfPreviewPages = [];
+  pdfPreviewIndex = 0;
   els.dlgCodes.checked = App.settings.showCodes;
   els.exportDialog.classList.remove('hidden');
   renderExportPreview();
 }
 
 // 导出预览：用前端渲染器即时绘制一张小图（不经过后端，秒级响应）
-export function renderExportPreview() {
+export async function renderExportPreview() {
   if (!App.project) return;
+  clearTimeout(pdfPreviewTimer);
+  const fmt = els.dlgFormat.value;
+  if (fmt.startsWith('pdf-')) {
+    pdfPreviewTimer = setTimeout(() => renderPdfPreview(), 120);
+    return;
+  }
+  els.dlgPdfPages.classList.add('hidden');
+  els.dlgPreviewMask.classList.add('hidden');
+  pdfPreviewPages = [];
   const counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   const legend = buildLegend(counts);
   const display = buildDisplayData();
@@ -90,6 +105,87 @@ export function renderExportPreview() {
   pctx.drawImage(off, 0, 0, pv.width, pv.height);
 }
 
+function buildExportOptions(fmt) {
+  return {
+    cellSize: clampInt(els.dlgCell.value, EXPORT_CELL_MIN, EXPORT_CELL_MAX, EXPORT_CELL_DEFAULT),
+    gridLines: els.dlgGrid.checked,
+    outerPad: clampInt(els.dlgPad.value, 0, EXPORT_PAD_MAX, 0),
+    edgeNumbers: els.dlgEdgeNumbers.checked,
+    showCodes: els.dlgCodes.checked,
+    legend: els.dlgLegend.checked,
+    format: fmt,
+    quality: EXPORT_QUALITY,
+    emptyStyle: els.dlgEmptyStyle.value,
+  };
+}
+
+async function renderPdfPreview() {
+  const fmt = els.dlgFormat.value;
+  if (!fmt.startsWith('pdf-') || !App.project) return;
+  const { grid, palette, legend, codes } = buildExportData();
+  els.dlgPreviewMask.classList.remove('hidden');
+  try {
+    const res = await api.exportPdfPreview({
+      width: App.project.width,
+      height: App.project.height,
+      grid,
+      palette,
+      legend,
+      codes,
+      options: buildExportOptions(fmt),
+    });
+    pdfPreviewPages = res.pages || [];
+    pdfPreviewIndex = Math.min(pdfPreviewIndex, Math.max(0, pdfPreviewPages.length - 1));
+    renderPdfPageButtons();
+    drawPdfPreviewPage();
+  } catch (e) {
+    els.dlgPdfPages.classList.add('hidden');
+    toast('PDF 预览生成失败：' + e.message);
+  } finally {
+    els.dlgPreviewMask.classList.add('hidden');
+  }
+}
+
+function renderPdfPageButtons() {
+  const wrap = els.dlgPdfPages;
+  wrap.innerHTML = '';
+  if (!pdfPreviewPages.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  pdfPreviewPages.forEach((page, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = page.page;
+    btn.className = i === pdfPreviewIndex ? 'active' : '';
+    btn.title = page.paper + (page.landscape ? ' 横向' : ' 纵向');
+    btn.addEventListener('click', () => {
+      pdfPreviewIndex = i;
+      renderPdfPageButtons();
+      drawPdfPreviewPage();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+function drawPdfPreviewPage() {
+  const page = pdfPreviewPages[pdfPreviewIndex];
+  if (!page) return;
+  const img = new Image();
+  img.onload = () => {
+    const pv = els.dlgPreview;
+    const scale = Math.min(EXPORT_PREVIEW_MAX_W / img.width, EXPORT_PREVIEW_MAX_H / img.height, 1);
+    pv.width = Math.max(1, Math.round(img.width * scale));
+    pv.height = Math.max(1, Math.round(img.height * scale));
+    const pctx = pv.getContext('2d');
+    pctx.fillStyle = '#e8eaee';
+    pctx.fillRect(0, 0, pv.width, pv.height);
+    pctx.drawImage(img, 0, 0, pv.width, pv.height);
+  };
+  img.src = page.dataUrl;
+}
+
 export async function doExport() {
   if (!App.project) return;
   const fmt = els.dlgFormat.value;
@@ -105,19 +201,10 @@ export async function doExport() {
       palette,
       legend,
       codes,
-      options: {
-        cellSize: clampInt(els.dlgCell.value, EXPORT_CELL_MIN, EXPORT_CELL_MAX, EXPORT_CELL_DEFAULT),
-        gridLines: els.dlgGrid.checked,
-        outerPad: clampInt(els.dlgPad.value, 0, EXPORT_PAD_MAX, 0),
-        edgeNumbers: els.dlgEdgeNumbers.checked,
-        showCodes: els.dlgCodes.checked,
-        legend: els.dlgLegend.checked,
-        format: fmt,
-        quality: EXPORT_QUALITY,
-        emptyStyle: els.dlgEmptyStyle.value,
-      },
+      options: buildExportOptions(fmt),
     });
-    downloadDataUrl(res.dataUrl, `拼豆图案.${fmt === 'png' ? 'png' : 'jpg'}`);
+    const ext = fmt.startsWith('pdf-') ? 'pdf' : (fmt === 'png' ? 'png' : 'jpg');
+    downloadDataUrl(res.dataUrl, `拼豆图案.${ext}`);
     els.dlgStatus.textContent = '导出完成';
     await new Promise((r) => setTimeout(r, EXPORT_COMPLETE_DELAY_MS)); // 稍作停留显示完成状态
     els.exportDialog.classList.add('hidden');

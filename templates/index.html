@@ -24,12 +24,15 @@
   <header class="toolbar">
     <div class="tb-row title-row">
       <div class="brand">拼豆工具</div>
+      <span id="project-name-label" class="brand-sub"></span>
       <span class="spacer"></span>
       <button id="btn-theme" title="切换日间 / 夜间模式">🌙 夜间模式</button>
     </div>
     <div class="tb-row">
+      <button id="btn-open-project" title="打开 .ssfbp 项目文件">打开项目</button>
       <button id="btn-import" class="primary">导入图片</button>
       <input type="file" id="file-input" accept="image/*" hidden>
+      <input type="file" id="project-file-input" accept=".ssfbp" hidden>
       <label class="field">目标像素量
         <span class="target-pixels-wrap">
           <input type="number" id="target-pixels" min="100" max="80000" step="100" value="5000" title="图片压缩后的总像素量">
@@ -50,6 +53,7 @@
         <button id="btn-fix-menu" title="查看常见使用问题的修复说明">使用问题修复 <span class="caret">▾</span></button>
         <div id="fix-menu" class="dropdown-menu hidden">
           <button id="fix-item-gesture" class="dropdown-item">右键在界面上只画线不拖拽</button>
+          <button id="fix-item-shortcuts" class="dropdown-item">快捷键说明</button>
         </div>
       </div>
       <span class="tb-divider"></span>
@@ -59,6 +63,7 @@
       <span id="autosave-indicator" class="indicator"></span>
       <span class="tb-divider"></span>
       <button id="btn-export" class="primary">导出图片</button>
+      <button id="btn-save-project" disabled title="保存项目（Ctrl+Shift+S）">保存项目</button>
       <button id="btn-logout" class="hidden" title="退出登录">退出登录</button>
     </div>
     <div class="tb-row">
@@ -68,7 +73,7 @@
       </label>
       <span id="used-colors" class="muted"></span>
       <span class="spacer"></span>
-      <span class="hint">右键拖拽平移 · 滚轮缩放 · 左键单击/拖拽选择区域 · Shift 追加多选 · D 键九宫格改色（单选格优先，否则悬停格）· Q/W/E/R 切换画笔/取色/橡皮/裁剪 · Delete 清除选中格为空位 · ESC 清除选择/返回选择模式 · Ctrl+S 保存状态 · Ctrl+Z 撤销 · Ctrl+Y 重做</span>
+      <span class="hint">右键拖拽平移 · 滚轮缩放 · 快捷键说明见「使用问题修复 → 快捷键说明」</span>
     </div>
   </header>
 
@@ -111,6 +116,7 @@
               <button id="tool-picker" class="tool" title="点击像素取色（ESC 返回选择模式）">取色</button>
               <button id="tool-eraser" class="tool" title="擦除格子（空位）">橡皮</button>
               <button id="tool-crop" class="tool" title="裁剪图案（R 键；ESC 返回选择模式）">裁剪</button>
+              <button id="tool-wand" class="tool" title="点击选中四向相连的相似颜色（M 键；容差可调）">魔棒</button>
             </div>
             <div class="mode-line">
               当前模式：<span id="mode-label" class="mode-label">选择模式</span>
@@ -130,6 +136,12 @@
                 <span>尺寸</span>
                 <input type="range" id="brush-size" min="1" max="10" value="1">
                 <span id="brush-size-value" class="brush-size-value">1</span>
+              </label>
+              <label class="field wand-sensitivity-field hidden" id="wand-sensitivity-wrap"
+                title="魔棒容差：0 表示只选同色，数值越大纳入越多相似色（仅魔棒模式显示）">
+                <span>容差</span>
+                <input type="range" id="wand-sensitivity" min="0" max="100" value="20">
+                <span id="wand-sensitivity-value" class="wand-sensitivity-value">20</span>
               </label>
             </div>
             <div class="brush-info">
@@ -244,6 +256,11 @@
       <div class="dialog-body">
         <div class="dlg-preview-wrap">
           <canvas id="dlg-preview" class="dlg-preview"></canvas>
+          <div id="dlg-pdf-pages" class="dlg-pdf-pages hidden"></div>
+          <div id="dlg-preview-mask" class="dlg-preview-mask hidden">
+            <div class="dlg-preview-progress"></div>
+            <span>正在更新预览…</span>
+          </div>
         </div>
         <div class="dlg-options">
           <label class="field">每格大小（像素）
@@ -267,6 +284,9 @@
             <select id="dlg-format">
               <option value="jpg" selected>JPG</option>
               <option value="png">PNG</option>
+              <option value="pdf-a4">PDF (A4单页)</option>
+              <option value="pdf-multi-a4">PDF (A4多页)</option>
+              <option value="pdf-a3-a4">PDF (A3或A4)</option>
             </select>
           </label>
         </div>
