@@ -36,17 +36,18 @@ export function applyOriginalTransform() {
 // ---------- 坐标换算（事件 → 画布 → 格） ----------
 
 // 画布当前显示缩放（CSS transform 缩放后画布元素宽度 / 位图宽度）
-export function canvasScale() {
-  return els.canvas.getBoundingClientRect().width / els.canvas.width;
+export function canvasScale(rect) {
+  const r = rect || els.canvas.getBoundingClientRect();
+  return r.width / els.canvas.width;
 }
 
 // 事件坐标 → 画布内像素坐标（考虑 CSS transform 缩放）
-export function eventToCanvasPos(e) {
-  const rect = els.canvas.getBoundingClientRect();
-  const scale = rect.width / els.canvas.width;
+export function eventToCanvasPos(e, rect) {
+  const r = rect || els.canvas.getBoundingClientRect();
+  const scale = r.width / els.canvas.width;
   return {
-    x: (e.clientX - rect.left) / scale,
-    y: (e.clientY - rect.top) / scale,
+    x: (e.clientX - r.left) / scale,
+    y: (e.clientY - r.top) / scale,
   };
 }
 
@@ -60,8 +61,8 @@ export function canvasPosToCell(px, py) {
 }
 
 // 事件坐标 → 格坐标（含行列号偏移；可能落在图案外）
-export function eventToCell(e) {
-  const p = eventToCanvasPos(e);
+export function eventToCell(e, rect) {
+  const p = eventToCanvasPos(e, rect);
   return canvasPosToCell(p.x, p.y);
 }
 

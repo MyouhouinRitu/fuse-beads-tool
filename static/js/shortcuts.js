@@ -13,6 +13,7 @@ import * as selection from './selection.js';
 import { App, dragState } from './state.js';
 import * as toolState from './tool-state.js';
 import * as undoRedo from './undo-redo.js';
+import { blurActive } from './utils.js';
 
 export function bindShortcuts() {
   window.addEventListener('keydown', (e) => {
@@ -23,40 +24,49 @@ export function bindShortcuts() {
     if (e.key === 'Escape') {
       if (!els.docDialog.classList.contains('hidden')) {
         markdown.closeFixDoc();
+        blurActive();
         e.preventDefault();
         return;
       }
       if (!els.fixMenu.classList.contains('hidden')) {
         els.fixMenu.classList.add('hidden');
+        els.btnFixMenu.setAttribute('aria-expanded', 'false');
+        blurActive();
         e.preventDefault();
         return;
       }
       if (!els.targetPixelsMenu.classList.contains('hidden')) {
         els.targetPixelsMenu.classList.add('hidden');
+        els.targetPixelsBtn.setAttribute('aria-expanded', 'false');
+        blurActive();
         e.preventDefault();
         return;
       }
       if (!els.exportDialog.classList.contains('hidden')) {
         // 导出弹窗：Escape 与「取消」一致
         exportDialog.closeExportDialog();
+        blurActive();
         e.preventDefault();
         return;
       }
       if (!els.loginMask.classList.contains('hidden')) {
         // 登录是必经门槛，Escape 仅清除错误提示，不关闭遮罩
         els.loginError.classList.add('hidden');
+        blurActive();
         e.preventDefault();
         return;
       }
       if (inField) return; // 输入框内不处理工具/选区 Escape
       if (!els.quickPicker.classList.contains('hidden')) {
         quickPicker.closeQuickPicker();
+        blurActive();
         e.preventDefault();
         return;
       }
       quickPicker.closeQuickPicker(); // 未打开时为无操作
       if (App.tool !== TOOLS.SELECT) toolState.setTool(TOOLS.SELECT);
       else selection.clearSelection();
+      blurActive();
       e.preventDefault();
       return;
     }

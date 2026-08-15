@@ -7,6 +7,9 @@ import { recordStep } from './history.js';
 import { scheduleRender } from './render-queue.js';
 import { App, setDirty } from './state.js';
 
+// 网格内容修订号：画布显示数据缓存据此失效（格子原地修改时引用不变）
+export let gridRevision = 0;
+
 /**
  * 写入一批格子变更并统一标记编辑状态。
  * @param {Array<{x: number, y: number, to: number, from?: number}>} changes
@@ -33,6 +36,7 @@ export function applyGridChanges(changes, { silent = false, buffer = null } = {}
     applied.push(change);
   }
   if (applied.length) {
+    gridRevision++;
     setDirty(true);
     App.editedSinceSlider = true;
     if (!silent) scheduleAutosave();

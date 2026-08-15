@@ -1,6 +1,8 @@
 // 界面自动化测试（需要本机已安装 Playwright + Chromium）：
 //   PLAYWRIGHT_PATH 指向 playwright 包目录；默认使用临时目录中的 playwright@1.57.0。
 // 运行：node tests/ui_test.mjs
+// 说明：本套件按功能分为 1~12 段，但共享同一个服务端 / 浏览器会话与连续编辑状态，
+//       因此保持为单一文件串行执行，不再按段拆文件（避免每段重放导入与编辑前置）。
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';

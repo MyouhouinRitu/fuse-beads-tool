@@ -18,6 +18,12 @@
   --panel-highlight-width: 168px;
   --panel-right-width: 280px;
   --panel-collapsed-width: 32px;
+  --crop-mask-rgba: rgba(
+    0,
+    0,
+    0,
+    0.4
+  ); /* 与 constants.js CROP_MASK_RGBA 一致（见 constants_sync_test） */
 }
 
 /* 夜间模式：覆盖基础变量与少量硬编码浅色；画布与九宫格色板保持白底以保证颜色观感 */
@@ -89,6 +95,19 @@
 :root[data-theme="dark"] ::-webkit-scrollbar-thumb {
   background: #4a5563;
 }
+:root[data-theme="dark"] .color-row {
+  border-bottom-color: #39424d;
+}
+:root[data-theme="dark"] .color-row:hover,
+:root[data-theme="dark"] .tabs .tab:hover,
+:root[data-theme="dark"] .panel-toggle:hover,
+:root[data-theme="dark"] .panel-expand:hover {
+  background: #2d3440;
+}
+:root[data-theme="dark"] .color-item:hover,
+:root[data-theme="dark"] .hc-item:hover {
+  border-color: #4a5563;
+}
 
 * {
   box-sizing: border-box;
@@ -102,6 +121,10 @@ body {
   color: var(--text);
   background: var(--bg);
   font-size: 14px;
+}
+body {
+  display: flex;
+  flex-direction: column;
 }
 
 button {
@@ -244,7 +267,7 @@ select:focus {
 
 main {
   display: flex;
-  height: calc(100vh - var(--toolbar-height));
+  flex: 1;
   min-height: 420px;
 }
 
@@ -691,6 +714,7 @@ aside {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   position: relative;
   background: #e8eaee;
 }
@@ -723,6 +747,7 @@ body.crop-active #canvas-area {
   flex: 1;
   overflow: hidden;
   position: relative;
+  touch-action: none;
 }
 #compare-wrap {
   position: absolute;
@@ -1269,4 +1294,16 @@ body.crop-active #canvas-area {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  aside,
+  button,
+  #toast {
+    transition: none;
+  }
+  .dlg-progress-bar,
+  .dlg-preview-progress::after {
+    animation: none;
+  }
 }

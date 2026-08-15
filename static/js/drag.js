@@ -29,11 +29,11 @@ import {
   zoomAtOriginal,
 } from './view.js';
 
-function cellFromEvent(e) {
+function cellFromEvent(e, rect) {
   if (!App.project) return null;
-  const rect = els.canvas.getBoundingClientRect();
-  if (rect.width === 0) return null;
-  const { x, y } = eventToCell(e);
+  const r = rect || els.canvas.getBoundingClientRect();
+  if (r.width === 0) return null;
+  const { x, y } = eventToCell(e, r);
   // 四周 1 格为行列号条，不属于图案
   if (x < 0 || y < 0 || x >= App.project.width || y >= App.project.height) return null;
   return { x, y };
@@ -82,7 +82,7 @@ function resetDragState() {
 }
 
 // hover 边框定位：只在工作区图案上更新，拖拽平移或指向对比原图时隐藏
-function updateHoverCell(e) {
+function updateHoverCell(e, rect) {
   if (!App.project) return;
   if (e.target?.closest?.('#compare-original')) {
     if (interactionState.hoverCell != null) {
@@ -98,7 +98,7 @@ function updateHoverCell(e) {
     }
     return;
   }
-  const cell = cellFromEvent(e);
+  const cell = cellFromEvent(e, rect);
   const prev = interactionState.hoverCell;
   const same = prev != null && cell != null && prev.x === cell.x && prev.y === cell.y;
   if (same || (prev == null && cell == null)) return;
@@ -107,7 +107,7 @@ function updateHoverCell(e) {
 }
 
 // 拖拽移动：对比原图平移 / 工作区平移 / 选择矩形预览 / 画笔橡皮连续涂色
-function updateDragMove(e) {
+function updateDragMove(e, rect) {
   if (dragState.orig) {
     const dx = e.clientX - dragState.startX;
     const dy = e.clientY - dragState.startY;
@@ -143,12 +143,12 @@ function updateDragMove(e) {
   }
   if (dragState.cropEdge) {
     // 裁剪模式：拖拽移动选中的边
-    updateCropEdgeDrag(e);
+    updateCropEdgeDrag(e, rect);
     return;
   }
   if (App.tool === TOOLS.SELECT && dragState.ctrl && dragState.moved && dragState.selectionAnchor) {
     // Ctrl 拖拽：反选鼠标经过的格子
-    const cell = cellFromEvent(e);
+    const cell = cellFromEvent(e, rect);
     if (!cell) return;
     const from = dragState.toggleLast || dragState.selectionAnchor;
     const cells = lineCells(from, cell);
@@ -166,7 +166,7 @@ function updateDragMove(e) {
     !App.settings.sameColorSelect
   ) {
     // 矩形拖选实时预览（裁剪到图案边界）
-    const cell = cellFromEvent(e);
+    const cell = cellFromEvent(e, rect);
     if (!cell) return;
     const a = dragState.selectionAnchor;
     interactionState.dragPreview = {
@@ -179,7 +179,7 @@ function updateDragMove(e) {
     return;
   }
   if (!interactionState.painting) return;
-  const cell = cellFromEvent(e);
+  const cell = cellFromEvent(e, rect);
   if (!cell) return;
   if (dragState.straightStart && e.shiftKey) {
     strokeLine(dragState.straightStart, axisConstrainedEnd(dragState.straightStart, cell));
@@ -191,11 +191,12 @@ function updateDragMove(e) {
 
 // 统一的 mousemove 入口：先更新 hover，再处理拖拽与裁剪联动
 export function onWindowMouseMove(e) {
+  const rect = els.canvas.getBoundingClientRect();
   if (App.tool === TOOLS.CROP) rememberCropMouse(e);
-  updateHoverCell(e);
-  updateDragMove(e);
-  updateCropCursor(e);
-  updateCropPreview(e);
+  updateHoverCell(e, rect);
+  updateDragMove(e, rect);
+  updateCropCursor(e, rect);
+  updateCropPreview(e, rect);
   updateCropMagnifier(e);
 }
 
@@ -239,6 +240,14 @@ export function onWindowMouseUp() {
 
 export function onCanvasScrollMouseDown(e) {
   if (!App.project) return;
+  // pointer capture：即使鼠标/手指移出窗口，move/up 仍持续送达，避免拖拽卡死
+  if (e.pointerId != null && e.target?.setPointerCapture) {
+    try {
+      e.target.setPointerCapture(e.pointerId);
+    } catch (_e) {
+      /* ignore */
+    }
+  }
   const inOrig = e.target?.closest?.('#compare-original');
   if (e.button === 2) {
     // 右键：工作区内任意位置拖拽平移（对比原图由自己的右键处理）
@@ -252,13 +261,14 @@ export function onCanvasScrollMouseDown(e) {
   }
   if (e.button !== 0 || inOrig) return;
   blurActive();
-  const cell = cellFromEvent(e);
+  const rect = els.canvas.getBoundingClientRect();
+  const cell = cellFromEvent(e, rect);
   e.preventDefault();
   if (!els.quickPicker.classList.contains('hidden')) closeQuickPicker();
   beginDrag(e, { downCell: cell });
   if (App.tool === TOOLS.CROP) {
     // 裁剪模式：选中/拖拽边，或按平行格线移动已选中的边
-    handleCropMouseDown(e);
+    handleCropMouseDown(e, rect);
     return;
   }
   if (App.tool === TOOLS.SELECT || App.tool === TOOLS.WAND) {
@@ -296,6 +306,25 @@ export function onCanvasScrollMouseDown(e) {
     return;
   }
   // 取色模式：单击在 mouseup 时取色
+}
+
+// 触摸支持：Pointer Events 统一处理触摸；桌面鼠标仍走 mousemove/mouseup 兼容既有逻辑
+export function onCanvasPointerDown(e) {
+  if (e.pointerType !== 'touch') return;
+  e.preventDefault();
+  onCanvasScrollMouseDown(e);
+}
+
+export function onCanvasPointerMove(e) {
+  if (e.pointerType !== 'touch') return;
+  e.preventDefault();
+  onWindowMouseMove(e);
+}
+
+export function onCanvasPointerUp(e) {
+  if (e.pointerType !== 'touch') return;
+  e.preventDefault();
+  onWindowMouseUp();
 }
 
 export function onCompareMouseDown(e) {

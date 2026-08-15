@@ -36,9 +36,9 @@
       <input type="file" id="project-file-input" accept=".ssfbp" hidden>
       <label class="field">目标像素量
         <span class="target-pixels-wrap">
-          <input type="number" id="target-pixels" min="100" max="80000" step="100" value="5000" title="图片压缩后的总像素量">
-          <button type="button" id="target-pixels-btn" class="target-pixels-arrow" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量"></button>
-          <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden"></div>
+          <input type="number" id="target-pixels" min="100" max="80000" step="100" value="4000" title="图片压缩后的总像素量">
+          <button type="button" id="target-pixels-btn" class="target-pixels-arrow" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量" aria-haspopup="menu" aria-expanded="false" aria-controls="target-pixels-menu"></button>
+          <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden" role="menu"></div>
         </span>
       </label>
       <label class="chk"><input type="checkbox" id="chk-sharpen" checked>锐化</label>
@@ -51,17 +51,17 @@
       <button type="button" id="btn-recompress" title="按当前设置重新压缩并重新生成图案">重新压缩</button>
       <span class="spacer"></span>
       <div class="dropdown" id="fix-dropdown">
-        <button type="button" id="btn-fix-menu" title="查看常见使用问题的修复说明">使用问题修复 <span class="caret">▾</span></button>
-        <div id="fix-menu" class="dropdown-menu hidden">
-          <button type="button" id="fix-item-gesture" class="dropdown-item">右键在界面上只画线不拖拽</button>
-          <button type="button" id="fix-item-shortcuts" class="dropdown-item">快捷键说明</button>
+        <button type="button" id="btn-fix-menu" title="查看常见使用问题的修复说明" aria-haspopup="menu" aria-expanded="false" aria-controls="fix-menu">使用问题修复 <span class="caret">▾</span></button>
+        <div id="fix-menu" class="dropdown-menu hidden" role="menu">
+          <button type="button" id="fix-item-gesture" class="dropdown-item" role="menuitem">右键在界面上只画线不拖拽</button>
+          <button type="button" id="fix-item-shortcuts" class="dropdown-item" role="menuitem">快捷键说明</button>
         </div>
       </div>
       <span class="tb-divider"></span>
       <button type="button" id="btn-undo" disabled title="撤销上一步修改（Ctrl+Z）">撤销</button>
       <button type="button" id="btn-redo" disabled title="重做已撤销的修改（Ctrl+Shift+Z / Ctrl+Y）">重做</button>
       <span id="undo-info" class="muted" title="当前单步记录数量（最多 20 步）">单步记录：0/20</span>
-      <span id="autosave-indicator" class="indicator"></span>
+      <span id="autosave-indicator" class="indicator" aria-live="polite"></span>
       <span class="tb-divider"></span>
       <button type="button" id="btn-export" class="primary">导出图片</button>
       <button type="button" id="btn-save-project" disabled title="保存项目（Ctrl+Shift+S）">保存项目</button>
@@ -165,20 +165,20 @@
       <div id="canvas-toolbar">
         <button type="button" id="zoom-in" title="放大">＋</button>
         <button type="button" id="zoom-out" title="缩小">－</button>
-      <button type="button" id="zoom-fit" title="缩放到适合窗口">适应窗口</button>
-      <span id="zoom-label">100%</span>
-      <label class="chk" title="将工作区分成左右两块：左侧显示原图，右侧显示拼豆图"><input type="checkbox" id="chk-compare">对比原图</label>
-      <label class="chk" title="左侧原图与右侧拼豆图使用一致的坐标与缩放"><input type="checkbox" id="chk-sync-pan">同步拖拽</label>
-      <label class="chk"><input type="checkbox" id="chk-codes" checked title="仅影响工作区显示，不影响导出">显示色号</label>
-      <label class="field empty-style-field" title="仅影响工作区显示，不影响导出">透明色
-        <select id="empty-style">
-          <option value="default">默认（浅灰）</option>
-          <option value="black">纯黑</option>
-          <option value="white">纯白</option>
-        </select>
-      </label>
-      <span id="cell-info" class="muted"></span>
-    </div>
+        <button type="button" id="zoom-fit" title="缩放到适合窗口">适应窗口</button>
+        <span id="zoom-label">100%</span>
+        <label class="chk" title="将工作区分成左右两块：左侧显示原图，右侧显示拼豆图"><input type="checkbox" id="chk-compare">对比原图</label>
+        <label class="chk" title="左侧原图与右侧拼豆图使用一致的坐标与缩放"><input type="checkbox" id="chk-sync-pan">同步拖拽</label>
+        <label class="chk"><input type="checkbox" id="chk-codes" checked title="仅影响工作区显示，不影响导出">显示色号</label>
+        <label class="field empty-style-field" title="仅影响工作区显示，不影响导出">透明色
+          <select id="empty-style">
+            <option value="default">默认（浅灰）</option>
+            <option value="black">纯黑</option>
+            <option value="white">纯白</option>
+          </select>
+        </label>
+        <span id="cell-info" class="muted"></span>
+      </div>
       <div id="canvas-scroll">
         <div id="compare-wrap">
           <div id="compare-original" class="compare-pane">
@@ -191,7 +191,7 @@
         <div id="empty-hint">请先导入一张图片<br>导入后会自动转换为拼豆图案</div>
       </div>
       <div id="crop-magnifier" class="crop-magnifier hidden"><canvas id="crop-magnifier-canvas"></canvas></div>
-      <div id="quick-picker" class="hidden"></div>
+      <div id="quick-picker" class="hidden" role="dialog" aria-label="相近颜色（按 1-9 选择）"></div>
     </section>
 
     <aside id="color-highlight-panel">
@@ -252,7 +252,7 @@
       <h3>导出图片</h3>
       <div id="dlg-busy" class="dlg-busy hidden">
         <div class="dlg-progress"><div class="dlg-progress-bar"></div></div>
-        <div id="dlg-status" class="dlg-status">正在导出…</div>
+        <div id="dlg-status" class="dlg-status" aria-live="polite">正在导出…</div>
       </div>
       <div class="dialog-body">
         <div class="dlg-preview-wrap">
@@ -313,7 +313,7 @@
     </div>
   </div>
 
-  <div id="toast"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

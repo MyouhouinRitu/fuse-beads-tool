@@ -1,7 +1,6 @@
-// 应用入口（组合根）：全量刷新 renderAll、滑块重算与启动流程。
+// 应用入口（组合根）：全量刷新 renderFull、滑块重算与启动流程。
 // 事件绑定 / 快捷键 / 恢复 / 项目文件已拆分到 bind-events、shortcuts、restore、project-file。
 
-import * as api from './api.js';
 import * as auth from './auth.js';
 import { bindEvents } from './bind-events.js';
 import * as canvas from './canvas.js';
@@ -14,8 +13,8 @@ import * as highlight from './highlight.js';
 import * as historyUI from './history-ui.js';
 import * as palette from './palette.js';
 import * as panel from './panel.js';
-import { setNativeDialogs, updateProjectNameLabel } from './project-file.js';
-import { renderAllNow, setRenderers } from './render-queue.js';
+import { updateProjectNameLabel } from './project-file.js';
+import { renderFullNow, setRenderers } from './render-queue.js';
 import { restoreState } from './restore.js';
 import { applySlider } from './slider.js';
 import { App } from './state.js';
@@ -25,7 +24,7 @@ import * as toolState from './tool-state.js';
 import { toast } from './utils.js';
 import * as view from './view.js';
 
-function renderAll() {
+function renderFull() {
   const project = App.project;
   if (!project) {
     updateProjectNameLabel();
@@ -56,7 +55,7 @@ function renderAll() {
   els.sliderValue.textContent = String(App.maxColors);
   els.usedColors.textContent = `当前使用 ${used} 种颜色`;
   updateProjectNameLabel();
-  canvas.redrawCanvas();
+  canvas.rebuildCanvas();
   els.emptyHint.style.display = 'none';
 
   let empty = 0;
@@ -70,12 +69,12 @@ function renderAll() {
   historyUI.updateUndoUI();
 }
 
-setRenderers(renderAll, canvas.composeCanvas);
+setRenderers(renderFull, canvas.renderCanvas);
 
 // 缩放结束后统一联动：细节阈值重建、overlay 重绘、裁剪放大镜、对比镜像
 view.setAfterZoomHook(() => {
   canvas.syncBaseLayerDetail();
-  canvas.composeCanvas();
+  canvas.renderCanvas();
   refreshCropMagnifier();
   if (App.settings.syncPan && App.originalImage) {
     view.mirrorBeadToOrig();
@@ -87,12 +86,6 @@ view.setAfterZoomHook(() => {
 
 async function init() {
   assertElements();
-  try {
-    const info = await api.getAppInfo();
-    setNativeDialogs(!!info.nativeDialogs);
-  } catch (_e) {
-    /* 保持默认 false */
-  }
   panel.applyPanelPrefs();
   theme.applyTheme(theme.currentTheme());
   bindEvents();
@@ -109,11 +102,11 @@ async function init() {
     console.error('状态恢复失败：', e);
     toast(`状态恢复失败：${e.message}`);
   }
-  renderAllNow();
+  renderFullNow();
   historyUI.renderHistoryUI();
 }
 
 init();
 
 // 自动化测试挂钩（稳定契约）：暴露面与安装逻辑见 test-hooks.js
-installTestHooks({ renderAll, applySlider, restoreState });
+installTestHooks({ renderFull, applySlider, restoreState });

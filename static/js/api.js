@@ -50,10 +50,8 @@ export const getOriginalBlob = async (originalId) => {
 };
 export const deleteOriginal = (originalId) =>
   request(`/api/originals/${encodeURIComponent(originalId)}`, { method: 'DELETE' });
-export const saveProject = (document, filename, mode) =>
-  request('/api/project/save', json({ document, filename, mode }));
-export const pickOpenProject = () => request('/api/project/pick-open', { method: 'POST' });
-export const openProjectPath = (path) => request('/api/project/open-path', json({ path }));
+export const saveProject = (document, filename) =>
+  request('/api/project/save', json({ document, filename }));
 export const openProjectUpload = (file) => {
   const fd = new FormData();
   fd.append('file', file);
@@ -64,6 +62,5 @@ export const exportPdfPreview = (payload) => request('/api/export-preview', json
 export const getState = () => request('/api/state');
 export const putState = (state) => request('/api/state', json(state, 'PUT'));
 export const authStatus = () => request('/api/auth/status');
-export const getAppInfo = () => request('/api/app-info');
 export const login = (token) => request('/api/auth/login', json({ token }));
 export const logout = () => request('/api/auth/logout', { method: 'POST' });

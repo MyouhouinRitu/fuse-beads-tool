@@ -138,10 +138,6 @@ def main():
         assert first["paletteHash"] and len(first["paletteHash"]) == 64
         print(f"[OK] 配置列表：{first['name']}（{first['colorCount']}色）")
 
-        s, j = req("GET", "/api/app-info")
-        assert "nativeDialogs" in j
-        print("[OK] 应用信息接口")
-
         s, j = req("GET", "/api/configs/" + urllib.parse.quote(first["name"]))
         assert s == 200 and len(j["colors"]) == first["colorCount"]
         print("[OK] 读取配置详情")
@@ -292,24 +288,16 @@ def main():
         s, j = req("POST", "/api/project/save", {
             "document": project_doc,
             "filename": "测试.ssfbp",
-            "mode": "download",
         })
         assert j["mode"] == "download"
         raw = base64.b64decode(j["dataBase64"])
         assert pj.parse_project_file(raw)["state"]
-        print("[OK] 项目文件生成（浏览器下载模式）")
+        print("[OK] 项目文件生成（浏览器下载）")
 
         s, j = upload_project_bytes(raw)
         assert s == 200 and j["document"]["project"]["width"] == 2
         assert j["document"]["viewport"]["zoom"] == 1.25
         print("[OK] 项目文件上传打开")
-
-        project_path = os.path.join(tmp, "local.ssfbp")
-        with open(project_path, "wb") as fh:
-            fh.write(raw)
-        s, j = req("POST", "/api/project/open-path", {"path": project_path})
-        assert s == 200 and j["document"]["project"]["height"] == 2
-        print("[OK] 项目文件路径打开")
 
         s, j = req("DELETE", "/api/configs/" + urllib.parse.quote(cfg_name))
         assert j["ok"]

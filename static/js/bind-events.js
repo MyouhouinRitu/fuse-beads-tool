@@ -17,6 +17,7 @@ import {
   ZOOM_BUTTON_FACTOR,
 } from './constants.js';
 import * as crop from './crop.js';
+import { confirmDialog, promptDialog } from './dialog.js';
 import * as drag from './drag.js';
 import { els } from './els.js';
 import * as exportDialog from './export-dialog.js';
@@ -47,6 +48,7 @@ function renderTargetPixelOptions() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'dropdown-item';
+    btn.setAttribute('role', 'menuitem');
     btn.dataset.value = String(p.value);
     btn.title = p.tip;
     btn.textContent = String(p.value);
@@ -74,6 +76,10 @@ export function bindEvents() {
     // 再冒泡到 document 的「点击关闭菜单」处理器，导致菜单刚展开就被收起
     if (e.preventDefault) e.preventDefault();
     els.targetPixelsMenu.classList.toggle('hidden');
+    els.targetPixelsBtn.setAttribute(
+      'aria-expanded',
+      String(!els.targetPixelsMenu.classList.contains('hidden')),
+    );
   });
 
   els.btnLogin.addEventListener('click', auth.tryLogin);
@@ -94,7 +100,7 @@ export function bindEvents() {
     const f = els.projectFileInput.files[0];
     els.projectFileInput.value = '';
     if (!f) return;
-    if (App.projectDirty && !confirm('当前项目有未保存的更改，打开新项目将覆盖。是否继续？'))
+    if (App.projectDirty && !confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？'))
       return;
     try {
       const res = await api.openProjectUpload(f);
@@ -105,7 +111,7 @@ export function bindEvents() {
   });
   els.btnSaveProject.addEventListener('click', saveProjectFile);
   els.btnImport.addEventListener('click', () => {
-    if (App.projectDirty && !confirm('当前项目有未保存的更改，导入新图片将覆盖。是否继续？'))
+    if (App.projectDirty && !confirmDialog('当前项目有未保存的更改，导入新图片将覆盖。是否继续？'))
       return;
     els.fileInput.click();
   });
@@ -130,7 +136,7 @@ export function bindEvents() {
   });
   els.chkCodes.addEventListener('change', () => {
     App.settings.showCodes = els.chkCodes.checked;
-    canvas.redrawCanvas();
+    canvas.rebuildCanvas();
     setProjectDirty(true);
     scheduleAutosave();
   });
@@ -162,7 +168,7 @@ export function bindEvents() {
   });
   els.emptyStyle.addEventListener('change', () => {
     App.settings.emptyStyle = els.emptyStyle.value;
-    canvas.redrawCanvas();
+    canvas.rebuildCanvas();
     setProjectDirty(true);
     scheduleAutosave();
   });
@@ -190,13 +196,16 @@ export function bindEvents() {
   els.btnFixMenu.addEventListener('click', (e) => {
     if (e.stopPropagation) e.stopPropagation();
     els.fixMenu.classList.toggle('hidden');
+    els.btnFixMenu.setAttribute('aria-expanded', String(!els.fixMenu.classList.contains('hidden')));
   });
   els.fixItemGesture.addEventListener('click', () => {
     els.fixMenu.classList.add('hidden');
+    els.btnFixMenu.setAttribute('aria-expanded', 'false');
     markdown.openFixDoc('right-drag-gesture-fix');
   });
   els.fixItemShortcuts.addEventListener('click', () => {
     els.fixMenu.classList.add('hidden');
+    els.btnFixMenu.setAttribute('aria-expanded', 'false');
     markdown.openFixDoc('shortcuts');
   });
   els.docClose.addEventListener('click', markdown.closeFixDoc);
@@ -204,6 +213,8 @@ export function bindEvents() {
   document.addEventListener('click', () => {
     els.fixMenu.classList.add('hidden');
     els.targetPixelsMenu.classList.add('hidden');
+    els.btnFixMenu.setAttribute('aria-expanded', 'false');
+    els.targetPixelsBtn.setAttribute('aria-expanded', 'false');
   });
 
   els.configSelect.addEventListener('change', () => {
@@ -214,7 +225,7 @@ export function bindEvents() {
     }
   });
   els.btnNewConfig.addEventListener('click', async () => {
-    const name = prompt('新配置名称：');
+    const name = promptDialog('新配置名称：');
     if (!name) return;
     const colors = App.palette.length
       ? App.palette.map((c) => ({ ...c }))
@@ -251,7 +262,7 @@ export function bindEvents() {
   });
   els.btnRenameConfig.addEventListener('click', async () => {
     if (!App.configName) return;
-    const newName = prompt('新的配置名称：', App.configName);
+    const newName = promptDialog('新的配置名称：', App.configName);
     if (!newName || newName === App.configName) return;
     try {
       await api.renameConfig(App.configName, newName);
@@ -268,7 +279,7 @@ export function bindEvents() {
       toast('至少保留一个配置');
       return;
     }
-    if (!confirm(`确定删除配置「${App.configName}」吗？`)) return;
+    if (!confirmDialog(`确定删除配置「${App.configName}」吗？`)) return;
     try {
       await api.deleteConfig(App.configName);
       const remaining = App.configs.filter((c) => c.name !== App.configName);
@@ -360,6 +371,9 @@ export function bindEvents() {
   });
 
   els.canvasScroll.addEventListener('mousedown', drag.onCanvasScrollMouseDown);
+  els.canvasScroll.addEventListener('pointerdown', drag.onCanvasPointerDown);
+  els.canvasScroll.addEventListener('pointermove', drag.onCanvasPointerMove);
+  els.canvasScroll.addEventListener('pointerup', drag.onCanvasPointerUp);
   window.addEventListener('mousemove', drag.onWindowMouseMove);
   window.addEventListener('mouseup', drag.onWindowMouseUp);
   els.canvasScroll.addEventListener('mouseleave', drag.onCanvasScrollMouseLeave);

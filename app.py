@@ -35,13 +35,12 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 CONFIG_DIR = os.path.join(DATA_DIR, "configs")
 ORIGINAL_DIR = os.path.join(DATA_DIR, "originals")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
-PROJECT_PATH_FILE = os.path.join(DATA_DIR, "project_path.txt")
 DEFAULT_CONFIG_NAME = "mard-221-alfonse-doudou"
 
 # ---------------- 常量配置 ----------------
 DEFAULT_PORT = 5000
 WAITRESS_THREADS = 8
-DEFAULT_TARGET_PIXELS = 5000  # 与 static/js/constants.js DEFAULT_TARGET_PIXELS 保持一致
+DEFAULT_TARGET_PIXELS = 4000  # 与 static/js/constants.js DEFAULT_TARGET_PIXELS 保持一致
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024  # 上传体积上限（字节）
 
 # 运行时配置：由 create_app() 初始化（便于测试注入临时数据目录）
@@ -49,7 +48,6 @@ DATA_DIR: str | None = None
 CONFIG_DIR: str | None = None
 ORIGINAL_DIR: str | None = None
 STATE_FILE: str | None = None
-PROJECT_PATH_FILE: str | None = None
 APP_TOKEN = ""
 APP_SECRET = ""
 
@@ -59,7 +57,7 @@ INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')  # Windows 非法�
 ORIGINAL_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # Token 认证（NAS 部署用）：未设置 APP_TOKEN 时保持本地开发直连
-PUBLIC_API = {"/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/app-info"}
+PUBLIC_API = {"/api/auth/login", "/api/auth/logout", "/api/auth/status"}
 
 bp = Blueprint("main", __name__)
 
@@ -98,13 +96,6 @@ def api_auth_status():
     return jsonify({"authenticated": authenticated, "requiresAuth": bool(APP_TOKEN)})
 
 
-@bp.get("/api/app-info")
-def api_app_info():
-    return jsonify({
-        "nativeDialogs": sys.platform == "win32" and not desktop.in_container(),
-    })
-
-
 def safe_name(name: str | None, fallback: str = "未命名") -> str:
     cleaned = INVALID_FILENAME_CHARS.sub("_", str(name or "").strip())[:60]
     cleaned = cleaned.rstrip(". ")  # Windows 文件名不允许以点或空格结尾
@@ -119,36 +110,6 @@ def original_path(original_id: str) -> str | None:
     if not ORIGINAL_ID_RE.match(original_id or ""):
         return None
     return os.path.join(ORIGINAL_DIR, original_id)
-
-
-def current_project_path() -> str | None:
-    if not PROJECT_PATH_FILE or not os.path.exists(PROJECT_PATH_FILE):
-        return None
-    try:
-        with open(PROJECT_PATH_FILE, "r", encoding="utf-8") as fh:
-            path = fh.read().strip()
-        return path or None
-    except Exception:
-        return None
-
-
-def set_current_project_path(path: str | None) -> None:
-    if not PROJECT_PATH_FILE:
-        return
-    os.makedirs(os.path.dirname(PROJECT_PATH_FILE), exist_ok=True)
-    if path:
-        with open(PROJECT_PATH_FILE, "w", encoding="utf-8") as fh:
-            fh.write(path)
-    elif os.path.exists(PROJECT_PATH_FILE):
-        os.remove(PROJECT_PATH_FILE)
-
-
-def write_project_file_atomic(path: str, data: bytes) -> None:
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-    os.replace(tmp, path)
 
 
 def load_project_document(data: bytes) -> dict:
@@ -396,32 +357,6 @@ def api_original_delete(original_id: str):
     return jsonify({"ok": True})
 
 
-@bp.post("/api/project/pick-open")
-def api_project_pick_open():
-    if sys.platform != "win32":
-        return jsonify({"ok": False, "unsupported": True})
-    path, ok = pj.show_open_dialog_result()
-    if not ok:
-        return jsonify({"ok": False, "error": "无法打开系统文件对话框"})
-    if not path:
-        return jsonify({"ok": False, "cancelled": True})
-    return jsonify({"ok": True, "path": path})
-
-
-@bp.post("/api/project/open-path")
-def api_project_open_path():
-    path = (request.get_json(force=True) or {}).get("path")
-    if not path or not os.path.exists(path):
-        return err("项目文件不存在", 404)
-    try:
-        with open(path, "rb") as fh:
-            doc = load_project_document(fh.read())
-    except (ValueError, OSError, json.JSONDecodeError) as e:
-        return err("打开项目失败：" + str(e))
-    set_current_project_path(path)
-    return jsonify({"ok": True, "document": doc, "path": path})
-
-
 @bp.post("/api/project/open-upload")
 def api_project_open_upload():
     f = request.files.get("file")
@@ -431,7 +366,6 @@ def api_project_open_upload():
         doc = load_project_document(f.read())
     except (ValueError, OSError, json.JSONDecodeError) as e:
         return err("打开项目失败：" + str(e))
-    set_current_project_path(None)
     return jsonify({"ok": True, "document": doc})
 
 
@@ -463,31 +397,6 @@ def api_project_save():
     if orig_raw:
         sections["original"] = orig_raw
     file_bytes = pj.build_project_file(sections)
-
-    if data.get("mode") == "download":
-        return jsonify({
-            "ok": True,
-            "mode": "download",
-            "filename": filename,
-            "dataBase64": base64.b64encode(file_bytes).decode("ascii"),
-        })
-
-    if sys.platform == "win32":
-        path = current_project_path()
-        if not path:
-            path, ok = pj.show_save_dialog_result(filename)
-            if not ok:
-                return jsonify({
-                    "ok": True,
-                    "mode": "download",
-                    "filename": filename,
-                    "dataBase64": base64.b64encode(file_bytes).decode("ascii"),
-                })
-            if not path:
-                return jsonify({"ok": False, "cancelled": True})
-        write_project_file_atomic(path, file_bytes)
-        set_current_project_path(path)
-        return jsonify({"ok": True, "mode": "saved", "path": path})
 
     return jsonify({
         "ok": True,
@@ -608,14 +517,13 @@ def api_state_put():
 
 def create_app(data_dir: str | None = None) -> Flask:
     """创建 Flask 应用（工厂模式）：可注入数据目录，便于测试隔离。"""
-    global DATA_DIR, CONFIG_DIR, ORIGINAL_DIR, STATE_FILE, PROJECT_PATH_FILE, APP_TOKEN, APP_SECRET
+    global DATA_DIR, CONFIG_DIR, ORIGINAL_DIR, STATE_FILE, APP_TOKEN, APP_SECRET
 
     # 测试等场景可通过 DATA_DIR 环境变量隔离数据目录，避免污染真实数据
     DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(BASE_DIR, "data")
     CONFIG_DIR = os.path.join(DATA_DIR, "configs")
     ORIGINAL_DIR = os.path.join(DATA_DIR, "originals")
     STATE_FILE = os.path.join(DATA_DIR, "state.json")
-    PROJECT_PATH_FILE = os.path.join(DATA_DIR, "project_path.txt")
     APP_TOKEN = os.environ.get("APP_TOKEN", "").strip()
     APP_SECRET = os.environ.get("APP_SECRET", "").strip() or (APP_TOKEN or secrets.token_hex(16))
 
@@ -687,7 +595,7 @@ def main() -> None:
                 pass  # 数据目录不可写时仅跳过日志，服务照常启动
         serve(app, host=host, port=port, threads=WAITRESS_THREADS)
     else:
-        app.run(host=host, port=port, debug=False)
+        app.run(host=host, port=port, debug=False, threaded=True)
 
 
 if __name__ == "__main__":

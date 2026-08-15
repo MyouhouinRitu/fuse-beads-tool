@@ -11,15 +11,12 @@
 
 import { buildProjectDocument } from './autosave.js';
 import { paintCell, paintStamp } from './brush.js';
-import * as canvas from './canvas.js';
 import { updateBrush } from './color-list.js';
 import * as crop from './crop.js';
 import { updateCropMagnifier } from './crop-magnifier.js';
 import * as exportDialog from './export-dialog.js';
 import * as historyUI from './history-ui.js';
 import { interactionState } from './interaction.js';
-import * as markdown from './markdown.js';
-import * as quickPicker from './quick-picker.js';
 import { drawPattern } from './render.js';
 import { App, dragState } from './state.js';
 import * as theme from './theme.js';
@@ -28,7 +25,7 @@ import * as historyActions from './undo-redo.js';
 import { getToastQueue } from './utils.js';
 import * as view from './view.js';
 
-export function installTestHooks({ renderAll, applySlider, restoreState }) {
+export function installTestHooks({ renderFull, applySlider, restoreState }) {
   const expose =
     (typeof window !== 'undefined' && window.__FUSE_TEST__ === true) ||
     (typeof location !== 'undefined' && new URLSearchParams(location.search).has('test'));
@@ -40,18 +37,14 @@ export function installTestHooks({ renderAll, applySlider, restoreState }) {
 
   // 自动化测试用：暴露需要直接驱动的内部函数
   window.__testHooks = {
-    renderAll,
-    redrawCanvas: canvas.redrawCanvas,
+    renderAll: renderFull,
     drawPattern,
     setTool: toolState.setTool,
     updateBrush,
     paintCell,
     paintStamp,
-    applyQuickColor: quickPicker.applyQuickColor,
     doUndo: historyActions.doUndo,
     doRedo: historyActions.doRedo,
-    openFixDoc: markdown.openFixDoc,
-    closeFixDoc: markdown.closeFixDoc,
     toggleTheme: theme.toggleTheme,
     recordCropStep: crop.recordCropStep,
     moveCropEdgeTo: crop.moveCropEdgeTo,
@@ -62,13 +55,10 @@ export function installTestHooks({ renderAll, applySlider, restoreState }) {
     updateCropMagnifier,
     applySlider,
     saveTransaction: historyUI.saveTransaction,
-    switchHistoryItem: historyUI.switchHistoryItem,
     deleteHistoryItem: historyUI.deleteHistoryItem,
-    clearAll: historyUI.clearAll,
     restoreState,
     renderHistoryUI: historyUI.renderHistoryUI,
     openExportDialog: exportDialog.openExportDialog,
-    renderExportPreview: exportDialog.renderExportPreview,
     mirrorBeadToOrig: view.mirrorBeadToOrig,
     mirrorOrigToBead: view.mirrorOrigToBead,
     getToastQueue,

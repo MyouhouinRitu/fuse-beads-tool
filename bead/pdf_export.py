@@ -173,8 +173,9 @@ def _render_page(
     col: int = 1,
     row: int = 1,
     dpi: int = DPI,
+    force_portrait: bool = False,
 ) -> Image.Image:
-    landscape = width > height
+    landscape = not force_portrait and width > height
     page_w_mm, page_h_mm = (max(paper_mm), min(paper_mm)) if landscape else (min(paper_mm), max(paper_mm))
     page_w = _px(page_w_mm, dpi)
     page_h = _px(page_h_mm, dpi)
@@ -252,7 +253,19 @@ def _render_multi_a4(
 ) -> list[tuple[str | None, Image.Image]]:
     pages = [(
         "总",
-        _render_page(width, height, grid, palette_map, codes, legend, options, "总", A4_MM, dpi=dpi),
+        _render_page(
+            width,
+            height,
+            grid,
+            palette_map,
+            codes,
+            legend,
+            options,
+            "总",
+            A4_MM,
+            dpi=dpi,
+            force_portrait=True,
+        ),
     )]
     tiles = page_tiles(width, height)
     split_needed = width > SPLIT_WIDTH_THRESHOLD or height > SPLIT_HEIGHT_THRESHOLD
@@ -280,6 +293,7 @@ def _render_multi_a4(
             col=tile["col"],
             row=tile["row"],
             dpi=dpi,
+            force_portrait=True,
         )))
     return pages
 

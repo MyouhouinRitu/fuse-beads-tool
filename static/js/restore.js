@@ -20,7 +20,7 @@ import { sanitizeHistory, sanitizeUndoStack } from './history.js';
 import * as historyUI from './history-ui.js';
 import { interactionState } from './interaction.js';
 import * as palette from './palette.js';
-import { renderAllNow } from './render-queue.js';
+import { renderFullNow } from './render-queue.js';
 import { App, setDirty, setProjectDirty } from './state.js';
 import * as toolState from './tool-state.js';
 import { clampInt, fileNameStem, toast } from './utils.js';
@@ -232,7 +232,7 @@ export async function restoreState() {
   setDirty(App.dirty);
   App.projectDirty = !!st.projectDirty && !!App.project;
 
-  renderAllNow();
+  renderFullNow();
   if (App.project) {
     if (!restoreViewport(st.viewport)) view.fitViewportToCanvas();
   }
@@ -291,7 +291,7 @@ export async function applyProjectDocument(doc, path = null) {
 
   setDirty(false);
   setProjectDirty(false);
-  renderAllNow();
+  renderFullNow();
   if (!restoreViewport(doc.viewport)) view.fitViewportToCanvas();
   toolState.setTool(TOOLS.SELECT);
 

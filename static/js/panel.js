@@ -76,6 +76,14 @@ export function setPanelCollapsed(id, collapsed) {
 function animatePanCompensation(delta) {
   const panTo = App.pan.x + delta;
   const origTo = App.originalImage ? App.origPan.x + delta : null;
+  // 减少动态效果偏好：直接跳到目标位置
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+    App.pan.x = panTo;
+    if (origTo != null) App.origPan.x = origTo;
+    applyTransform();
+    applyOriginalTransform();
+    return;
+  }
   const panFrom = App.pan.x;
   const origFrom = App.originalImage ? App.origPan.x : null;
   const start = performance.now();

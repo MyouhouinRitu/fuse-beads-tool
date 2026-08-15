@@ -13,6 +13,7 @@ import {
 } from './constants.js';
 import { els } from './els.js';
 import { interactionState } from './interaction.js';
+import { gridRevision } from './mutations.js';
 import { closeQuickPicker } from './quick-picker.js';
 import { canvasMetrics, clearCanvas, drawPatternBase, drawPatternOverlay } from './render.js';
 import { App, dragState, setDirty } from './state.js';
@@ -30,6 +31,7 @@ let lastDisplay = null; // 底图对应的显示数据，覆盖层复用避免�
 let baseDetailKey = null; // 底图细节层级（细线/色号、粗线是否隐藏），跨阈值时重建底图
 let screenCellCache = { key: null, value: null };
 let renderSelectionCache = { sel: null, drag: null, value: null };
+let displayCache = { grid: null, paletteKey: null, revision: -1, value: null };
 
 export function clearWorkspace() {
   clearCanvas(ctx);
@@ -56,6 +58,8 @@ export function buildDisplayData() {
   const n = width * height;
   const idx = new Int16Array(n);
   const rgb = new Uint32Array(n);
+  // 调色板 RGB 预计算：避免每个格子都重新解析 hex 字符串
+  const paletteRgb = App.appliedPalette.map((c) => (c ? C.hexToRgb(c.hex) : null));
   for (let p = 0; p < n; p++) {
     const v = grid[p];
     if (v < 0) {
@@ -63,10 +67,28 @@ export function buildDisplayData() {
       continue;
     }
     idx[p] = v;
-    const c = App.appliedPalette[v] ? C.hexToRgb(App.appliedPalette[v].hex) : [255, 255, 255];
+    const c = paletteRgb[v] || [255, 255, 255];
     rgb[p] = C.packRgb(c);
   }
   return { idx, rgb };
+}
+
+// 显示数据缓存：网格引用 + 修订号 + 调色板引用都未变时复用，
+// 避免裁剪放大镜逐帧 mousemove / 设置变化重建底图时反复全量扫描
+export function getDisplayData() {
+  const { grid } = App.project;
+  const palette = App.appliedPalette;
+  const paletteKey = palette.map((c) => (c ? c.hex : '')).join(',');
+  if (
+    displayCache.grid === grid &&
+    displayCache.paletteKey === paletteKey &&
+    displayCache.revision === gridRevision
+  ) {
+    return displayCache.value;
+  }
+  const value = buildDisplayData();
+  displayCache = { grid, paletteKey, revision: gridRevision, value };
+  return value;
 }
 
 export function buildLegend(counts) {
@@ -128,7 +150,7 @@ export function syncBaseLayerDetail() {
   const key = baseDetailFlags();
   if (baseDetailKey !== null && baseDetailKey !== key) {
     renderBaseLayer();
-    composeCanvas();
+    renderCanvas();
   }
   baseDetailKey = key;
 }
@@ -156,7 +178,7 @@ function buildRenderSelection() {
 }
 
 // 把底图 + 覆盖层（选区/高亮/hover/九宫格目标格）合成到主画布
-export function composeCanvas() {
+export function renderCanvas() {
   const project = App.project;
   if (!project) return;
   if (!lastDisplay) renderBaseLayer();
@@ -202,11 +224,11 @@ export function composeCanvas() {
   applyTransform();
 }
 
-export function redrawCanvas() {
+export function rebuildCanvas() {
   const project = App.project;
   if (!project) return;
   renderBaseLayer();
-  composeCanvas();
+  renderCanvas();
 }
 
 // 颜色清单高亮闪烁：高亮时按周期隐现，反色不明显也能看清选中色号
@@ -222,7 +244,7 @@ export function syncHighlightBlink() {
   if (App.highlightTimer) return;
   App.highlightTimer = setInterval(() => {
     interactionState.highlightBlink = !interactionState.highlightBlink;
-    composeCanvas();
+    renderCanvas();
   }, HIGHLIGHT_BLINK_MS);
 }
 

@@ -2,6 +2,7 @@
 
 import * as api from './api.js';
 import { els } from './els.js';
+import { closeDialog, openDialog } from './focus.js';
 
 let authResolve = null;
 
@@ -26,6 +27,7 @@ export async function tryLogin() {
   els.loginToken.value = '';
   els.loginMask.classList.add('hidden');
   els.btnLogout.classList.remove('hidden');
+  closeDialog();
   const resolve = authResolve;
   authResolve = null;
   if (resolve) resolve();
@@ -45,6 +47,7 @@ export async function ensureAuth() {
   return new Promise((resolve) => {
     authResolve = resolve;
     els.loginMask.classList.remove('hidden');
+    openDialog(els.loginMask);
     els.loginToken.focus();
   });
 }

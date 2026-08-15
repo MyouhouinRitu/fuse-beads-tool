@@ -5,6 +5,7 @@ import {
   CELL,
   CROP_EDGE_ACTIVE_COLOR,
   CROP_EDGE_COLOR,
+  CROP_MASK_RGBA,
   HIGHLIGHT_FRAME_DARK,
   HIGHLIGHT_FRAME_LIGHT,
   HIGHLIGHT_MIN_SCREEN_STROKE,
@@ -25,6 +26,18 @@ import {
   findConnectedComponents,
 } from './render-base.js';
 import { drawHover, drawRaisedRect } from './render-hover.js';
+
+// 覆盖层连通分组缓存：选区按集合引用、高亮按显示数据引用 + 色号，
+// 避免每次 overlay 重绘都对全图重新扫描
+let selectionComponentsCache = { sel: null, width: 0, height: 0, value: null };
+let highlightComponentsCache = {
+  display: null,
+  color: null,
+  width: 0,
+  height: 0,
+  components: null,
+  runs: null,
+};
 
 // 收集连通块外边界边（画布坐标 + 所属格索引），供选区虚线 / 色号高亮描边复用
 function collectComponentEdges(comp, width, height, originX, originY, cell) {
@@ -54,6 +67,22 @@ function strokeEdges(ctx, edges) {
   ctx.stroke();
 }
 
+// 把连通块按行合并成连续段，供高亮覆盖层批量绘制（减少逐格 fillRect）
+function componentWashRuns(comp, width) {
+  const set = new Set(comp);
+  const runs = [];
+  for (const p of comp) {
+    const x = p % width;
+    const y = (p / width) | 0;
+    if (x === 0 || !set.has(p - 1)) {
+      let x1 = x;
+      while (x1 + 1 < width && set.has(y * width + x1 + 1)) x1++;
+      runs.push({ x, y, w: x1 - x + 1 });
+    }
+  }
+  return runs;
+}
+
 // 选区显示：与鼠标悬停一致的黑白虚线，连通区域（四方向）合并为整块外轮廓
 function drawSelection(ctx, selected, width, height, originX, originY, cell, zoom) {
   if (!selected?.size) return;
@@ -65,7 +94,19 @@ function drawSelection(ctx, selected, width, height, originX, originY, cell, zoo
     Math.round(cell * HOVER_DASH_RATIO),
     Math.ceil(SELECTION_MIN_SCREEN_DASH / z),
   );
-  const components = findConnectedComponents(width, height, (p) => selected.has(p));
+  if (
+    selectionComponentsCache.sel !== selected ||
+    selectionComponentsCache.width !== width ||
+    selectionComponentsCache.height !== height
+  ) {
+    selectionComponentsCache = {
+      sel: selected,
+      width,
+      height,
+      value: findConnectedComponents(width, height, (p) => selected.has(p)),
+    };
+  }
+  const components = selectionComponentsCache.value;
   const edgeSets = components.map((comp) =>
     collectComponentEdges(comp, width, height, originX, originY, cell),
   );
@@ -158,7 +199,7 @@ function drawCropOverlay(ctx, crop, activeEdge, cell, ox, oy, zoom, preview, wid
   const rx1 = ox + (crop.x1 + 1) * cell;
   const ry1 = oy + (crop.y1 + 1) * cell;
   ctx.save();
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.fillStyle = CROP_MASK_RGBA;
   // 蒙版分 8 块绘制、互不重合：上/下带横跨图案区（不含画布四角）；
   // 左/右带分三段——裁剪框上下沿之间整条盖满，之外只盖行列号条。
   // 这样四个斜向区域不会重复压暗，四角保持透明避免与压暗后的工作区背景叠成两层
@@ -202,27 +243,37 @@ export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, o
       HIGHLIGHT_MIN_SCREEN_STROKE,
     );
     // 按四方向连通性分组：相连的同色像素作为一个整块
-    const components = findConnectedComponents(
-      width,
-      height,
-      (p) => displayIdx[p] === opts.highlightColor,
-    );
-    for (const comp of components) {
-      // 半透明覆盖层（逐格）：暗色格子提亮、亮色格子压暗，任何颜色都有反差
-      for (const p of comp) {
-        const x = p % width;
-        const y = (p / width) | 0;
-        const light = isLightColor(rgbFromPacked(displayRgb[p]));
-        const x0 = ox + x * cell;
-        const y0 = oy + y * cell;
-        ctx.fillStyle = light
-          ? `rgba(0, 0, 0, ${HIGHLIGHT_WASH_LIGHT})`
-          : `rgba(255, 255, 255, ${HIGHLIGHT_WASH_DARK})`;
-        ctx.fillRect(x0, y0, cell, cell);
-      }
+    if (
+      highlightComponentsCache.display !== displayIdx ||
+      highlightComponentsCache.color !== opts.highlightColor ||
+      highlightComponentsCache.width !== width ||
+      highlightComponentsCache.height !== height
+    ) {
+      const components = findConnectedComponents(
+        width,
+        height,
+        (p) => displayIdx[p] === opts.highlightColor,
+      );
+      highlightComponentsCache = {
+        display: displayIdx,
+        color: opts.highlightColor,
+        width,
+        height,
+        components,
+        runs: components.flatMap((comp) => componentWashRuns(comp, width)),
+      };
+    }
+    // 半透明覆盖层：按行合并后的连续段批量绘制，避免大色块逐格 fillRect
+    for (const run of highlightComponentsCache.runs) {
+      const p = run.y * width + run.x;
+      const light = isLightColor(rgbFromPacked(displayRgb[p]));
+      ctx.fillStyle = light
+        ? `rgba(0, 0, 0, ${HIGHLIGHT_WASH_LIGHT})`
+        : `rgba(255, 255, 255, ${HIGHLIGHT_WASH_DARK})`;
+      ctx.fillRect(ox + run.x * cell, oy + run.y * cell, run.w * cell, cell);
     }
     // 外轮廓：整块只描一次边界，内部不再逐格描边
-    for (const comp of components) {
+    for (const comp of highlightComponentsCache.components) {
       drawHighlightOutline(ctx, comp, width, height, displayIdx, displayRgb, ox, oy, cell, hlw);
     }
   }

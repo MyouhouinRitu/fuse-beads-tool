@@ -8,7 +8,7 @@ import { els } from './els.js';
 import { createTransaction, recordStructuralStep } from './history.js';
 import { renderHistoryUI } from './history-ui.js';
 import { interactionState } from './interaction.js';
-import { renderAllNow, scheduleCanvasRender } from './render-queue.js';
+import { renderFullNow, scheduleCanvasRender } from './render-queue.js';
 import { App, dragState, setDirty } from './state.js';
 import { setTool } from './tool-state.js';
 import { clampInt, hideCropMagnifier, toast } from './utils.js';
@@ -20,16 +20,16 @@ export function recordCropStep(before, after) {
 }
 
 // 事件坐标 → 画布内连续格坐标（horizontal=true 取横向 x，否则取纵向 y）
-function cropPosFromEvent(e, horizontal) {
-  const p = eventToCanvasPos(e);
+function cropPosFromEvent(e, horizontal, rect) {
+  const p = eventToCanvasPos(e, rect);
   return (horizontal ? p.x : p.y) / App.screenCell - CANVAS_EDGE_CELLS;
 }
 
 // 命中检测：鼠标是否靠近某条边（屏幕像素阈值内）
-function cropEdgeAt(e) {
+function cropEdgeAt(e, rect) {
   if (!App.project || !interactionState.crop) return null;
-  const scale = canvasScale();
-  const { x: px, y: py } = eventToCanvasPos(e);
+  const scale = canvasScale(rect);
+  const { x: px, y: py } = eventToCanvasPos(e, rect);
   const cell = App.screenCell;
   const ox = CANVAS_EDGE_CELLS * cell;
   const c = interactionState.crop;
@@ -71,26 +71,26 @@ export function moveCropEdgeTo(edge, pos) {
 }
 
 // 已选中一条边时，把点击位置换算成与之平行的格线索引
-function cropLineFromEvent(e) {
+function cropLineFromEvent(e, rect) {
   if (!interactionState.cropActiveEdge) return null;
   const horizontal =
     interactionState.cropActiveEdge === 'left' || interactionState.cropActiveEdge === 'right';
-  return Math.round(cropPosFromEvent(e, horizontal));
+  return Math.round(cropPosFromEvent(e, horizontal, rect));
 }
 
 // 是否在图案 + 行列号条区域内（此范围内可选中/拖拽红边；再往外才算「图片之外」）
-function isInCropArea(e) {
+function isInCropArea(e, rect) {
   if (!App.project) return false;
-  const { x: px, y: py } = eventToCanvasPos(e);
+  const { x: px, y: py } = eventToCanvasPos(e, rect);
   const cell = App.screenCell;
   const totalW = (App.project.width + 2 * CANVAS_EDGE_CELLS) * cell;
   const totalH = (App.project.height + 2 * CANVAS_EDGE_CELLS) * cell;
   return px >= -2 && py >= -2 && px <= totalW + 2 && py <= totalH + 2;
 }
 
-export function handleCropMouseDown(e) {
+export function handleCropMouseDown(e, rect) {
   if (!App.project || !interactionState.crop) return;
-  if (!isInCropArea(e)) {
+  if (!isInCropArea(e, rect)) {
     // 图片之外：取消当前边选择，不修改位置
     if (interactionState.cropActiveEdge != null) {
       interactionState.cropActiveEdge = null;
@@ -100,7 +100,7 @@ export function handleCropMouseDown(e) {
     return;
   }
   // 1) 点中某条边：选中并进入拖拽
-  const edge = cropEdgeAt(e);
+  const edge = cropEdgeAt(e, rect);
   if (edge) {
     interactionState.cropActiveEdge = edge;
     dragState.cropEdge = edge; // 进入拖拽状态：mousemove 时移动该边
@@ -110,7 +110,7 @@ export function handleCropMouseDown(e) {
   }
   // 2) 已选中边：点击平行格线 → 移动该边
   if (interactionState.cropActiveEdge) {
-    const line = cropLineFromEvent(e);
+    const line = cropLineFromEvent(e, rect);
     if (line != null) moveCropEdgeTo(interactionState.cropActiveEdge, line);
     return;
   }
@@ -118,15 +118,15 @@ export function handleCropMouseDown(e) {
 }
 
 // 拖拽移动选中的边
-export function updateCropEdgeDrag(e) {
+export function updateCropEdgeDrag(e, rect) {
   const edge = dragState.cropEdge;
   if (!edge || !interactionState.crop) return;
   const horizontal = edge === 'left' || edge === 'right';
-  moveCropEdgeTo(edge, cropPosFromEvent(e, horizontal));
+  moveCropEdgeTo(edge, cropPosFromEvent(e, horizontal, rect));
 }
 
 // 裁剪模式鼠标：边命中或已选中边时显示调整光标（上下/左右双箭头）
-export function updateCropCursor(e) {
+export function updateCropCursor(e, rect) {
   if (App.tool !== TOOLS.CROP || !App.project || !interactionState.crop) {
     els.canvas.style.cursor = '';
     return;
@@ -136,7 +136,7 @@ export function updateCropCursor(e) {
       dragState.cropEdge === 'left' || dragState.cropEdge === 'right' ? 'ew-resize' : 'ns-resize';
     return;
   }
-  const edge = cropEdgeAt(e) || interactionState.cropActiveEdge;
+  const edge = cropEdgeAt(e, rect) || interactionState.cropActiveEdge;
   els.canvas.style.cursor = edge
     ? edge === 'left' || edge === 'right'
       ? 'ew-resize'
@@ -145,18 +145,18 @@ export function updateCropCursor(e) {
 }
 
 // 裁剪预览：选中边且鼠标在图案内时，记录该边将移动到的平行格线（红虚线预览）
-export function updateCropPreview(e) {
+export function updateCropPreview(e, rect) {
   const active =
     App.tool === TOOLS.CROP &&
     App.project &&
     interactionState.crop &&
     interactionState.cropActiveEdge &&
     !dragState.cropEdge &&
-    isInCropArea(e);
+    isInCropArea(e, rect);
   if (!active) return; // 图片之外：保留当前预览位置，不更新也不清除
   const horizontal =
     interactionState.cropActiveEdge === 'left' || interactionState.cropActiveEdge === 'right';
-  const pos = Math.round(cropPosFromEvent(e, horizontal));
+  const pos = Math.round(cropPosFromEvent(e, horizontal, rect));
   const maxPos = horizontal ? App.project.width : App.project.height;
   const clamped = clampInt(pos, 0, maxPos);
   if (
@@ -250,7 +250,7 @@ export function applyCrop() {
   setTool(TOOLS.SELECT);
   setDirty(true);
   renderHistoryUI();
-  renderAllNow();
+  renderFullNow();
   fitViewportToCanvas();
   scheduleAutosave();
   toast(`已裁剪为 ${w} × ${h}`);

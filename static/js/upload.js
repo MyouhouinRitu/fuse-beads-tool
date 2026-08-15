@@ -4,9 +4,10 @@ import * as api from './api.js';
 import { scheduleAutosave } from './autosave.js';
 import { resetProjectEditingState } from './canvas.js';
 import * as C from './colors.js';
+import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import { confirmClearRecords } from './history-ui.js';
-import { renderAllNow } from './render-queue.js';
+import { renderFullNow } from './render-queue.js';
 import { App, setProjectDirty } from './state.js';
 import { getTargetPixels, toast } from './utils.js';
 import { fitViewportToCanvas } from './view.js';
@@ -72,7 +73,7 @@ function applyMapping() {
   App.maxColors = Math.max(2, C.countUsedColors(grid, width, height));
   App.sliderN = null;
   App.editedSinceSlider = false;
-  renderAllNow();
+  renderFullNow();
   if (isNew) fitViewportToCanvas();
   scheduleAutosave();
 }
@@ -83,7 +84,8 @@ export async function recompress() {
     return;
   }
   if (App.project && App.dirty) {
-    if (!confirm('重新压缩将按新设置重新生成图案，并丢弃画布上的手动修改。是否继续？')) return;
+    if (!confirmDialog('重新压缩将按新设置重新生成图案，并丢弃画布上的手动修改。是否继续？'))
+      return;
   }
   if (!confirmClearRecords('重新压缩将清空全部事务历史与撤销记录。是否继续？')) return;
   await processUpload();

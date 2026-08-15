@@ -38,7 +38,7 @@ for (let y = 0; y < H; y++) {
   }
 }
 
-const server = spawn('python', ['app.py', '--port', String(PORT)], {
+const server = spawn(process.env.PYTHON || 'python', ['app.py', '--port', String(PORT)], {
   cwd: ROOT,
   env: { ...process.env, DATA_DIR: TMP },
   stdio: 'ignore',
@@ -63,7 +63,7 @@ async function waitReady(url, tries = 60) {
 }
 
 function runPython(script, args = []) {
-  return execFileSync('python', ['-c', script, ...args], {
+  return execFileSync(process.env.PYTHON || 'python', ['-c', script, ...args], {
     cwd: ROOT,
     maxBuffer: 64 * 1024 * 1024,
     timeout: 30000,

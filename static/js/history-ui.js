@@ -4,6 +4,7 @@ import * as api from './api.js';
 import { scheduleAutosave } from './autosave.js';
 import { resetProjectEditingState } from './canvas.js';
 import * as C from './colors.js';
+import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
 import {
@@ -15,7 +16,7 @@ import {
 } from './history.js';
 import { interactionState } from './interaction.js';
 import { ensurePaletteConfig, renderColorTable } from './palette.js';
-import { renderAllNow } from './render-queue.js';
+import { renderFullNow } from './render-queue.js';
 import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
 import { toast } from './utils.js';
 
@@ -92,7 +93,7 @@ export async function switchHistoryItem(id) {
   } else {
     App.palette = [];
   }
-  renderAllNow();
+  renderFullNow();
   renderHistoryUI();
   toast(`已切换到状态#${id}`);
   scheduleAutosave();
@@ -101,7 +102,7 @@ export async function switchHistoryItem(id) {
 export function deleteHistoryItem(id) {
   const node = findTransaction(App.history, id);
   if (!node) return;
-  if (!confirm(`确定删除事务「${node.label}」吗？此操作不可恢复。`)) return;
+  if (!confirmDialog(`确定删除事务「${node.label}」吗？此操作不可恢复。`)) return;
   const prev = App.history.currentId;
   const { newCurrent } = deleteTransaction(App.history, id);
   setProjectDirty(true);
@@ -125,7 +126,10 @@ export function clearAll({ silent = false } = {}) {
     if (!silent) toast('当前没有可清空的内容');
     return;
   }
-  if (!silent && !confirm('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。'))
+  if (
+    !silent &&
+    !confirmDialog('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。')
+  )
     return;
   App.project = null;
   App.baseGrid = null;
@@ -145,7 +149,7 @@ export function clearAll({ silent = false } = {}) {
   App.editedSinceSlider = false;
   resetProjectEditingState();
   renderHistoryUI();
-  renderAllNow();
+  renderFullNow();
   scheduleAutosave();
   toast('已清空所有状态');
 }
@@ -218,7 +222,7 @@ function renderHistoryItem(item) {
 // 有事务/撤销记录时弹确认并清空；无记录或用户取消时返回 false
 export function confirmClearRecords(message) {
   if (!hasPendingRecords()) return true;
-  if (!confirm(message)) return false;
+  if (!confirmDialog(message)) return false;
   clearHistoryRecords();
   renderHistoryUI();
   return true;

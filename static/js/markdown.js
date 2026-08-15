@@ -1,6 +1,7 @@
 // 使用问题修复文档：下拉菜单、极简 Markdown 渲染与文档弹窗。
 
 import { els } from './els.js';
+import { closeDialog, openDialog } from './focus.js';
 
 const FIX_DOCS = {
   'right-drag-gesture-fix': '/static/docs/right-drag-gesture-fix.md',
@@ -90,12 +91,15 @@ export async function openFixDoc(key) {
   } catch (err) {
     els.docContent.textContent = `文档加载失败：${err.message}`;
     els.docDialog.classList.remove('hidden');
+    openDialog(els.docDialog);
     return;
   }
   els.docContent.innerHTML = renderMarkdown(text);
   els.docDialog.classList.remove('hidden');
+  openDialog(els.docDialog);
 }
 
 export function closeFixDoc() {
+  closeDialog();
   els.docDialog.classList.add('hidden');
 }

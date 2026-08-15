@@ -8,14 +8,14 @@
 export const CELL = 28; // 每格拼豆在画布上的像素尺寸
 export const CANVAS_EDGE_CELLS = 1; // 画布四周行列号条的格数（图案外侧 1 格）
 export const OUTER_PAD = 20; // 导出时图案外侧纯白边距（像素）
-export const DEFAULT_TARGET_PIXELS = 5000; // 「目标像素量」输入框默认值
+export const DEFAULT_TARGET_PIXELS = 4000; // 「目标像素量」输入框默认值
 export const TARGET_PIXELS_MIN = 100; // 「目标像素量」下限（与 bead/compress.py MIN_TARGET_PIXELS 一致）
 export const TARGET_PIXELS_MAX = 80000; // 「目标像素量」上限
 export const TARGET_PIXEL_PRESETS = [
-  { value: 500, tip: '初次尝试拼豆的儿童建议不超过 500' },
-  { value: 2500, tip: '初次尝试拼豆的成人建议不超过 2500' },
-  { value: 5000, tip: '有一定经验的成年人建议不超过 5000' },
-  { value: 10000, tip: '10000 的豆量通常需要消耗 1-2 天时间' },
+  { value: 400, tip: '初次尝试拼豆的儿童建议不超过 500' },
+  { value: 2000, tip: '初次尝试拼豆的成人建议不超过 2500' },
+  { value: 4000, tip: '有一定经验的成年人建议不超过 5000' },
+  { value: 8000, tip: '10000 的豆量通常需要消耗 1-2 天时间' },
 ];
 export const BRUSH_SIZE_MIN = 1; // 画笔 / 橡皮最小尺寸
 export const BRUSH_SIZE_MAX = 10; // 画笔 / 橡皮最大尺寸（与模板中滑块 max 一致）
@@ -45,6 +45,7 @@ export const CROP_MAGNIFIER_SCALE = 2.5; // 放大镜放大倍率
 export const CROP_EDGE_HIT_PX = 8; // 边缘命中阈值（屏幕像素）
 export const CROP_EDGE_COLOR = '#ff3b30'; // 裁剪边框（未选中）
 export const CROP_EDGE_ACTIVE_COLOR = '#3b82f6'; // 裁剪边框（选中/拖拽边）
+export const CROP_MASK_RGBA = 'rgba(0, 0, 0, 0.4)'; // 裁剪模式工作区蒙版（与 style.css --crop-mask-rgba 一致）
 export const CROP_MAGNIFIER_MIN_CELL = 16; // 放大镜每格最小尺寸（像素）
 export const CROP_MAGNIFIER_GAP = 16; // 放大镜与鼠标的间距（像素）
 export const CROP_MAGNIFIER_WINDOW_MARGIN = 8; // 放大镜与窗口边缘的最小间距（像素）

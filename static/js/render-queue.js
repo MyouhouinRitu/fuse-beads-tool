@@ -13,7 +13,7 @@ export function setRenderers(full, canvas) {
 }
 
 // 立即执行一次全量刷新（面板 + 画布）
-export function renderAllNow() {
+export function renderFullNow() {
   if (fullRenderer) fullRenderer();
 }
 
@@ -33,7 +33,7 @@ export function scheduleCanvasRender() {
   canvasRenderQueued = true;
   requestAnimationFrame(() => {
     canvasRenderQueued = false;
-    if (renderQueued) return; // 全量刷新即将执行，由 renderAll 统一覆盖
+    if (renderQueued) return; // 全量刷新即将执行，由 renderFull 统一覆盖
     if (canvasRenderer) canvasRenderer();
   });
 }

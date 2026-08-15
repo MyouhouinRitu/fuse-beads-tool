@@ -3,6 +3,7 @@
 import * as api from './api.js';
 import { scheduleAutosave } from './autosave.js';
 import { CONFIG_SAVE_DELAY_MS } from './constants.js';
+import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
 import { App, setProjectDirty } from './state.js';
@@ -220,7 +221,9 @@ function removeColor(i) {
   const used = App.project?.grid.some((v) => v === i);
   if (
     used &&
-    !confirm('该颜色正在被使用，删除后重新压缩时已使用的格子会自动替换为最相近的颜色。是否继续？')
+    !confirmDialog(
+      '该颜色正在被使用，删除后重新压缩时已使用的格子会自动替换为最相近的颜色。是否继续？',
+    )
   )
     return;
   const oldPalette = App.palette;

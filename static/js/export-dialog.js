@@ -15,6 +15,7 @@ import {
   EXPORT_QUALITY,
 } from './constants.js';
 import { els } from './els.js';
+import { closeDialog, openDialog } from './focus.js';
 import { drawPattern } from './render.js';
 import { App } from './state.js';
 import { clampInt, codeOf, downloadUrl, toast } from './utils.js';
@@ -66,6 +67,7 @@ export function openExportDialog() {
   els.dlgPreviewMask.classList.add('hidden');
   els.dlgCodes.checked = App.settings.showCodes;
   els.exportDialog.classList.remove('hidden');
+  openDialog(els.exportDialog);
   renderExportPreview();
 }
 
@@ -78,6 +80,7 @@ export function closeExportDialog() {
   els.dlgStatus.textContent = '';
   els.dlgPdfPages.classList.add('hidden');
   els.dlgPreviewMask.classList.add('hidden');
+  closeDialog();
   els.exportDialog.classList.add('hidden');
 }
 

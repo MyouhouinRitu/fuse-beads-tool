@@ -66,6 +66,22 @@ assert.equal(
 
 console.log('[OK] CSS 布局参数与 constants.js 一致（面板宽度 / 折叠宽度 / 动画时长 / 九宫格）');
 
+// 裁剪蒙版：JS 常量与 CSS 变量保持同一份 40% 黑
+assert.equal(
+  cssVar('crop-mask-rgba').replace(/\s+/g, ''),
+  K.CROP_MASK_RGBA.replace(/\s+/g, ''),
+  '--crop-mask-rgba 应与 CROP_MASK_RGBA 一致',
+);
+
+// 主题启动 bootstrap：index.html 内联脚本与 theme.js 共用同一个存储 key
+{
+  const htmlText = read('templates/index.html');
+  assert.ok(
+    htmlText.includes(`localStorage.getItem('${K.THEME_STORAGE_KEY}')`),
+    'index.html 内联主题脚本应使用与 THEME_STORAGE_KEY 相同的 key',
+  );
+}
+
 // ---------------- 后端渲染参数 ----------------
 
 const pyText = read('bead/export.py');

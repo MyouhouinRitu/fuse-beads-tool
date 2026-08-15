@@ -1,6 +1,6 @@
 // 裁剪放大镜：低缩放下显示鼠标悬停位置 11×11 的放大视图。
 
-import { buildDisplayData } from './canvas.js';
+import { getDisplayData } from './canvas.js';
 import {
   CROP_MAGNIFIER_GAP,
   CROP_MAGNIFIER_MIN_CELL,
@@ -40,7 +40,7 @@ function drawCropMagnifier() {
   const y0 = hy - off;
   // 窗口内容先画到离屏画布（含行列号条，不含色号），图案外区域保持透明；
   // 底图渲染器只画窗口内的格子，避免大图逐帧全量重绘
-  const display = buildDisplayData();
+  const display = getDisplayData();
   const offCanvas = document.createElement('canvas');
   const octx = offCanvas.getContext('2d');
   drawPatternBase(octx, width, height, display.idx, display.rgb, {
