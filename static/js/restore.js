@@ -1,7 +1,7 @@
 // 状态 / 项目恢复：把持久化状态或 .ssfbp 文档还原为运行态，含设置同步、原图与对比开关。
 
 import * as api from './api.js';
-import { scheduleAutosave } from './autosave.js';
+import { STATE_SCHEMA_VERSION, scheduleAutosave } from './autosave.js';
 import * as colorList from './color-list.js';
 import * as C from './colors.js';
 import * as compare from './compare.js';
@@ -16,6 +16,7 @@ import {
   ZOOM_MIN,
 } from './constants.js';
 import { els } from './els.js';
+import { decodeInt16Grid } from './grid-codec.js';
 import { sanitizeHistory, sanitizeUndoStack } from './history.js';
 import * as historyUI from './history-ui.js';
 import { interactionState } from './interaction.js';
@@ -58,14 +59,20 @@ function applySettingsToControls() {
 // 恢复项目快照（画布、基副本、色板配置与已应用色板）
 async function restoreProjectState(st) {
   if (!st.project) return;
+  // v2 状态载荷使用 base64 紧凑编码，v1 为数组；两者都兼容
+  const grid =
+    Array.isArray(st.project.grid) || st.project.grid instanceof Int16Array
+      ? Int16Array.from(st.project.grid)
+      : decodeInt16Grid(st.project.gridBase64) || new Int16Array(0);
   App.project = {
     width: st.project.width,
     height: st.project.height,
-    grid: Int16Array.from(st.project.grid || []),
+    grid,
   };
-  App.baseGrid = st.project.baseGrid
-    ? Int16Array.from(st.project.baseGrid)
-    : App.project.grid.slice();
+  App.baseGrid =
+    Array.isArray(st.project.baseGrid) || st.project.baseGrid instanceof Int16Array
+      ? Int16Array.from(st.project.baseGrid)
+      : decodeInt16Grid(st.project.baseGridBase64) || App.project.grid.slice();
   App.maxColors =
     st.project.maxColors ||
     C.countUsedColors(App.project.grid, st.project.width, st.project.height) ||
@@ -207,6 +214,16 @@ export async function restoreState() {
   } catch (_e) {
     st = {};
   }
+  // schemaVersion 只接受当前版本及以下；更高版本意味着由更新的应用写入，跳过恢复避免损坏
+  if (st.schemaVersion != null && Number(st.schemaVersion) > STATE_SCHEMA_VERSION) {
+    toast(
+      `状态文件版本（${st.schemaVersion}）高于当前应用支持的版本（${STATE_SCHEMA_VERSION}），已跳过恢复`,
+      {
+        type: 'error',
+      },
+    );
+    return;
+  }
   if (st.settings) Object.assign(App.settings, st.settings);
   applySettingsToControls();
   await restoreProjectState(st);
@@ -250,6 +267,15 @@ export async function restoreState() {
 export async function applyProjectDocument(doc, path = null) {
   if (!doc?.project) {
     toast('项目文件缺少画布数据');
+    return;
+  }
+  if (doc.schemaVersion != null && Number(doc.schemaVersion) > STATE_SCHEMA_VERSION) {
+    toast(
+      `项目文件版本（${doc.schemaVersion}）高于当前应用支持的版本（${STATE_SCHEMA_VERSION}），无法打开`,
+      {
+        type: 'error',
+      },
+    );
     return;
   }
   // 打开项目后运行态全部重置，文档状态以文件为准

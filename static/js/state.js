@@ -4,6 +4,10 @@
 // - App 统一持有可持久化领域状态与 UI 计时器句柄（toast/自动保存/配置保存/高亮闪烁），便于测试检查；
 // - 跨模块瞬态交互状态统一放在 interactionState（interaction.js），拖拽过程中间标记放在 dragState；
 //   渲染缓存、节流时间戳等模块私有瞬态留在所属模块，不塞进 App。
+// 不变式（由 tests/dom_contract_test.mjs 强制）：
+// - App / dragState / interactionState 三者字段不重叠，领域状态不依赖瞬态字段；
+// - dragState 只存单次拖拽的过程标记（downCell/panStart/cropEdge 等）；
+// - interactionState 只存跨模块共享、不参与持久化的瞬态（hover/选区预览/裁剪矩形等）。
 
 import { CELL, DEFAULT_TARGET_PIXELS, TOOLS, WAND_SENSITIVITY_DEFAULT } from './constants.js';
 import { els } from './els.js';

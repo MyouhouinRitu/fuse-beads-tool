@@ -45,7 +45,14 @@ function renderFull() {
     return;
   }
   const counts = C.computeUsedCounts(project.grid, project.width, project.height);
-  const used = C.countUsedColors(project.grid, project.width, project.height);
+  let used = 0;
+  let filled = 0;
+  for (const c of counts) {
+    if (c) {
+      used++;
+      filled += c;
+    }
+  }
   const baseUsed = App.baseGrid
     ? C.countUsedColors(App.baseGrid, project.width, project.height)
     : used;
@@ -59,9 +66,8 @@ function renderFull() {
   canvas.rebuildCanvas();
   els.emptyHint.style.display = 'none';
 
-  let empty = 0;
-  for (let p = 0; p < project.grid.length; p++) if (project.grid[p] < 0) empty++;
-  els.cellInfo.textContent = `${project.width} × ${project.height} · 总量 ${project.grid.length - empty} · 空位 ${empty}`;
+  const empty = project.grid.length - filled;
+  els.cellInfo.textContent = `${project.width} × ${project.height} · 总量 ${filled} · 空位 ${empty}`;
   colorList.renderColorList(counts);
   highlight.renderHighlightColorList(counts);
   canvas.syncHighlightBlink();

@@ -14,6 +14,6 @@ export const interactionState = {
   pickerCell: null, // 九宫格改色的目标格 {x,y,p,original}
   pickerPreviewIndex: null, // 九宫格当前悬停预览的候选序号（null 表示未预览）
   crop: null, // 裁剪矩形 {x0,y0,x1,y1}（含端点）
-  cropActiveEdge: null, // 当前选中/拖拽的边：left/right/top/bottom
+  cropActiveEdge: null, // 当前选中的边：left/right/top/bottom（拖拽中的活动边在 dragState.cropEdge）
   cropPreview: null, // 裁剪预览虚线 {horizontal, pos}
 };

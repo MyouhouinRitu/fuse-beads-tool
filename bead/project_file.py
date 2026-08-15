@@ -16,13 +16,21 @@ import struct
 import zlib
 from datetime import datetime
 
+from bead.version import APP_VERSION
+
 MAGIC = b"FUSEBEAD"
 FORMAT_VERSION = 1
 HEADER_SIZE = 8 + 4 + 4 + 4 + 32
 ENTRY_SIZE = 16 + 8 + 8 + 8 + 4 + 4 + 4
 FLAG_ZLIB = 1
+MAX_SECTION_BYTES = 512 * 1024 * 1024  # 单个段解压后体积上限（防解压炸弹）
 
 INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+RESERVED_WINDOWS_NAMES = (
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 
 
 def section_id(name: str) -> bytes:
@@ -82,13 +90,23 @@ def parse_project_file(data: bytes) -> dict[str, bytes]:
         raise ValueError("项目文件段数量异常")
     digest = data[20:52]
     entries = []
+    table_end = HEADER_SIZE + count * ENTRY_SIZE
+    seen_names: set[str] = set()
     for i in range(count):
         off = HEADER_SIZE + i * ENTRY_SIZE
         raw_id, eoff, length, uncompressed, eflags, crc, _reserved = struct.unpack_from(
             "<16sQQQIII", data, off
         )
+        name = raw_id.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        if name in seen_names:
+            raise ValueError("项目文件段名重复")
+        seen_names.add(name)
+        if eflags & ~FLAG_ZLIB:
+            raise ValueError("项目文件段标志不受支持")
+        if eoff < table_end:
+            raise ValueError("项目文件段偏移异常")
         entries.append({
-            "name": raw_id.split(b"\x00", 1)[0].decode("utf-8", errors="replace"),
+            "name": name,
             "offset": eoff,
             "length": length,
             "uncompressed": uncompressed,
@@ -100,10 +118,15 @@ def parse_project_file(data: bytes) -> dict[str, bytes]:
     for e in entries:
         if e["offset"] + e["length"] > len(data):
             raise ValueError("项目文件段越界")
+        if e["uncompressed"] > MAX_SECTION_BYTES:
+            raise ValueError("项目文件段体积超限")
         payload = data[e["offset"]:e["offset"] + e["length"]]
         stored_payloads.append(payload)
         if e["flags"] & FLAG_ZLIB:
-            raw = zlib.decompress(payload)
+            try:
+                raw = zlib.decompress(payload)
+            except zlib.error:
+                raise ValueError("项目文件段解压失败")
         else:
             raw = payload
         if len(raw) != e["uncompressed"]:
@@ -117,7 +140,25 @@ def parse_project_file(data: bytes) -> dict[str, bytes]:
 
 
 def safe_filename(name: str, fallback: str = "未命名") -> str:
-    cleaned = INVALID_FILENAME_CHARS.sub("_", str(name or "")).strip()
+    return clean_filename(name, fallback)
+
+
+def clean_filename(
+    name: str | None,
+    fallback: str = "未命名",
+    max_length: int | None = None,
+) -> str:
+    """统一文件名清洗：替换非法字符、去首尾空白、可选截断、去结尾点/空格。
+
+    所有「把任意字符串变成安全文件名」的入口都应走本函数；
+    需要不同长度上限的调用方通过 max_length 表达（如配置名 60、项目文件不截断）。
+    """
+    cleaned = INVALID_FILENAME_CHARS.sub("_", str(name or "").strip())
+    if max_length is not None:
+        cleaned = cleaned[:max_length]
+    stem = cleaned.split(".", 1)[0].upper()
+    if stem in RESERVED_WINDOWS_NAMES:
+        cleaned = "_" + cleaned  # Windows 保留名（CON/NUL/COM1 等）加前缀避免创建失败
     cleaned = cleaned.rstrip(". ")
     return cleaned or fallback
 
@@ -129,7 +170,7 @@ def default_project_filename(original_name: str | None = None) -> str:
     return f"{date}_{stem}_拼豆图.ssfbp"
 
 
-def meta_json(app_version: str = "0.5.0") -> bytes:
+def meta_json(app_version: str = APP_VERSION) -> bytes:
     return json.dumps({
         "formatVersion": FORMAT_VERSION,
         "appVersion": app_version,

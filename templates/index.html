@@ -37,7 +37,7 @@
       <label class="field">目标像素量
         <span class="target-pixels-wrap">
           <input type="number" id="target-pixels" min="100" max="80000" step="100" value="4000" title="图片压缩后的总像素量" role="combobox" aria-expanded="false" aria-controls="target-pixels-menu" aria-autocomplete="none">
-          <button type="button" id="target-pixels-btn" class="target-pixels-arrow" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量" aria-hidden="true"></button>
+          <button type="button" id="target-pixels-btn" class="target-pixels-arrow" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量"></button>
           <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden" role="menu"></div>
         </span>
       </label>
@@ -170,7 +170,7 @@
         <div id="empty-hint">请先导入一张图片<br>导入后会自动转换为拼豆图案</div>
       </div>
       <div id="crop-magnifier" class="crop-magnifier hidden"><canvas id="crop-magnifier-canvas"></canvas></div>
-      <div id="quick-picker" class="hidden" role="dialog" aria-label="相近颜色（按 1-9 选择）"></div>
+      <fieldset id="quick-picker" class="hidden" aria-label="相近颜色（按 1-9 选择）"></fieldset>
     </section>
 
     <aside id="color-highlight-panel">
@@ -335,7 +335,7 @@
 
   <div id="popup-dialog" class="dialog-mask hidden">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="popup-title">
-      <h3 id="popup-title"></h3>
+      <h3 id="popup-title">确认</h3>
       <div class="dialog-body">
         <p id="popup-message" class="muted"></p>
         <input type="text" id="popup-input" class="hidden" />

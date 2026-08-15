@@ -1,6 +1,7 @@
 // DOM 行为测试（dom_state_test.mjs 分组）：依赖 tests/helpers/dom-harness.mjs 的共享桩。
 
 import assert from 'node:assert/strict';
+import { decodeInt16Grid } from '../static/js/grid-codec.js';
 import {
   App,
   canvasRectForCells,
@@ -128,9 +129,9 @@ import {
   assert.equal(grid[0], 0);
   assert.equal(grid[1], 1);
 
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mm = windowListeners.mousemove[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mm = windowListeners.pointermove[0];
+  const mu = windowListeners.pointerup[0];
   md(mouseAt(0, 0));
   mm({ ...mouseAt(1, 0) });
   mu({});
@@ -376,6 +377,7 @@ import {
 
 // ---------------- 6.7 自动保存载荷：包含 schema / 视口 / 编辑状态 / 撤销栈 / 原图引用 ----------------
 {
+  const { STATE_SCHEMA_VERSION } = await import('../static/js/autosave.js');
   seedProject();
   App.tool = 'wand';
   App.brushColor = 2;
@@ -391,7 +393,21 @@ import {
   App.originalSize = 123;
   hooks.paintCell(0, 0);
   await new Promise((r) => setTimeout(r, 950));
-  assert.equal(testState.stateResponse.schemaVersion, 1, '自动保存应带 schemaVersion');
+  assert.equal(
+    testState.stateResponse.schemaVersion,
+    STATE_SCHEMA_VERSION,
+    '自动保存应带 schemaVersion',
+  );
+  assert.equal(
+    typeof testState.stateResponse.project.gridBase64,
+    'string',
+    '自动保存网格应使用 base64 紧凑编码',
+  );
+  assert.deepEqual(
+    Array.from(decodeInt16Grid(testState.stateResponse.project.gridBase64)),
+    Array.from(App.project.grid),
+    'base64 网格应能还原为当前画布',
+  );
   assert.equal(testState.stateResponse.viewport.zoom, 1.25, '自动保存应记录缩放');
   assert.deepEqual(testState.stateResponse.viewport.pan, { x: 12, y: 34 }, '自动保存应记录平移');
   assert.equal(testState.stateResponse.editor.tool, 'wand', '自动保存应记录当前工具');
@@ -559,4 +575,111 @@ import {
   assert.equal(elsMap['chk-sync-pan'].checked, false, '取消对比后同步勾选框应被取消');
   assert.equal(App.settings.compare, false, '取消对比后对比状态应关闭');
   console.log('[OK] 同步换算含网格/原图比例 / 取消对比联动取消同步');
+}
+
+// ---------------- 21. schemaVersion 校验：高于当前版本时拒绝恢复 / 打开 ----------------
+{
+  seedProject();
+  const before = App.project;
+  testState.stateResponse = { schemaVersion: 999, project: { width: 9, height: 9 } };
+  await hooks.restoreState();
+  assert.equal(App.project, before, '更高版本的状态文件不应覆盖当前画布');
+  assert.ok(elsMap.toast.textContent.includes('已跳过恢复'), '更高版本的状态文件应提示跳过恢复');
+
+  const { applyProjectDocument } = await import('../static/js/restore.js');
+  const beforeDoc = App.project;
+  await applyProjectDocument({ schemaVersion: 999, project: { width: 7, height: 7 } });
+  assert.equal(App.project, beforeDoc, '更高版本的项目文件不应打开');
+  assert.ok(elsMap.toast.textContent.includes('无法打开'), '更高版本的项目文件应提示无法打开');
+  console.log('[OK] schemaVersion 校验：拒绝更高版本的状态与项目文件');
+}
+
+// ---------------- 22. PDF 预览异步流程：分页按钮 + 页面绘制 + 失败提示 ----------------
+{
+  seedProject();
+  testState.pdfPreviewResponse = {
+    pages: [
+      {
+        page: '总',
+        paper: 'A4',
+        landscape: false,
+        width: 100,
+        height: 80,
+        dataUrl: 'data:image/png;base64,ZmFrZQ==',
+      },
+      {
+        page: '1',
+        paper: 'A4',
+        landscape: false,
+        width: 100,
+        height: 80,
+        dataUrl: 'data:image/png;base64,ZmFrZQ==',
+      },
+    ],
+  };
+  hooks.openExportDialog();
+  elsMap['dlg-format'].value = 'pdf-multi-a4';
+  const exportDialog = await import('../static/js/export-dialog.js');
+  await exportDialog.renderExportPreview();
+  await new Promise((r) => setTimeout(r, 180));
+  assert.equal(elsMap['dlg-pdf-pages'].children.length, 2, 'PDF 预览应渲染分页按钮');
+  assert.equal(elsMap['dlg-pdf-pages'].children[0].textContent, '总');
+  assert.equal(elsMap['dlg-pdf-pages'].children[1].textContent, '1');
+  assert.ok(elsMap['dlg-preview'].width > 0, 'PDF 预览页应绘制到预览画布');
+
+  testState.pdfPreviewFail = true;
+  elsMap['dlg-format'].value = 'pdf-a4';
+  await exportDialog.renderExportPreview();
+  await new Promise((r) => setTimeout(r, 180));
+  assert.ok(elsMap.toast.textContent.includes('PDF 预览生成失败'), 'PDF 预览失败应弹出错误提示');
+  testState.pdfPreviewFail = false;
+  exportDialog.closeExportDialog();
+  console.log('[OK] PDF 预览异步流程：分页按钮 / 页面绘制 / 失败提示');
+}
+
+// ---------------- 23. 恢复损坏 history / 撤销栈：过滤非法项、画布不受影响 ----------------
+{
+  seedProject();
+  testState.stateResponse = {
+    settings: {},
+    project: {
+      width: 2,
+      height: 2,
+      grid: [0, 1, 0, 1],
+      baseGrid: [0, 1, 0, 1],
+      sliderN: 2,
+      editedSinceSlider: false,
+      paletteName: 'cfg',
+      palette: palette3.map((c) => ({ ...c })),
+      maxColors: 2,
+    },
+    undo: {
+      undoStack: [
+        null,
+        { changes: [{ x: 0, y: 0, from: 0, to: 1 }] },
+        { changes: [{ x: 0, y: 0, from: 1, to: 'bad' }] },
+      ],
+      redoStack: ['junk'],
+    },
+    history: {
+      items: [
+        { id: 1, createdAt: 1, snapshot: { width: 2, height: 2, grid: [0, 1, 0, 1] } },
+        { id: 'x', snapshot: { width: 2, height: 2, grid: [0, 1, 0, 1] } },
+        { id: 2, createdAt: 2, snapshot: { width: 2, height: 2, gridBase64: '%%%bad%%%' } },
+        { id: 3, createdAt: 3, snapshot: { width: 2, height: 2, grid: [0, 1] } },
+      ],
+      currentId: 1,
+      baselineId: 1,
+      nextId: 10,
+    },
+    original: null,
+  };
+  App.configs = configs;
+  await hooks.restoreState();
+  assert.equal(App.project.width, 2, '损坏历史不应影响画布恢复');
+  assert.equal(App.history.items.length, 1, '恢复后只保留合法快照');
+  assert.equal(App.history.items[0].id, 1);
+  assert.equal(App.undoStack.length, 1, '撤销栈应过滤非法项');
+  assert.equal(App.redoStack.length, 0, '重做栈应过滤非法项');
+  console.log('[OK] 恢复损坏 history / 撤销栈：过滤非法项、画布不受影响');
 }

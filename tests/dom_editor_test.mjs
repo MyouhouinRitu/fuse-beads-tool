@@ -24,7 +24,7 @@ import {
   canvasRectForCells();
 
   // 选择模式：黑白相间虚线
-  const mm = windowListeners.mousemove[0];
+  const mm = windowListeners.pointermove[0];
   drawLog.strokes = [];
   mm(mouseAt(1, 1));
   assert.deepEqual(interactionState.hoverCell, { x: 1, y: 1 }, '鼠标移动应记录指向的格子');
@@ -102,7 +102,7 @@ import {
 
   // 鼠标离开画布区应清除 hover
   interactionState.hoverCell = { x: 1, y: 1 };
-  const leave = elsMap['canvas-scroll'].listeners.mouseleave[0];
+  const leave = elsMap['canvas-scroll'].listeners.pointerleave[0];
   leave({});
   assert.equal(interactionState.hoverCell, null, '鼠标离开画布区应清除 hover');
 
@@ -320,9 +320,9 @@ import {
   interactionState.strokeBuffer = null;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mm = windowListeners.mousemove[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mm = windowListeners.pointermove[0];
+  const mu = windowListeners.pointerup[0];
 
   md({ ...mouseAt(0, 0), shiftKey: true });
   mm({ ...mouseAt(0, 2), shiftKey: true });
@@ -342,8 +342,8 @@ import {
   App.settings.sameColorSelect = false;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mu = windowListeners.pointerup[0];
 
   md(mouseAt(0, 0));
   mu({});
@@ -369,9 +369,9 @@ import {
   App.settings.sameColorSelect = false;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mm = windowListeners.mousemove[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mm = windowListeners.pointermove[0];
+  const mu = windowListeners.pointerup[0];
 
   md({ ...mouseAt(0, 0), ctrlKey: true });
   mm({ ...mouseAt(2, 0), ctrlKey: true });
@@ -395,9 +395,9 @@ import {
   App.settings.sameColorSelect = false;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mm = windowListeners.mousemove[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mm = windowListeners.pointermove[0];
+  const mu = windowListeners.pointerup[0];
 
   md({ ...mouseAt(0, 0), ctrlKey: true });
   for (let x = 1; x <= 4; x++) mm({ ...mouseAt(x, 0), ctrlKey: true });
@@ -420,9 +420,9 @@ import {
   App.settings.sameColorSelect = false;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mm = windowListeners.mousemove[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mm = windowListeners.pointermove[0];
+  const mu = windowListeners.pointerup[0];
 
   md({ ...mouseAt(0, 0), ctrlKey: true });
   mm({ ...mouseAt(2, 0), ctrlKey: true });
@@ -453,9 +453,9 @@ import {
   assert.ok(elsMap['brush-size-wrap'].classList.contains('hidden'), '选择模式应隐藏尺寸拖动条');
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mm = windowListeners.mousemove[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mm = windowListeners.pointermove[0];
+  const mu = windowListeners.pointerup[0];
   const kd = windowListeners.keydown[0];
 
   // 单击选择单格
@@ -632,8 +632,8 @@ import {
   interactionState.hoverCell = null;
   hooks.renderAll();
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mu = windowListeners.pointerup[0];
 
   // 先左键选中一个格子
   md(mouseAt(0, 0));

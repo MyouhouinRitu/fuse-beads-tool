@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { App, elsMap, hooks } from './helpers/dom-harness.mjs';
+import { App, elsMap, hooks, interactionState } from './helpers/dom-harness.mjs';
 
 const html = fs.readFileSync(path.resolve('templates/index.html'), 'utf8');
 const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
@@ -35,14 +35,18 @@ const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
   }
   assert.ok(html.includes(`id="btn-theme"`), '主题按钮应存在');
   assert.ok(html.includes(`aria-pressed="false"`), '主题按钮应有 aria-pressed');
+  assert.ok(html.includes(`id="target-pixels"`), '目标像素量输入框应存在');
   assert.ok(
-    html.includes(`id="target-pixels"`),
-    '目标像素量输入框应存在',
+    html.includes('id="target-pixels-btn"') && !/target-pixels-btn[^>]*aria-hidden/.test(html),
+    '像素量箭头按钮不应 aria-hidden（可聚焦元素不能对辅助技术隐藏）',
   );
   assert.ok(
     html.includes(`role="combobox"`) && html.includes(`aria-controls="target-pixels-menu"`),
     '目标像素量输入框应为 combobox 并关联菜单',
   );
+  assert.ok(html.includes('<fieldset id="quick-picker"'), '九宫格应为 fieldset（group 语义）');
+  const quickPickerLine = html.split('\n').find((line) => line.includes('id="quick-picker"')) || '';
+  assert.ok(!quickPickerLine.includes('role="dialog"'), '九宫格不应标为 dialog（非模态 Popover）');
   console.log('[OK] 静态 HTML 契约：弹窗 ARIA / 面板头 / toggle / combobox');
 }
 
@@ -72,7 +76,11 @@ const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
   assert.equal(elsMap['tool-brush'].getAttribute('aria-pressed'), 'true', '画笔按下应为 pressed');
   assert.equal(elsMap['tool-picker'].getAttribute('aria-pressed'), 'false', '取色应未按下');
   hooks.setTool('select');
-  assert.equal(elsMap['tool-brush'].getAttribute('aria-pressed'), 'false', '回到选择模式应取消 pressed');
+  assert.equal(
+    elsMap['tool-brush'].getAttribute('aria-pressed'),
+    'false',
+    '回到选择模式应取消 pressed',
+  );
   hooks.toggleTheme();
   const dark = globalThis.document.documentElement.dataset.theme === 'dark';
   assert.equal(
@@ -88,16 +96,32 @@ const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
   elsMap['target-pixels-menu'].classList.add('hidden');
   elsMap['target-pixels'].setAttribute('aria-expanded', 'false');
   elsMap['target-pixels'].value = '';
-  elsMap['target-pixels'].emit('keydown', { key: 'ArrowDown', preventDefault() {}, stopPropagation() {} });
+  elsMap['target-pixels'].emit('keydown', {
+    key: 'ArrowDown',
+    preventDefault() {},
+    stopPropagation() {},
+  });
   assert.ok(!elsMap['target-pixels-menu'].classList.contains('hidden'), '↓ 应展开菜单');
-  assert.equal(elsMap['target-pixels'].getAttribute('aria-expanded'), 'true', '展开后 aria-expanded=true');
+  assert.equal(
+    elsMap['target-pixels'].getAttribute('aria-expanded'),
+    'true',
+    '展开后 aria-expanded=true',
+  );
   const first = elsMap['target-pixels-menu'].querySelector('[role="option"]');
   assert.ok(first, '预设项应有 role=option');
   assert.equal(first.getAttribute('aria-selected'), 'true', '首个预设应高亮');
-  elsMap['target-pixels'].emit('keydown', { key: 'Enter', preventDefault() {}, stopPropagation() {} });
+  elsMap['target-pixels'].emit('keydown', {
+    key: 'Enter',
+    preventDefault() {},
+    stopPropagation() {},
+  });
   assert.equal(elsMap['target-pixels'].value, '400', 'Enter 应应用高亮预设');
   assert.ok(elsMap['target-pixels-menu'].classList.contains('hidden'), '应用后菜单应关闭');
-  assert.equal(elsMap['target-pixels'].getAttribute('aria-expanded'), 'false', '关闭后 aria-expanded=false');
+  assert.equal(
+    elsMap['target-pixels'].getAttribute('aria-expanded'),
+    'false',
+    '关闭后 aria-expanded=false',
+  );
   console.log('[OK] 目标像素量组合框：↓ / Enter / 关闭');
 }
 
@@ -113,11 +137,19 @@ const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
     elsMap['popup-input'].value = '';
     elsMap['popup-ok'].emit('click');
     assert.ok(!elsMap['popup-error'].classList.contains('hidden'), '空值应显示校验错误');
-    assert.equal(elsMap['popup-input'].getAttribute('aria-invalid'), 'true', '空值应标记 aria-invalid');
+    assert.equal(
+      elsMap['popup-input'].getAttribute('aria-invalid'),
+      'true',
+      '空值应标记 aria-invalid',
+    );
     assert.ok(!elsMap['popup-dialog'].classList.contains('hidden'), '校验失败弹窗不应关闭');
     elsMap['popup-input'].value = '新配置';
     elsMap['popup-input'].emit('input');
-    elsMap['popup-dialog'].emit('keydown', { key: 'Enter', preventDefault() {}, stopPropagation() {} });
+    elsMap['popup-dialog'].emit('keydown', {
+      key: 'Enter',
+      preventDefault() {},
+      stopPropagation() {},
+    });
     assert.equal(await promise, '新配置', 'Enter 应提交输入值');
     assert.ok(elsMap['popup-dialog'].classList.contains('hidden'), '提交后弹窗应关闭');
   } finally {
@@ -168,6 +200,62 @@ const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
     assert.ok(css.includes(`data-theme="dark"`), '暗色主题覆盖应存在');
   }
   console.log('[OK] 设计令牌：radius / surface / focus / input / border');
+}
+
+// ---------------- 8. 状态对象边界：App / dragState / interactionState 不重叠 ----------------
+{
+  const appKeys = new Set(Object.keys(App));
+  const dragKeys = new Set(Object.keys(globalThis.__dragState));
+  const interactionKeys = new Set(Object.keys(interactionState));
+  for (const key of dragKeys) {
+    assert.ok(!appKeys.has(key), `dragState.${key} 不应出现在 App 中`);
+    assert.ok(!interactionKeys.has(key), `dragState.${key} 不应出现在 interactionState 中`);
+  }
+  for (const key of interactionKeys) {
+    assert.ok(!appKeys.has(key), `interactionState.${key} 不应出现在 App 中`);
+  }
+  assert.ok(!('cropPreview' in globalThis.__dragState), 'cropPreview 应留在 interactionState');
+  assert.ok(!('cropEdge' in interactionState), '拖拽中的活动边应留在 dragState');
+  console.log('[OK] 状态边界：App / dragState / interactionState 字段不重叠');
+}
+
+// ---------------- 9. 测试钩子暴露面契约：新增/删除钩子必须同步本清单 ----------------
+{
+  const EXPECTED_HOOKS = [
+    'renderAll',
+    'drawPattern',
+    'setTool',
+    'updateBrush',
+    'paintCell',
+    'paintStamp',
+    'doUndo',
+    'doRedo',
+    'toggleTheme',
+    'recordCropStep',
+    'moveCropEdgeTo',
+    'updateCropCursor',
+    'updateCropPreview',
+    'autoCrop',
+    'applyCrop',
+    'updateCropMagnifier',
+    'applySlider',
+    'saveTransaction',
+    'deleteHistoryItem',
+    'restoreState',
+    'renderHistoryUI',
+    'openExportDialog',
+    'mirrorBeadToOrig',
+    'mirrorOrigToBead',
+    'getToastQueue',
+    'buildProjectDocument',
+  ];
+  assert.deepEqual(
+    Object.keys(hooks).sort(),
+    [...EXPECTED_HOOKS].sort(),
+    'window.__testHooks 暴露面应与契约清单一致（test-hooks.js 改动需同步本清单）',
+  );
+  assert.ok(globalThis.__app && globalThis.__dragState && globalThis.__interactionState);
+  console.log('[OK] 测试钩子契约：暴露面与清单一致');
 }
 
 console.log('\n组件契约测试全部通过');

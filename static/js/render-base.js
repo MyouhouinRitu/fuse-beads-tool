@@ -133,7 +133,6 @@ function drawGridLines(
     return { lw: thin, color: GRID_LINE_COLOR, dashed: false };
   };
   // 相同样式的实线合并成一条路径批量绘制；虚线逐段绘制，保证每段虚线段相位一致
-  const _solidGroups = new Map();
   const strokeSeg = (map, x1, y1, x2, y2, s) => {
     if (s.dashed) {
       ctx.strokeStyle = s.color;
@@ -299,7 +298,6 @@ function drawLegend(ctx, legend, cell, gridW, baseY, outerPad = OUTER_PAD) {
   const font = Math.max(LEGEND_FONT_MIN, Math.round(cell * LEGEND_FONT_RATIO));
   const sw = Math.max(LEGEND_SWATCH_MIN, Math.round(cell * LEGEND_SWATCH_RATIO));
   const entryW = cell * LEGEND_ENTRY_W;
-  const _perRow = Math.max(1, Math.floor((gridW - 2 * pad) / entryW));
   const rowH = Math.max(sw + LEGEND_ROW_EXTRA_H, font + LEGEND_ROW_FONT_EXTRA);
   const maxX = outerPad + gridW - pad;
   ctx.font = `${font}px Consolas, "Microsoft YaHei", monospace`;

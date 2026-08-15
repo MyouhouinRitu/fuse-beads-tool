@@ -26,10 +26,15 @@ def palette_hash(colors: list[Color]) -> str:
     for c in colors or []:
         if not c or "index" not in c:
             continue
-        try:
-            idx = int(c["index"])
-        except (TypeError, ValueError):
+        raw = c["index"]
+        if isinstance(raw, bool):
             continue
+        if isinstance(raw, int):
+            idx = raw
+        elif isinstance(raw, str) and re.fullmatch(r"-?\d+", raw.strip()):
+            idx = int(raw.strip())
+        else:
+            continue  # 非整数索引与前端约定一致地跳过（含浮点/空值/布尔）
         norm.append({
             "index": idx,
             "code": str(c.get("code") or ""),
@@ -315,7 +320,7 @@ MARD_221_PALETTE_CSV = """编号,色号,名称,颜色
 221,M15,,#747D7A
 """
 
-_HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
+_HEX_RE = re.compile(r"^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
 def normalize_color(c: dict[str, object] | None = None) -> Color:
@@ -328,7 +333,13 @@ def normalize_color(c: dict[str, object] | None = None) -> Color:
     name = str(c.get("name", "") or "").strip()
     hexv = str(c.get("hex", "#FFFFFF") or "").strip()
     m = _HEX_RE.match(hexv)
-    hexv = "#" + m.group(1).upper() if m else "#FFFFFF"
+    if m:
+        h = m.group(1)
+        if len(h) == 3:
+            h = "".join(ch * 2 for ch in h)  # 3 位缩写展开为 6 位，与前端 hexToRgb 一致
+        hexv = "#" + h.upper()
+    else:
+        hexv = "#FFFFFF"
     return {"index": index, "code": code, "name": name, "hex": hexv}
 
 

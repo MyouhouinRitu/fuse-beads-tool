@@ -908,6 +908,7 @@ body.crop-active #canvas-area {
 #quick-picker {
   position: fixed;
   z-index: 100;
+  margin: 0;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;

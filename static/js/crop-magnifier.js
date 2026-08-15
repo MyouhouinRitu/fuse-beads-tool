@@ -18,6 +18,9 @@ import { App, dragState } from './state.js';
 import { hideCropMagnifier } from './utils.js';
 
 let cropLastMouse = null; // 裁剪模式最近一次鼠标位置（缩放后重绘放大镜用）
+let magnifierOffCanvas = null; // 复用离屏画布，避免 mousemove 每帧新建
+let magnifierLastDisplay = null;
+let magnifierDrawKey = null;
 
 // 放大镜：低缩放下显示鼠标悬停位置 11×11 的放大视图。
 // 窗口内容复用底图渲染器（与工作区同一套网格/空位/行列号规范），只叠加裁剪框。
@@ -41,8 +44,24 @@ function drawCropMagnifier() {
   // 窗口内容先画到离屏画布（含行列号条，不含色号），图案外区域保持透明；
   // 底图渲染器只画窗口内的格子，避免大图逐帧全量重绘
   const display = getDisplayData();
-  const offCanvas = document.createElement('canvas');
-  const octx = offCanvas.getContext('2d');
+  const crop = interactionState.crop;
+  const preview = interactionState.cropPreview;
+  const drawKey = [
+    hx,
+    hy,
+    cell,
+    dark,
+    App.settings.emptyStyle,
+    crop ? `${crop.x0},${crop.y0},${crop.x1},${crop.y1}` : '',
+    interactionState.cropActiveEdge || '',
+    preview ? `${preview.horizontal},${preview.pos}` : '',
+  ].join('|');
+  if (display === magnifierLastDisplay && drawKey === magnifierDrawKey) return; // 内容未变
+  magnifierLastDisplay = display;
+  magnifierDrawKey = drawKey;
+
+  if (!magnifierOffCanvas) magnifierOffCanvas = document.createElement('canvas');
+  const octx = magnifierOffCanvas.getContext('2d');
   drawPatternBase(octx, width, height, display.idx, display.rgb, {
     cell,
     outerPad: 0,
@@ -59,7 +78,7 @@ function drawCropMagnifier() {
   // 图案之外（含四角）：夜间用 UI 灰色，日间用浅灰
   ctx2.fillStyle = outsideColor;
   ctx2.fillRect(0, 0, canvas.width, canvas.height);
-  ctx2.drawImage(offCanvas, 0, 0);
+  ctx2.drawImage(magnifierOffCanvas, 0, 0);
   // 裁剪元素：红实线 / 选中边蓝实线 / 预览红虚线（放大镜内同样显示，不画中心格方框）
   if (interactionState.crop) {
     const ox = -x0 * cell;

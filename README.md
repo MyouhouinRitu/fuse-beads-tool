@@ -89,6 +89,12 @@ python app.py
 
 ## 版本记录
 
+- **0.5.1（维护版）**：面向长期维护的代码质量重构与测试补齐。
+  - 一致性：文件名清洗 / 原图落盘 / 导出校验 / PDF 页面构建收敛为单一实现；前后端颜色数学、paletteHash、hex 归一化、版本号增加同步测试。
+  - 健壮性与安全：损坏 `.ssfbp`（解压炸弹 / 重复段名 / 未知标志）返回 JSON 400；导出非法输入不再 500；登录失败限流；`APP_SECRET` 不再从 Token 派生；Windows 保留名自动加前缀；无效上传不落盘。
+  - 性能：PIL 单元格 numpy 批量填充；PDF 分页单趟提取与预览缓存；自动保存网格 base64 编码 + 快照数量封顶；配置列表缓存；导出预览 / 裁剪放大镜复用缓存。
+  - 可维护性：app.py 运行时配置收敛到 `app.config`；版本号单一来源；schemaVersion 读取校验；快捷键注册表、目标像素量独立模块、Pointer Events 统一；状态边界与测试钩子契约化；统一日志（轮转文件）；新增 GitHub Actions CI。
+  - 测试：补齐后端边界（重命名冲突 / 保留名 / 404 / 缺文件）、PDF 预览异步流程、损坏 history 恢复、应用工厂隔离、Token 门禁等用例；`npm run test:all` 串联前端、后端与 Playwright。
 - **0.5.0（正式版）**：界面统一重构与无障碍收尾。
   - 弹窗体系：自绘确认 / 输入弹窗（popup.js），支持 Enter 确认、空值校验、Escape / 遮罩取消、焦点圈定与背景滚动锁定；文档、导出、登录、色板配置弹窗补齐 `role="dialog"` / `aria-modal` / `aria-labelledby`。
   - 菜单 / 组合框：使用问题修复菜单支持方向键导航与焦点还原；目标像素量改为 combobox（`role="combobox"` + aria 属性，↑↓ 选择预设、Enter 应用、Esc 关闭）。

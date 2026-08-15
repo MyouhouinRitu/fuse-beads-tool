@@ -11,15 +11,9 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
 
 from bead.export import (
-    LEGEND_BOTTOM_GAP_RATIO,
-    LEGEND_FONT_MIN,
-    LEGEND_FONT_RATIO,
-    LEGEND_ROW_EXTRA_H,
-    LEGEND_ROW_FONT_EXTRA,
-    LEGEND_SWATCH_MIN,
-    LEGEND_SWATCH_RATIO,
     _font,
-    _legend_rows,
+    build_palette_map,
+    legend_height,
     render_pattern,
 )
 
@@ -39,6 +33,15 @@ def _px(mm: float, dpi: int = DPI) -> int:
 
 def _round_up_5(n: float) -> int:
     return int(math.ceil(n / 5) * 5)
+
+
+def needs_split(width: int, height: int) -> bool:
+    return width > SPLIT_WIDTH_THRESHOLD or height > SPLIT_HEIGHT_THRESHOLD
+
+
+def pdf_paper(width: int, height: int) -> tuple[float, float]:
+    """A3 或 A4 的判定：宽/高任一超过分页阈值用 A3，否则 A4。"""
+    return A3_MM if needs_split(width, height) else A4_MM
 
 
 def page_tiles(width: int, height: int) -> list[dict[str, int]]:
@@ -68,52 +71,40 @@ def page_tiles(width: int, height: int) -> list[dict[str, int]]:
     return tiles
 
 
-def _page_legend(
+def _tile_data(
     grid: list[int],
     width: int,
+    codes: list[str] | None,
     palette_map: dict[int, str],
     full_legend: list[dict],
     col: int,
     row: int,
     tile_w: int,
     tile_h: int,
-) -> list[dict]:
+) -> tuple[list[int], list[str], list[dict]]:
+    """单趟提取分页数据：子网格 + 子色号 + 本页图例（避免每页两次全量扫描）。"""
+    sub = []
+    subcodes = []
     counts: dict[int, int] = {}
+    code_by_hex = {str(e.get("hex", "")).upper(): e.get("code", "") for e in full_legend}
     for y in range(row - 1, row - 1 + tile_h):
         for x in range(col - 1, col - 1 + tile_w):
-            idx = grid[y * width + x]
-            if idx >= 0:
-                counts[idx] = counts.get(idx, 0) + 1
-    code_by_hex = {str(e.get("hex", "")).upper(): e.get("code", "") for e in full_legend}
-    entries = []
+            p = y * width + x
+            v = grid[p]
+            sub.append(v)
+            subcodes.append(codes[p] if codes else "")
+            if v >= 0:
+                counts[v] = counts.get(v, 0) + 1
+    legend = []
     for idx, count in counts.items():
         hex_color = palette_map.get(idx, "#FFFFFF")
-        entries.append({
+        legend.append({
             "hex": hex_color,
             "code": code_by_hex.get(hex_color.upper(), ""),
             "count": count,
         })
-    entries.sort(key=lambda e: (-e["count"], e["code"]))
-    return entries
-
-
-def _subgrid(
-    grid: list[int],
-    width: int,
-    codes: list[str] | None,
-    col: int,
-    row: int,
-    tile_w: int,
-    tile_h: int,
-) -> tuple[list[int], list[str]]:
-    sub = []
-    subcodes = []
-    for y in range(row - 1, row - 1 + tile_h):
-        for x in range(col - 1, col - 1 + tile_w):
-            p = y * width + x
-            sub.append(grid[p])
-            subcodes.append(codes[p] if codes else "")
-    return sub, subcodes
+    legend.sort(key=lambda e: (-e["count"], e["code"]))
+    return sub, subcodes, legend
 
 
 def _fits(
@@ -130,11 +121,7 @@ def _fits(
     edge = cell if edge_numbers else 0
     grid_w = width * cell
     grid_h = height * cell
-    rows = _legend_rows(legend_count, grid_w, cell) if show_legend else 0
-    font_size = max(LEGEND_FONT_MIN, int(cell * LEGEND_FONT_RATIO))
-    sw = max(LEGEND_SWATCH_MIN, int(cell * LEGEND_SWATCH_RATIO))
-    row_h = max(sw + LEGEND_ROW_EXTRA_H, font_size + LEGEND_ROW_FONT_EXTRA)
-    legend_h = rows * row_h + int(cell * LEGEND_BOTTOM_GAP_RATIO) if rows else 0
+    legend_h = legend_height(legend_count, grid_w, cell) if show_legend else 0
     total_w = grid_w + 2 * edge + 2 * margin
     total_h = grid_h + 2 * edge + 2 * margin + legend_h
     return total_w <= page_w and total_h <= page_h
@@ -268,16 +255,16 @@ def _render_multi_a4(
         ),
     )]
     tiles = page_tiles(width, height)
-    split_needed = width > SPLIT_WIDTH_THRESHOLD or height > SPLIT_HEIGHT_THRESHOLD
+    split_needed = needs_split(width, height)
     if not split_needed:
         return pages
     for i, tile in enumerate(tiles, 1):
-        sub, subcodes = _subgrid(
-            grid, width, codes,
-            tile["col"], tile["row"], tile["width"], tile["height"],
-        )
-        page_legend = _page_legend(
-            grid, width, palette_map, legend,
+        sub, subcodes, page_legend = _tile_data(
+            grid,
+            width,
+            codes,
+            palette_map,
+            legend,
             tile["col"], tile["row"], tile["width"], tile["height"],
         )
         pages.append((str(i), _render_page(
@@ -298,6 +285,31 @@ def _render_multi_a4(
     return pages
 
 
+def build_pdf_pages(
+    mode: str,
+    width: int,
+    height: int,
+    grid: list[int],
+    palette: list[dict],
+    legend: list[dict],
+    codes: list[str] | None,
+    options: dict,
+    dpi: int = DPI,
+) -> list[tuple[str | None, Image.Image, tuple[float, float]]]:
+    """按模式生成 PDF 各页图像（标签 + 图像 + 纸张），导出与预览共用。"""
+    palette_map = build_palette_map(palette)
+    if mode == "pdf-a4":
+        pages = [("1", _render_single(width, height, grid, palette_map, codes, legend, options, A4_MM, dpi=dpi), A4_MM)]
+    elif mode == "pdf-multi-a4":
+        pages = [(*p, A4_MM) for p in _render_multi_a4(width, height, grid, palette_map, codes, legend, options, dpi=dpi)]
+    elif mode == "pdf-a3-a4":
+        paper = pdf_paper(width, height)
+        pages = [("1", _render_single(width, height, grid, palette_map, codes, legend, options, paper, dpi=dpi), paper)]
+    else:
+        raise ValueError("不支持的 PDF 格式")
+    return pages
+
+
 def export_pdf(
     mode: str,
     width: int,
@@ -308,18 +320,8 @@ def export_pdf(
     codes: list[str] | None,
     options: dict,
 ) -> bytes:
-    palette_map = {c["index"]: c["hex"] for c in palette}
-    if mode == "pdf-a4":
-        pages = [(None, _render_single(width, height, grid, palette_map, codes, legend, options, A4_MM))]
-    elif mode == "pdf-multi-a4":
-        pages = _render_multi_a4(width, height, grid, palette_map, codes, legend, options)
-    elif mode == "pdf-a3-a4":
-        paper = A3_MM if width > SPLIT_WIDTH_THRESHOLD or height > SPLIT_HEIGHT_THRESHOLD else A4_MM
-        pages = [(None, _render_single(width, height, grid, palette_map, codes, legend, options, paper))]
-    else:
-        raise ValueError("不支持的 PDF 格式")
-
-    images = [img for _label, img in pages]
+    pages = build_pdf_pages(mode, width, height, grid, palette, legend, codes, options, dpi=DPI)
+    images = [img for _label, img, _paper in pages]
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf)
     for img in images:
@@ -343,25 +345,13 @@ def export_pdf_previews(
     options: dict,
 ) -> list[dict]:
     """生成 PDF 每页的低分辨率 PNG 预览（含页码/纸张/方向元数据）。"""
-    palette_map = {c["index"]: c["hex"] for c in palette}
-    if mode == "pdf-a4":
-        pages = [("1", _render_single(width, height, grid, palette_map, codes, legend, options, A4_MM, dpi=PREVIEW_DPI))]
-    elif mode == "pdf-multi-a4":
-        pages = _render_multi_a4(width, height, grid, palette_map, codes, legend, options, dpi=PREVIEW_DPI)
-    elif mode == "pdf-a3-a4":
-        paper = A3_MM if width > SPLIT_WIDTH_THRESHOLD or height > SPLIT_HEIGHT_THRESHOLD else A4_MM
-        label = "1"
-        pages = [(label, _render_single(width, height, grid, palette_map, codes, legend, options, paper, dpi=PREVIEW_DPI))]
-    else:
-        raise ValueError("不支持的 PDF 格式")
+    pages = build_pdf_pages(mode, width, height, grid, palette, legend, codes, options, dpi=PREVIEW_DPI)
 
     results = []
-    for label, img in pages:
+    for label, img, paper in pages:
         buf = io.BytesIO()
         img.save(buf, "PNG")
-        paper_name = "A3" if (
-            mode == "pdf-a3-a4" and (width > SPLIT_WIDTH_THRESHOLD or height > SPLIT_HEIGHT_THRESHOLD)
-        ) else "A4"
+        paper_name = "A3" if paper == A3_MM else "A4"
         results.append({
             "page": label or "1",
             "paper": paper_name,

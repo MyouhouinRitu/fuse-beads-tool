@@ -1,7 +1,7 @@
 // 导出对话框：数据构建、实时预览与导出请求。
 
 import * as api from './api.js';
-import { buildCodes, buildDisplayData, buildLegend, sortLegend } from './canvas.js';
+import { buildCodes, buildLegend, getDisplayData, sortLegend } from './canvas.js';
 import * as C from './colors.js';
 import {
   EXPORT_CELL_DEFAULT,
@@ -15,7 +15,7 @@ import {
   EXPORT_QUALITY,
 } from './constants.js';
 import { els } from './els.js';
-import { closeDialog, openDialog } from './focus.js';
+import { hideDialog, showDialog } from './focus.js';
 import { drawPattern } from './render.js';
 import { App } from './state.js';
 import { clampInt, codeOf, downloadUrl, toast } from './utils.js';
@@ -66,8 +66,7 @@ export function openExportDialog() {
   els.dlgPdfPages.classList.add('hidden');
   els.dlgPreviewMask.classList.add('hidden');
   els.dlgCodes.checked = App.settings.showCodes;
-  els.exportDialog.classList.remove('hidden');
-  openDialog(els.exportDialog);
+  showDialog(els.exportDialog);
   renderExportPreview();
 }
 
@@ -80,8 +79,7 @@ export function closeExportDialog() {
   els.dlgStatus.textContent = '';
   els.dlgPdfPages.classList.add('hidden');
   els.dlgPreviewMask.classList.add('hidden');
-  closeDialog();
-  els.exportDialog.classList.add('hidden');
+  hideDialog(els.exportDialog);
 }
 
 // 导出预览：用前端渲染器即时绘制一张小图（不经过后端，秒级响应）
@@ -98,7 +96,7 @@ export async function renderExportPreview() {
   pdfPreviewPages = [];
   const counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   const legend = buildLegend(counts);
-  const display = buildDisplayData();
+  const display = getDisplayData(); // 复用显示数据缓存，避免每次输入事件全量重建
   const cellSize = clampInt(
     els.dlgCell.value,
     EXPORT_CELL_MIN,

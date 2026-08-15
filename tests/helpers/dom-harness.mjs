@@ -334,6 +334,10 @@ globalThis.requestAnimationFrame = (fn) => {
 globalThis.confirm = () => confirmResult;
 globalThis.prompt = () => null;
 globalThis.Image = class {
+  constructor() {
+    this.width = 100;
+    this.height = 80;
+  }
   set src(v) {
     this._src = v;
     queueMicrotask(() => this.onload?.());
@@ -343,6 +347,8 @@ globalThis.Image = class {
 // ---------------- API 桩 ----------------
 
 let stateResponse = {};
+let pdfPreviewResponse = { pages: [] };
+let pdfPreviewFail = false;
 const configs = [
   { name: 'cfg', colorCount: 3 },
   { name: 'other', colorCount: 2 },
@@ -381,6 +387,16 @@ globalThis.fetch = async (url, options = {}) => {
   if (u === '/api/state' && options.method === 'PUT') {
     stateResponse = JSON.parse(options.body);
     return json({ ok: true });
+  }
+  if (u === '/api/export-preview') {
+    if (pdfPreviewFail) {
+      return {
+        ok: false,
+        status: 500,
+        json: async () => ({ error: 'PDF 预览生成失败：boom' }),
+      };
+    }
+    return json(pdfPreviewResponse);
   }
   if (u.startsWith('/api/originals/') && options.method === 'DELETE') {
     return json({ ok: true });
@@ -456,6 +472,7 @@ function mouseAt(cellX, cellY) {
     clientX: (cellX + 1.5) * 28,
     clientY: (cellY + 1.5) * 28,
     button: 0,
+    pointerType: 'mouse',
     preventDefault() {},
   };
 }
@@ -473,6 +490,18 @@ export const testState = {
   },
   set stateResponse(v) {
     stateResponse = v;
+  },
+  get pdfPreviewResponse() {
+    return pdfPreviewResponse;
+  },
+  set pdfPreviewResponse(v) {
+    pdfPreviewResponse = v;
+  },
+  get pdfPreviewFail() {
+    return pdfPreviewFail;
+  },
+  set pdfPreviewFail(v) {
+    pdfPreviewFail = v;
   },
 };
 

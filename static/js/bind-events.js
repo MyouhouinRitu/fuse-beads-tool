@@ -9,7 +9,6 @@ import * as compare from './compare.js';
 import {
   BRUSH_SIZE_MAX,
   BRUSH_SIZE_MIN,
-  TARGET_PIXEL_PRESETS,
   TOOLS,
   WAND_SENSITIVITY_DEFAULT,
   WAND_SENSITIVITY_MAX,
@@ -27,8 +26,8 @@ import { interactionState } from './interaction.js';
 import * as markdown from './markdown.js';
 import * as menu from './menu.js';
 import * as palette from './palette.js';
-import * as panel from './panel.js';
 import * as paletteDialog from './palette-dialog.js';
+import * as panel from './panel.js';
 import { openProjectViaDialog, saveProjectFile } from './project-file.js';
 import * as quickPicker from './quick-picker.js';
 import { scheduleCanvasRender } from './render-queue.js';
@@ -36,6 +35,7 @@ import { applyProjectDocument } from './restore.js';
 import { bindShortcuts } from './shortcuts.js';
 import { applySlider } from './slider.js';
 import { App, setProjectDirty } from './state.js';
+import { bindTargetPixels, closeTargetPixelsMenu } from './target-pixels.js';
 import * as theme from './theme.js';
 import * as toolState from './tool-state.js';
 import * as undoRedo from './undo-redo.js';
@@ -50,56 +50,6 @@ import {
 } from './utils.js';
 import * as view from './view.js';
 
-// 目标像素量组合框的当前高亮预设（键盘 ↑↓ / Enter 应用）
-let targetPixelsActive = -1;
-
-function targetPixelsOptions() {
-  return Array.from(els.targetPixelsMenu.querySelectorAll('[role="option"]'));
-}
-
-function setTargetPixelsActive(index, { open = false } = {}) {
-  const opts = targetPixelsOptions();
-  if (!opts.length) return;
-  if (open) els.targetPixelsMenu.classList.remove('hidden');
-  targetPixelsActive = Math.max(0, Math.min(index, opts.length - 1));
-  opts.forEach((o, i) => o.setAttribute('aria-selected', String(i === targetPixelsActive)));
-  els.targetPixels.setAttribute('aria-expanded', 'true');
-  els.targetPixels.setAttribute('aria-activedescendant', opts[targetPixelsActive].id);
-}
-
-function closeTargetPixelsMenu() {
-  els.targetPixelsMenu.classList.add('hidden');
-  els.targetPixels.setAttribute('aria-expanded', 'false');
-  els.targetPixels.removeAttribute('aria-activedescendant');
-  targetPixelsActive = -1;
-}
-
-function applyTargetPixelPreset(btn) {
-  els.targetPixels.value = String(btn.dataset.value);
-  closeTargetPixelsMenu();
-  els.targetPixels.focus();
-  setProjectDirty(true);
-}
-
-function renderTargetPixelOptions() {
-  const menu = els.targetPixelsMenu;
-  menu.innerHTML = '';
-  TARGET_PIXEL_PRESETS.forEach((p) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'dropdown-item';
-    btn.setAttribute('role', 'option');
-    btn.setAttribute('aria-selected', 'false');
-    btn.tabIndex = -1;
-    btn.id = `target-pixels-option-${p.value}`;
-    btn.dataset.value = String(p.value);
-    btn.title = p.tip;
-    btn.textContent = String(p.value);
-    btn.addEventListener('click', () => applyTargetPixelPreset(btn));
-    menu.appendChild(btn);
-  });
-}
-
 export function bindEvents() {
   panel.bindPanelToggles();
   palette.bindColorTable();
@@ -107,51 +57,7 @@ export function bindEvents() {
   highlight.bindHighlightList();
   historyUI.bindHistoryList();
   quickPicker.bindQuickPicker();
-  renderTargetPixelOptions();
-  // 箭头展开预设（输入框本身只编辑，光标为文本竖线）
-  els.targetPixelsBtn.addEventListener('click', (e) => {
-    if (e.stopPropagation) e.stopPropagation();
-    if (e.preventDefault) e.preventDefault();
-    if (els.targetPixelsMenu.classList.contains('hidden')) {
-      const opts = targetPixelsOptions();
-      const cur = opts.findIndex((o) => o.dataset.value === els.targetPixels.value);
-      setTargetPixelsActive(cur >= 0 ? cur : 0, { open: true });
-    } else {
-      closeTargetPixelsMenu();
-    }
-  });
-  els.targetPixels.addEventListener('keydown', (e) => {
-    const opts = targetPixelsOptions();
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      e.stopPropagation();
-      if (els.targetPixelsMenu.classList.contains('hidden')) {
-        const cur = opts.findIndex((o) => o.dataset.value === els.targetPixels.value);
-        setTargetPixelsActive(e.key === 'ArrowDown' ? Math.max(0, cur) : Math.max(0, cur), {
-          open: true,
-        });
-      } else {
-        const base = targetPixelsActive >= 0 ? targetPixelsActive : 0;
-        const next =
-          e.key === 'ArrowDown' ? Math.min(opts.length - 1, base + 1) : Math.max(0, base - 1);
-        setTargetPixelsActive(next);
-      }
-      return;
-    }
-    if (e.key === 'Enter' && !els.targetPixelsMenu.classList.contains('hidden')) {
-      if (targetPixelsActive >= 0 && opts[targetPixelsActive]) {
-        e.preventDefault();
-        e.stopPropagation();
-        applyTargetPixelPreset(opts[targetPixelsActive]);
-      }
-      return;
-    }
-    if (e.key === 'Escape' && !els.targetPixelsMenu.classList.contains('hidden')) {
-      e.preventDefault();
-      e.stopPropagation();
-      closeTargetPixelsMenu();
-    }
-  });
+  bindTargetPixels();
 
   els.btnLogin.addEventListener('click', () => withPending(els.btnLogin, auth.tryLogin));
   els.loginToken.addEventListener('keydown', (e) => {
@@ -173,7 +79,10 @@ export function bindEvents() {
     const f = els.projectFileInput.files[0];
     els.projectFileInput.value = '';
     if (!f) return;
-    if (App.projectDirty && !(await confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？')))
+    if (
+      App.projectDirty &&
+      !(await confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？'))
+    )
       return;
     await withPending(els.btnOpenProject, async () => {
       try {
@@ -184,23 +93,29 @@ export function bindEvents() {
       }
     });
   });
-  els.btnSaveProject.addEventListener('click', () => withPending(els.btnSaveProject, saveProjectFile));
+  els.btnSaveProject.addEventListener('click', () =>
+    withPending(els.btnSaveProject, saveProjectFile),
+  );
   els.btnImport.addEventListener('click', async () => {
-    if (App.projectDirty && !(await confirmDialog('当前项目有未保存的更改，导入新图片将覆盖。是否继续？')))
+    if (
+      App.projectDirty &&
+      !(await confirmDialog('当前项目有未保存的更改，导入新图片将覆盖。是否继续？'))
+    )
       return;
     els.fileInput.click();
   });
   els.fileInput.addEventListener('change', async () => {
     const f = els.fileInput.files[0];
     if (f) {
-      historyUI.clearAll({ silent: true });
       App.originalFile = f;
       compare.loadOriginalImage(f);
       await withPending(els.btnImport, () => upload.processUpload());
     }
     els.fileInput.value = '';
   });
-  els.btnRecompress.addEventListener('click', () => withPending(els.btnRecompress, upload.recompress));
+  els.btnRecompress.addEventListener('click', () =>
+    withPending(els.btnRecompress, upload.recompress),
+  );
   els.chkCompare.addEventListener('change', () => {
     compare.setCompareEnabled(els.chkCompare.checked);
     setProjectDirty(true);
@@ -461,13 +376,10 @@ export function bindEvents() {
     setProjectDirty(true);
   });
 
-  els.canvasScroll.addEventListener('mousedown', drag.onCanvasScrollMouseDown);
   els.canvasScroll.addEventListener('pointerdown', drag.onCanvasPointerDown);
-  els.canvasScroll.addEventListener('pointermove', drag.onCanvasPointerMove);
-  els.canvasScroll.addEventListener('pointerup', drag.onCanvasPointerUp);
-  window.addEventListener('mousemove', drag.onWindowMouseMove);
-  window.addEventListener('mouseup', drag.onWindowMouseUp);
-  els.canvasScroll.addEventListener('mouseleave', drag.onCanvasScrollMouseLeave);
+  window.addEventListener('pointermove', drag.onWindowPointerMove);
+  window.addEventListener('pointerup', drag.onWindowPointerUp);
+  els.canvasScroll.addEventListener('pointerleave', drag.onCanvasScrollPointerLeave);
   // 九宫格：鼠标移出弹窗时还原悬停预览的颜色
   els.quickPicker.addEventListener('mouseleave', quickPicker.restoreQuickPickerPreview);
   // 全域禁用右键菜单：工具不需要右键菜单，避免拖拽结束时在菜单栏等位置弹出；
@@ -479,7 +391,7 @@ export function bindEvents() {
   });
 
   els.canvasScroll.addEventListener('wheel', drag.onCanvasWheel, { passive: false });
-  els.compareOriginal.addEventListener('mousedown', drag.onCompareMouseDown);
+  els.compareOriginal.addEventListener('pointerdown', drag.onComparePointerDown);
   els.compareOriginal.addEventListener('wheel', drag.onCompareWheel, { passive: false });
 
   paletteDialog.bindPaletteDialog();

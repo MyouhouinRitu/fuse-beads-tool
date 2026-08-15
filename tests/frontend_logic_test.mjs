@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as C from '../static/js/colors.js';
+import { decodeInt16Grid, encodeInt16Grid } from '../static/js/grid-codec.js';
 import { paletteHash, sha256Hex } from '../static/js/hash.js';
 import {
   applyStepToGrid,
@@ -10,6 +11,7 @@ import {
   createTransaction,
   deleteTransaction,
   findTransaction,
+  MAX_SNAPSHOTS,
   MAX_UNDO_STEPS,
   recordStep,
   recordStructuralStep,
@@ -45,6 +47,17 @@ import {
     '色板哈希应与输入顺序无关',
   );
   console.log('[OK] 哈希工具：SHA-256 与色板规范化哈希');
+}
+
+// ---- 网格 base64 编解码（自动保存紧凑载荷）----
+{
+  const grid = new Int16Array([0, 1, -1, 221, 0, 7, -1, 2]);
+  const encoded = encodeInt16Grid(grid);
+  assert.equal(typeof encoded, 'string');
+  assert.deepEqual(Array.from(decodeInt16Grid(encoded)), Array.from(grid), '编解码应无损往返');
+  assert.equal(decodeInt16Grid('%%%非法%%%'), null, '损坏的 base64 应返回 null');
+  assert.equal(decodeInt16Grid(''), null, '空串应返回 null');
+  console.log('[OK] 网格 base64 编解码：无损往返 / 损坏输入降级');
 }
 
 // ---- 最近色映射（功能三第 1~4 步）----
@@ -172,6 +185,34 @@ import {
   assert.equal(sanitizeHistory({ ...h2, baselineId: 99 }).baselineId, null, '失效的基线事务应清空');
   assert.equal(h2.nextId, 3, 'nextId 应根据现有节点推导');
   console.log('[OK] 历史数据清洗与旧树兼容');
+}
+
+// ---- 快照数量上限：最多保留最近 MAX_SNAPSHOTS 个 ----
+{
+  const history = createEmptyHistory();
+  for (let i = 0; i < MAX_SNAPSHOTS + 5; i++) {
+    createTransaction(history, { width: 1, height: 1, grid: [i] });
+  }
+  assert.equal(history.items.length, MAX_SNAPSHOTS, '快照数量不应超过上限');
+  assert.equal(history.items[0].id, 6, '应丢弃最旧的快照');
+  assert.equal(history.currentId, history.items[history.items.length - 1].id, '当前应指向最新快照');
+
+  // 清洗端同样限长，且兼容 base64 编码的快照网格
+  const items = Array.from({ length: MAX_SNAPSHOTS + 3 }, (_, i) => ({
+    id: i + 1,
+    createdAt: i + 1,
+    snapshot: {
+      width: 1,
+      height: 1,
+      gridBase64: encodeInt16Grid(Int16Array.from([i])),
+    },
+  }));
+  const cleaned = sanitizeHistory({ items, currentId: items.length, baselineId: 1 });
+  assert.equal(cleaned.items.length, MAX_SNAPSHOTS, '清洗后快照数量应封顶');
+  assert.equal(cleaned.items[0].id, 4, '清洗应保留最新快照');
+  assert.deepEqual(cleaned.items[0].snapshot.grid, [3], 'base64 快照应解码为数组');
+  assert.equal(cleaned.baselineId, null, '被丢弃的基线应清空');
+  console.log('[OK] 快照数量上限：保存与清洗均封顶 / base64 快照解码');
 }
 
 // ---- 单步撤销/重做：增量记录 + 20 步上限 ----

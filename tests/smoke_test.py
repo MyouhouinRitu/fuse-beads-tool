@@ -1,16 +1,21 @@
 """冒烟测试：启动 Flask 服务并验证核心接口。"""
 
 import base64
+import hashlib
 import io
 import json
 import os
 import random
+import struct
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import urllib.parse
+import zlib
+from datetime import datetime
 
 from PIL import Image, ImageDraw
 
@@ -20,6 +25,112 @@ sys.path.insert(0, ROOT)
 
 from bead import project_file as pj
 from bead import pdf_export as pdfx
+from app import (
+    LOGIN_MAX_ATTEMPTS,
+    _clear_login_failures,
+    _login_rate_limited,
+    _record_login_failure,
+    create_app,
+    safe_name,
+)
+
+
+def test_filename_helpers():
+    # 文件名清洗统一入口：替换非法字符 / 可选截断 / 去结尾点与空格 / 回退名
+    assert pj.safe_filename("a/b:c?d*e", "x") == "a_b_c_d_e"
+    assert pj.safe_filename("trailing. ") == "trailing"
+    assert pj.clean_filename("x" * 100, max_length=60) == "x" * 60
+    assert len(safe_name("x" * 100)) == 60, "配置名应限制 60 字符"
+    assert safe_name(" ") == "未命名"
+    # Windows 保留名：加下划线前缀避免创建失败
+    assert pj.safe_filename("CON") == "_CON"
+    assert pj.safe_filename("con.txt") == "_con.txt"
+    assert pj.clean_filename("NUL", max_length=60) == "_NUL"
+    print("[OK] 文件名清洗统一入口（safe_filename / clean_filename / safe_name）")
+
+
+def build_raw_project(entries):
+    """手工构造 .ssfbp 原始字节：entry = (name, payload, flags, uncompressed?)"""
+    table_size = pj.ENTRY_SIZE * len(entries)
+    offset = pj.HEADER_SIZE + table_size
+    table = b""
+    stored = []
+    for item in entries:
+        name, payload, flags = item[0], item[1], item[2]
+        uncompressed = item[3] if len(item) > 3 else len(payload)
+        table += struct.pack(
+            "<16sQQQIII",
+            pj.section_id(name),
+            offset,
+            len(payload),
+            uncompressed,
+            flags,
+            zlib.crc32(payload) & 0xFFFFFFFF,
+            0,
+        )
+        stored.append(payload)
+        offset += len(payload)
+    digest = hashlib.sha256(b"".join(stored)).digest()
+    header = pj.MAGIC + struct.pack("<III", pj.FORMAT_VERSION, len(entries), 0) + digest
+    return header + table + b"".join(stored)
+
+
+def test_project_file_guards():
+    cases = [
+        ("段名重复", [("state", b"{}", 0), ("state", b"{}", 0)], "段名重复"),
+        ("未知标志", [("state", b"{}", 2)], "标志不受支持"),
+        ("体积超限", [("state", b"{}", 0, pj.MAX_SECTION_BYTES + 1)], "体积超限"),
+        ("解压失败", [("state", b"not-zlib", pj.FLAG_ZLIB)], "解压失败"),
+    ]
+    for label, entries, msg in cases:
+        try:
+            pj.parse_project_file(build_raw_project(entries))
+        except ValueError as e:
+            assert msg in str(e), f"{label}：应报「{msg}」，实际「{e}」"
+        else:
+            raise AssertionError(f"{label}：应拒绝但未报错")
+    print("[OK] 项目文件防护：重复段名 / 未知标志 / 解压体积上限 / 损坏数据")
+
+
+def test_login_rate_limit():
+    _clear_login_failures("test-ip")
+    for _ in range(LOGIN_MAX_ATTEMPTS):
+        _record_login_failure("test-ip")
+    assert _login_rate_limited("test-ip"), "达到失败上限后应限流"
+    _clear_login_failures("test-ip")
+    assert not _login_rate_limited("test-ip"), "清除失败记录后应恢复"
+    print("[OK] 登录失败限流（内存态计数 / 清除）")
+
+
+def test_app_factory_isolation():
+    # 同一进程创建两个数据目录不同的应用实例，配置与状态读写应互不串扰
+    app1 = create_app(tempfile.mkdtemp(prefix="fuse_app1_"))
+    app2 = create_app(tempfile.mkdtemp(prefix="fuse_app2_"))
+    c1 = app1.config["BEAD_CONFIG"]
+    c2 = app2.config["BEAD_CONFIG"]
+    assert c1.data_dir != c2.data_dir
+    assert c1.state_file != c2.state_file
+    cli1 = app1.test_client()
+    cli2 = app2.test_client()
+    assert cli1.put("/api/state", json={"owner": "one"}).status_code == 200
+    assert cli1.get("/api/state").get_json()["owner"] == "one"
+    assert cli2.get("/api/state").get_json() == {}
+    print("[OK] 应用工厂隔离：两个数据目录互不串扰")
+
+
+def test_auth_gate_with_token():
+    # APP_TOKEN 配置化后：未登录 401、错误 Token 401、正确 Token 放行
+    os.environ["APP_TOKEN"] = "secret-token"
+    try:
+        app = create_app(tempfile.mkdtemp(prefix="fuse_auth_"))
+        cli = app.test_client()
+        assert cli.get("/api/configs").status_code == 401
+        assert cli.post("/api/auth/login", json={"token": "wrong"}).status_code == 401
+        assert cli.post("/api/auth/login", json={"token": "secret-token"}).status_code == 200
+        assert cli.get("/api/configs").status_code == 200
+    finally:
+        os.environ.pop("APP_TOKEN", None)
+    print("[OK] Token 认证门禁（APP_TOKEN 配置化后仍生效）")
 
 
 def req(method, path, data=None, raw=False):
@@ -29,10 +140,15 @@ def req(method, path, data=None, raw=False):
         body = json.dumps(data).encode()
         headers["Content-Type"] = "application/json"
     r = urllib.request.Request(BASE + path, data=body, method=method, headers=headers)
-    with urllib.request.urlopen(r, timeout=30) as resp:
+    try:
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            if raw:
+                return resp.status, resp.read()
+            return resp.status, json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
         if raw:
-            return resp.status, resp.read()
-        return resp.status, json.loads(resp.read().decode())
+            return e.code, e.read()
+        return e.code, json.loads(e.read().decode())
 
 
 def upload(path, target_pixels, sharpen, original_id=None):
@@ -66,8 +182,11 @@ def upload(path, target_pixels, sharpen, original_id=None):
         method="POST",
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
     )
-    with urllib.request.urlopen(r, timeout=30) as resp:
-        return resp.status, json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            return resp.status, json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
 
 
 def upload_project_bytes(content):
@@ -84,8 +203,11 @@ def upload_project_bytes(content):
         method="POST",
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
     )
-    with urllib.request.urlopen(r, timeout=30) as resp:
-        return resp.status, json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            return resp.status, json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
 
 
 def make_test_image(path):
@@ -113,14 +235,16 @@ def make_transparent_image(path):
 def main():
     # 用临时数据目录启动，避免测试状态写入真实 data/（如 state.json）
     data_dir = tempfile.mkdtemp(prefix="fuse_smoke_data_")
-    env = {**os.environ, "DATA_DIR": data_dir}
-    proc = subprocess.Popen(
-        [sys.executable, "app.py", "--port", "5001"],
-        cwd=ROOT,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
+    env = {**os.environ, "DATA_DIR": data_dir, "NO_BROWSER": "1"}
+    server_log = os.path.join(tempfile.gettempdir(), "fuse_smoke_server.log")
+    with open(server_log, "wb") as out:
+        proc = subprocess.Popen(
+            [sys.executable, "app.py", "--port", "5001"],
+            cwd=ROOT,
+            env=env,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+        )
     try:
         # 等待服务就绪
         for _ in range(40):
@@ -132,6 +256,12 @@ def main():
         else:
             raise RuntimeError("服务启动超时")
 
+        test_filename_helpers()
+        test_project_file_guards()
+        test_login_rate_limit()
+        test_app_factory_isolation()
+        test_auth_gate_with_token()
+
         s, j = req("GET", "/api/configs")
         assert s == 200 and j["configs"], "配置列表为空"
         first = j["configs"][0]
@@ -141,6 +271,10 @@ def main():
         s, j = req("GET", "/api/configs/" + urllib.parse.quote(first["name"]))
         assert s == 200 and len(j["colors"]) == first["colorCount"]
         print("[OK] 读取配置详情")
+
+        s, j = req("GET", "/api/configs/" + urllib.parse.quote("不存在的配置"))
+        assert s == 404 and j["error"] == "配置不存在"
+        print("[OK] 读取不存在的配置返回 404")
 
         cfg_name = f"测试配置_{int(time.time())}"
         s, j = req("POST", "/api/configs", {
@@ -155,11 +289,54 @@ def main():
         assert j["colors"][0]["hex"] == "#FF0000"
         print("[OK] 创建并读取配置")
 
+        # 重命名冲突 / Windows 保留名（HTTP 层）
+        cfg_r1 = f"重命名A_{int(time.time())}"
+        cfg_r2 = f"重命名B_{int(time.time())}"
+        one_color = [{"index": 1, "code": "R", "name": "红", "hex": "#FF0000"}]
+        assert req("POST", "/api/configs", {"name": cfg_r1, "colors": one_color})[0] == 200
+        assert req("POST", "/api/configs", {"name": cfg_r2, "colors": one_color})[0] == 200
+        s, j = req(
+            "POST",
+            f"/api/configs/{urllib.parse.quote(cfg_r1)}/rename",
+            {"newName": cfg_r2},
+        )
+        assert s == 400 and "已存在" in j["error"]
+        s, j = req(
+            "POST",
+            f"/api/configs/{urllib.parse.quote(cfg_r1)}/rename",
+            {"newName": "CON"},
+        )
+        assert j["ok"] and j["name"] == "_CON", f"保留名应加前缀，实际 {j.get('name')}"
+        s, j = req("POST", "/api/configs", {"name": "NUL", "colors": one_color})
+        assert j["ok"] and j["name"] == "_NUL", f"保留名创建应加前缀，实际 {j.get('name')}"
+        for name in ("_CON", "_NUL", cfg_r2):
+            assert req("DELETE", "/api/configs/" + urllib.parse.quote(name))[0] == 200
+        print("[OK] 配置重命名冲突 400 / 保留名自动加前缀")
+
         s, raw = req("GET", "/api/configs/" + urllib.parse.quote(cfg_name) + "/export", raw=True)
         assert b"\xff\x00\x00" in raw.upper() or b"FF0000" in raw.upper()
         print("[OK] 导出 CSV")
 
         tmp = tempfile.mkdtemp(prefix="fuse_smoke_")
+        # 无效图片：应返回 400 且不落盘（原图目录保持为空）
+        bad_path = os.path.join(tmp, "bad.png")
+        with open(bad_path, "wb") as fh:
+            fh.write(b"not an image")
+        s, j = upload(bad_path, 4000, False)
+        assert s == 400, f"无效图片应返回 400，实际 {s}"
+        assert not os.listdir(os.path.join(data_dir, "originals")), "无效图片不应留下孤儿原图"
+        print("[OK] 无效图片返回 400 且不落盘")
+
+        s, j = upload(None, 4000, False)
+        assert s == 400 and j["error"] == "未收到图片"
+        print("[OK] 未传图片返回 400")
+
+        s, j = req("GET", "/api/originals/" + "z" * 64)
+        assert s == 404 and j["error"] == "原图不存在"
+        s, j = req("DELETE", "/api/originals/" + "a" * 64)
+        assert s == 200 and j["ok"]
+        print("[OK] 原图非法/缺失引用：读取 404 / 删除幂等")
+
         img_path = os.path.join(tmp, "test.png")
         make_test_image(img_path)
         s, j = upload(img_path, 40000, True)
@@ -199,6 +376,35 @@ def main():
         })
         assert j["dataUrl"].startswith("data:image/jpeg;base64,")
         print("[OK] 导出 JPG")
+
+        # 非法导出输入：非法网格返回 400 JSON；非法数值选项回退默认值
+        s, j = req("POST", "/api/export", {
+            "width": "abc",
+            "height": 2,
+            "grid": [0, 0, 0, 0],
+            "palette": [{"index": 0, "hex": "#FF0000"}],
+            "options": {"format": "jpg"},
+        })
+        assert s == 400 and j["error"] == "网格数据无效"
+        s, j = req("POST", "/api/export", {
+            "width": 2,
+            "height": 2,
+            "grid": [0, 0, 0, 0],
+            "palette": [{"index": 0, "hex": "#FF0000"}],
+            "options": {"format": "jpg", "cellSize": "abc", "outerPad": "x", "quality": "bad"},
+        })
+        assert s == 200 and j["dataUrl"].startswith("data:image/jpeg;base64,")
+        print("[OK] 导出非法输入：非法网格 400 / 非法数值选项回退默认")
+
+        s, j = req("POST", "/api/export-preview", {
+            "width": "abc",
+            "height": 2,
+            "grid": [0, 0, 0, 0],
+            "palette": [{"index": 0, "hex": "#FF0000"}],
+            "options": {"format": "pdf-a4"},
+        })
+        assert s == 400 and j["error"] == "网格数据无效"
+        print("[OK] 导出预览非法网格返回 400")
 
         for pdf_fmt in ("pdf-a4", "pdf-multi-a4", "pdf-a3-a4"):
             s, j = req("POST", "/api/export", {
@@ -254,6 +460,10 @@ def main():
         assert j["editor"]["tool"] == "wand"
         print("[OK] 状态保存与恢复")
 
+        s, j = req("PUT", "/api/state", [1, 2, 3])
+        assert s == 400 and j["error"] == "状态数据无效"
+        print("[OK] 状态写入：非对象载荷返回 400")
+
         project_doc = {
             "schemaVersion": 1,
             "savedAt": 1,
@@ -283,21 +493,36 @@ def main():
                 "maxColors": 2,
             },
             "history": {"items": [], "currentId": None, "nextId": 1, "baselineId": None},
-            "original": None,
+            "original": {"name": "测试原图.png"},
         }
         s, j = req("POST", "/api/project/save", {
             "document": project_doc,
-            "filename": "测试.ssfbp",
         })
         assert j["mode"] == "download"
+        assert j["filename"].startswith(datetime.now().strftime("%Y%m%d")), (
+            f"默认项目文件名应以日期开头，实际 {j['filename']}"
+        )
+        assert "测试原图" in j["filename"], (
+            f"默认项目文件名应取原图名，实际 {j['filename']}"
+        )
+        assert j["filename"].endswith("_拼豆图.ssfbp")
+        print(f"[OK] 默认项目文件名由后端生成：{j['filename']}")
         raw = base64.b64decode(j["dataBase64"])
         assert pj.parse_project_file(raw)["state"]
         print("[OK] 项目文件生成（浏览器下载）")
+
+        s, j = req("POST", "/api/project/save", {"document": {"settings": {}}})
+        assert s == 400 and j["error"] == "没有可保存的项目"
+        print("[OK] 项目保存缺画布返回 400")
 
         s, j = upload_project_bytes(raw)
         assert s == 200 and j["document"]["project"]["width"] == 2
         assert j["document"]["viewport"]["zoom"] == 1.25
         print("[OK] 项目文件上传打开")
+
+        s, j = upload_project_bytes(b"garbage bytes")
+        assert s == 400 and "失败" in j["error"]
+        print("[OK] 损坏项目文件返回 JSON 400（而非 500）")
 
         s, j = req("DELETE", "/api/configs/" + urllib.parse.quote(cfg_name))
         assert j["ok"]

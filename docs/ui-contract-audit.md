@@ -29,7 +29,7 @@
 | 控件 | 当前行为 | 差异 / 问题 | 目标契约 | 状态 |
 | --- | --- | --- | --- | --- |
 | `#btn-fix-menu` + `#fix-menu`（使用问题修复） | 点击开合；点击外部关闭；Escape 关闭；打开聚焦首项；↑↓ / Home / End 导航；Enter 执行；关闭后焦点还原 | 已按 Menu 契约实现（menu.js 统一管理） | Menu 契约 | ✅ |
-| `#target-pixels` + `#target-pixels-btn` + `#target-pixels-menu`（像素量预设） | 输入可编辑；箭头开合菜单；↑↓ 高亮预设、Enter 应用、Esc 关闭、焦点留在输入框；点击外部关闭 | 已按 Combobox 契约实现（role=combobox / option、aria-expanded / controls / activedescendant） | Combobox 契约 | ✅ |
+| `#target-pixels` + `#target-pixels-btn` + `#target-pixels-menu`（像素量预设） | 输入可编辑；箭头开合菜单；↑↓ 高亮预设、Enter 应用、Esc 关闭、焦点留在输入框；点击外部关闭 | 已按 Combobox 契约实现（role=combobox / option、aria-expanded / controls / activedescendant）；箭头按钮已移除 aria-hidden（可聚焦元素不可对辅助技术隐藏） | Combobox 契约 | ✅ |
 
 ## 2. 弹窗与浮层
 
@@ -40,7 +40,7 @@
 | `#doc-dialog`（文档） | focus.js 管理；Escape 关闭；点击遮罩关闭；已补 role / aria-modal / aria-labelledby | 已实现 | Dialog 契约 | ✅ |
 | `#export-dialog`（导出） | focus.js 管理；Escape 关闭并重置；busy 遮罩 + 进度条；点击遮罩关闭；已补 ARIA | 重置逻辑仅在此实现（样板） | Dialog 契约 | ✅ |
 | `#login-mask`（登录） | focus.js 管理；Escape 仅清错误；Enter 提交；已补 ARIA；withPending 防重复提交 | 已实现（强制弹窗例外） | Dialog 契约 + withPending | ✅ |
-| `#quick-picker`（九宫格） | `role="dialog"`；Escape / 1-9 / 取消关闭；mouseleave 还原预览；关闭后还原焦点（可聚焦的触发元素） | 非模态语义仍标为 dialog；canvas 不可聚焦时焦点还原受限 | Popover 契约：非模态、不抢焦点、Esc / 选择 / 取消关闭、关闭后还原预览与焦点 | 🟡 |
+| `#quick-picker`（九宫格） | `<fieldset>`（group 语义）；Escape / 1-9 / 取消关闭；mouseleave 还原预览；关闭后还原焦点（可聚焦的触发元素） | 已改为非模态 Popover 语义（fieldset）；canvas 不可聚焦时焦点还原受限 | Popover 契约：非模态、不抢焦点、Esc / 选择 / 取消关闭、关闭后还原预览与焦点 | ✅ |
 | `#toast` | 队列 + important / 普通分级；`role="status"`；success / error 样式变体 | 已实现 | 统一「何时 toast」规则 | ✅ |
 
 ## 3. 原生下拉 select

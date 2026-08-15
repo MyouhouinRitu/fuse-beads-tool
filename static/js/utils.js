@@ -83,10 +83,7 @@ export async function withPending(trigger, task) {
 }
 
 export function getToastQueue() {
-  return [
-    ...toastQueue.map((item) => item.text),
-    ...(pendingNormal ? [pendingNormal.text] : []),
-  ];
+  return [...toastQueue.map((item) => item.text), ...(pendingNormal ? [pendingNormal.text] : [])];
 }
 
 let paletteHintShownAt = 0;

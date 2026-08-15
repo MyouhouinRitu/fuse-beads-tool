@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from bead.colors import is_light_color
@@ -67,6 +68,28 @@ def _legend_rows(count: int, grid_w: int, cell: int) -> int:
     pad = cell * LEGEND_PAD_RATIO
     per_row = max(1, int((grid_w - 2 * pad) // (cell * LEGEND_ENTRY_W)))
     return max(1, math.ceil(count / per_row))
+
+
+def _legend_metrics(cell: int) -> tuple[int, int, int]:
+    """图例单行的字号 / 色块 / 行高（像素），渲染与 PDF 适配共用同一套计算。"""
+    font_size = max(LEGEND_FONT_MIN, int(cell * LEGEND_FONT_RATIO))
+    sw = max(LEGEND_SWATCH_MIN, int(cell * LEGEND_SWATCH_RATIO))
+    row_h = max(sw + LEGEND_ROW_EXTRA_H, font_size + LEGEND_ROW_FONT_EXTRA)
+    return font_size, sw, row_h
+
+
+def legend_height(count: int, grid_w: int, cell: int) -> int:
+    """图例总高（像素）：行数 × 行高 + 底部留白，供渲染与 PDF 适配共用。"""
+    rows = _legend_rows(count, grid_w, cell)
+    if not rows:
+        return 0
+    _font_size, _sw, row_h = _legend_metrics(cell)
+    return rows * row_h + int(cell * LEGEND_BOTTOM_GAP_RATIO)
+
+
+def build_palette_map(palette: list[dict]) -> dict[int, str]:
+    """把导出调色板列表收敛为 index -> hex 映射（JPG/PNG 与 PDF 共用）。"""
+    return {int(c["index"]): str(c["hex"]) for c in palette}
 
 
 def _font(cell: int, scale: float) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -149,33 +172,39 @@ def render_pattern(
     oy = outer_pad + edge
     grid_w = width * cell
     grid_h = height * cell
-    rows = _legend_rows(len(legend), grid_w, cell) if show_legend else 0
-    legend_font_size = max(LEGEND_FONT_MIN, int(cell * LEGEND_FONT_RATIO))
-    legend_sw = max(LEGEND_SWATCH_MIN, int(cell * LEGEND_SWATCH_RATIO))
-    legend_row_h = max(legend_sw + LEGEND_ROW_EXTRA_H, legend_font_size + LEGEND_ROW_FONT_EXTRA)
-    legend_h = (
-        rows * legend_row_h + int(cell * LEGEND_BOTTOM_GAP_RATIO)
-        if rows
-        else 0
-    )
+    legend_font_size, legend_sw, legend_row_h = _legend_metrics(cell)
+    legend_h = legend_height(len(legend), grid_w, cell) if show_legend else 0
     total_w = grid_w + 2 * edge + 2 * outer_pad
     total_h = grid_h + 2 * edge + 2 * outer_pad + legend_h
 
     img = Image.new("RGB", (total_w, total_h), "white")
     draw = ImageDraw.Draw(img)
 
-    # 单元格：只画图案本身（外侧无透明边距）
-    for py in range(height):
-        y0 = oy + py * cell
-        for px in range(width):
-            x0 = ox + px * cell
-            idx = grid[py * width + px]
-            if idx >= 0:
-                draw.rectangle([x0, y0, x0 + cell - 1, y0 + cell - 1], fill=palette_map.get(idx, "#FFFFFF"))
-            elif hatch:
-                _draw_empty(draw, x0, y0, cell, empty_style)
-            else:
-                draw.rectangle([x0, y0, x0 + cell - 1, y0 + cell - 1], fill="#FFFFFF")
+    # 单元格：numpy 批量填充底色（替代 8 万次逐格 draw.rectangle），空位另行处理
+    palette_rgb = {}
+    for idx, hexv in palette_map.items():
+        try:
+            rgb = tuple(int(hexv.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        except (ValueError, IndexError):
+            continue
+        palette_rgb[idx] = rgb
+    max_idx = max(palette_rgb, default=-1)
+    rgb_lut = np.full((max_idx + 2, 3), 255, dtype=np.uint8)
+    for idx, rgb in palette_rgb.items():
+        rgb_lut[idx] = rgb
+    grid_arr = np.asarray(grid, dtype=np.int64).reshape(height, width)
+    # 负数（空位）映射到末尾的白色兜底行；超大/未知索引同样回退白色
+    cell_index = np.where(grid_arr < 0, max_idx + 1, np.minimum(grid_arr, max_idx + 1))
+    cell_colors = rgb_lut[cell_index]
+    cell_img = Image.fromarray(cell_colors, "RGB").resize(
+        (width * cell, height * cell), Image.NEAREST
+    )
+    img.paste(cell_img, (ox, oy))
+    if hatch:
+        for py in range(height):
+            for px in range(width):
+                if grid_arr[py, px] < 0:
+                    _draw_empty(draw, ox + px * cell, oy + py * cell, cell, empty_style)
 
     # 边缘行列号条（浅蓝底，不含四角）
     if edge_numbers:
@@ -280,6 +309,9 @@ def render_pattern(
     # 格子内色号
     if show_codes and codes and cell >= CODE_MIN_CELL:
         font = _font(cell, CODE_FONT_RATIO)
+        contrast_by_idx = {
+            idx: _contrast_text(rgb) for idx, rgb in palette_rgb.items()
+        }
         for y in range(height):
             for x in range(width):
                 idx = grid[y * width + x]
@@ -290,9 +322,7 @@ def render_pattern(
                     continue
                 x0 = ox + x * cell + cell / 2
                 y0 = oy + y * cell + cell / 2
-                fill = palette_map.get(idx, "#FFFFFF")
-                rgb = tuple(int(fill.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
-                text = _contrast_text(rgb)
+                text = contrast_by_idx.get(idx, "#111111")
                 tw, th = draw.textbbox((0, 0), code, font=font)[2:]
                 draw.text((x0 - tw / 2, y0 - th / 2), code, fill=text, font=font)
 

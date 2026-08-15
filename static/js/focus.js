@@ -50,3 +50,16 @@ export function closeDialog() {
   if (restoreFocusEl && typeof restoreFocusEl.focus === 'function') restoreFocusEl.focus();
   restoreFocusEl = null;
 }
+
+// 弹窗显隐 + 焦点管理的统一入口：所有对话框都走这里，避免各弹窗重复样板。
+export function showDialog(dialog) {
+  if (!dialog) return;
+  dialog.classList.remove('hidden');
+  openDialog(dialog);
+}
+
+export function hideDialog(dialog) {
+  if (!dialog) return;
+  closeDialog();
+  dialog.classList.add('hidden');
+}

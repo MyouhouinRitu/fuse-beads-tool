@@ -2,11 +2,11 @@
 // 统一行为：Escape = 取消；点击遮罩 = 取消；Tab 焦点圈定在弹窗内。
 
 import { els } from './els.js';
-import { closeDialog, openDialog } from './focus.js';
+import { hideDialog, showDialog } from './focus.js';
 
 let state = null;
 
-function openPopup({ title, message, okText, cancelText, input, fallback, resolve }) {
+function openPopup({ title, message, okText, cancelText, input, fallback = '', resolve }) {
   els.popupTitle.textContent = title;
   els.popupMessage.textContent = message;
   els.popupOk.textContent = okText;
@@ -15,9 +15,8 @@ function openPopup({ title, message, okText, cancelText, input, fallback, resolv
   if (input) els.popupInput.value = fallback ?? '';
   els.popupError.classList.add('hidden');
   els.popupInput.removeAttribute('aria-invalid');
-  els.popupDialog.classList.remove('hidden');
   state = { input, resolve };
-  openDialog(els.popupDialog);
+  showDialog(els.popupDialog);
   if (input) els.popupInput.focus();
   else els.popupOk.focus();
 }
@@ -26,8 +25,7 @@ function finish(result) {
   if (!state) return;
   const { resolve } = state;
   state = null;
-  closeDialog();
-  els.popupDialog.classList.add('hidden');
+  hideDialog(els.popupDialog);
   resolve(result);
 }
 

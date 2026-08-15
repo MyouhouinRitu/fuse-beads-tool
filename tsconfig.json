@@ -8,10 +8,9 @@
     "checkJs": true,
     "noEmit": true,
     "strict": false,
-    "noImplicitAny": false,
-    "noImplicitThis": false,
-    "strictNullChecks": false,
-    "useUnknownInCatchVariables": false,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "types": []
   },

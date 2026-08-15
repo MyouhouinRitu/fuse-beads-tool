@@ -8,7 +8,6 @@ import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
 import {
-  createEmptyHistory,
   createTransaction,
   deleteTransaction,
   findTransaction,
@@ -17,7 +16,7 @@ import {
 import { interactionState } from './interaction.js';
 import { ensurePaletteConfig, renderColorTable } from './palette.js';
 import { renderFullNow } from './render-queue.js';
-import { App, setDirty, setProjectDirty } from './state.js';
+import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
 import { toast } from './utils.js';
 
 export function updateUndoUI() {
@@ -122,17 +121,13 @@ export async function deleteHistoryItem(id) {
 }
 
 export async function clearAll({ silent = false } = {}) {
-  const hasAny =
-    App.history.items.length > 0 || App.undoStack.length > 0 || App.redoStack.length > 0;
-  if (!hasAny) {
+  if (!hasPendingRecords()) {
     if (!silent) toast('当前没有可清空的快照');
     return;
   }
   if (!silent && !(await confirmDialog('确定要清空所有快照吗？此操作不可恢复。'))) return;
-  App.history = createEmptyHistory();
-  App.undoStack = [];
-  App.redoStack = [];
-  interactionState.strokeBuffer = null;
+  // 统一走 state.js 的清空入口：历史 / 撤销重做栈 / 画笔缓冲一并重置
+  clearHistoryRecords();
   setProjectDirty(true);
   renderHistoryUI();
   scheduleAutosave();

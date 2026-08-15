@@ -2,7 +2,10 @@
 // 每次 Ctrl+S 保存一个完整快照（所有点位的颜色），节点之间没有父子关系。
 // 另提供单步撤销/重做记录：以增量方式记录（像素 x/y，从哪个色号改到哪个色号）。
 
+import { decodeInt16Grid } from './grid-codec.js';
+
 export const MAX_UNDO_STEPS = 20;
+export const MAX_SNAPSHOTS = 100; // 快照数量上限：防止 state.json 无限膨胀
 
 export function createEmptyHistory() {
   return { items: [], currentId: null, nextId: 1, baselineId: null };
@@ -16,21 +19,27 @@ export function sanitizeHistory(h) {
   const ids = new Set();
   for (const it of h.items) {
     if (!it || typeof it !== 'object' || !it.snapshot || typeof it.snapshot !== 'object') continue;
-    if (!Array.isArray(it.snapshot.grid)) continue;
+    if (!Array.isArray(it.snapshot.grid) && typeof it.snapshot.gridBase64 !== 'string') continue;
     const id = Number(it.id);
     if (!Number.isInteger(id) || ids.has(id)) continue;
     ids.add(id);
+    const snapshot = sanitizeSnapshot(it.snapshot);
+    if (!snapshot) continue;
     items.push({
       id,
       createdAt: Number(it.createdAt) || Date.now(),
       label: it.label ? String(it.label) : `快照 #${id}`,
-      snapshot: it.snapshot,
+      snapshot,
     });
   }
+  // 只保留最近 MAX_SNAPSHOTS 个快照（丢弃最旧）
+  const dropped = Math.max(0, items.length - MAX_SNAPSHOTS);
+  if (dropped) items.splice(0, dropped);
+  const keptIds = new Set(items.map((it) => it.id));
   let currentId = h.currentId;
-  if (currentId != null && !ids.has(Number(currentId))) currentId = null;
+  if (currentId != null && !keptIds.has(Number(currentId))) currentId = null;
   const baselineId =
-    h.baselineId != null && ids.has(Number(h.baselineId)) ? Number(h.baselineId) : null;
+    h.baselineId != null && keptIds.has(Number(h.baselineId)) ? Number(h.baselineId) : null;
   return {
     items,
     currentId,
@@ -45,13 +54,23 @@ function sanitizeSnapshot(s) {
   const height = Number(s.height);
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0)
     return null;
-  if (!Array.isArray(s.grid) || s.grid.length !== width * height) return null;
+  let rawGrid;
+  if (Array.isArray(s.grid)) {
+    rawGrid = s.grid;
+  } else if (typeof s.gridBase64 === 'string') {
+    const decoded = decodeInt16Grid(s.gridBase64);
+    if (!decoded || decoded.length !== width * height) return null;
+    rawGrid = Array.from(decoded);
+  } else {
+    return null;
+  }
+  if (rawGrid.length !== width * height) return null;
   const norm = (arr) =>
     arr.map((v) => {
       const n = Number(v);
       return Number.isInteger(n) ? n : -1;
     });
-  const grid = norm(s.grid);
+  const grid = norm(rawGrid);
   const baseGrid =
     Array.isArray(s.baseGrid) && s.baseGrid.length === width * height
       ? norm(s.baseGrid)
@@ -109,6 +128,7 @@ export function createTransaction(history, snapshot) {
   const id = history.nextId++;
   const item = { id, createdAt: Date.now(), label: `快照 #${id}`, snapshot };
   history.items.push(item);
+  while (history.items.length > MAX_SNAPSHOTS) history.items.shift();
   history.currentId = id;
   history.baselineId = id;
   return item;

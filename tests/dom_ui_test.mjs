@@ -240,7 +240,7 @@ import {
   );
   globalThis.__dragState.cropEdge = null;
   // 拖拽结束后取消选中；单击（未拖拽）保持选中
-  const mu = windowListeners.mouseup[0];
+  const mu = windowListeners.pointerup[0];
   interactionState.cropActiveEdge = 'left';
   globalThis.__dragState.active = true;
   globalThis.__dragState.cropEdge = 'left';
@@ -269,7 +269,7 @@ import {
     { horizontal: true, pos: 1 },
     '鼠标移出图片后预览位置应保留',
   );
-  const mdOut = elsMap['canvas-scroll'].listeners.mousedown[0];
+  const mdOut = elsMap['canvas-scroll'].listeners.pointerdown[0];
   mdOut({
     button: 0,
     clientX: -100,
@@ -284,9 +284,9 @@ import {
   interactionState.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
   interactionState.cropActiveEdge = null;
   interactionState.cropPreview = null;
-  const mdDrag = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mmDrag = windowListeners.mousemove[0];
-  const muDrag = windowListeners.mouseup[0];
+  const mdDrag = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mmDrag = windowListeners.pointermove[0];
+  const muDrag = windowListeners.pointerup[0];
   const dragY = 1.5 * cellSz * scale2;
   mdDrag({
     button: 0,
@@ -357,8 +357,8 @@ import {
   assert.equal(elsMap['wand-sensitivity'].value, '0', '滑块值应与当前容差设置同步');
 
   canvasRectForCells();
-  const md = elsMap['canvas-scroll'].listeners.mousedown[0];
-  const mu = windowListeners.mouseup[0];
+  const md = elsMap['canvas-scroll'].listeners.pointerdown[0];
+  const mu = windowListeners.pointerup[0];
   const kd = windowListeners.keydown[0];
 
   // 容差 0：只选起点所在的同色四向连通块（左列 3 个白色，不跨过浅灰）
@@ -505,8 +505,8 @@ import {
   App.strokeBuffer = [];
   canvasRectForCells();
   const pd = elsMap['canvas-scroll'].listeners.pointerdown[0];
-  const pm = elsMap['canvas-scroll'].listeners.pointermove[0];
-  const pu = elsMap['canvas-scroll'].listeners.pointerup[0];
+  const pm = windowListeners.pointermove[0];
+  const pu = windowListeners.pointerup[0];
   const target = elsMap.canvas;
   pd({ ...mouseAt(0, 0), pointerType: 'touch', pointerId: 1, target });
   pm({ ...mouseAt(1, 0), pointerType: 'touch', pointerId: 1, target });

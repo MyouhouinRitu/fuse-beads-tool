@@ -84,12 +84,21 @@ export function sha256Hex(text) {
   return [h0, h1, h2, h3, h4, h5, h6, h7].map((x) => x.toString(16).padStart(8, '0')).join('');
 }
 
-// 色板规范化：按 index 升序，只取 index/code/name/hex，hex 统一大写
+// 色板规范化：按 index 升序，只取 index/code/name/hex，hex 统一大写。
+// index 只接受整数或整数字符串（与 bead/palette.py 的 palette_hash 约定一致），
+// 浮点、空值、布尔等一律跳过，避免两端同一输入产生不同哈希。
+function toIndex(v) {
+  if (typeof v === 'number' && Number.isInteger(v)) return v;
+  if (typeof v === 'string' && /^-?\d+$/.test(v.trim())) return parseInt(v.trim(), 10);
+  return null;
+}
+
 export function paletteHash(colors) {
   const norm = (colors || [])
-    .filter((c) => c && Number.isFinite(Number(c.index)))
-    .map((c) => ({
-      index: Number(c.index),
+    .map((c) => ({ c, index: c ? toIndex(c.index) : null }))
+    .filter((x) => x.index != null)
+    .map(({ c, index }) => ({
+      index,
       code: String(c.code ?? ''),
       name: String(c.name ?? ''),
       hex: String(c.hex ?? '').toUpperCase(),

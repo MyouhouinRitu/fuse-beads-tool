@@ -9,7 +9,7 @@ import { els } from './els.js';
 import * as historyUI from './history-ui.js';
 import { renderFullNow } from './render-queue.js';
 import { App, clearHistoryRecords, hasPendingRecords, setProjectDirty } from './state.js';
-import { getTargetPixels, toast } from './utils.js';
+import { fileNameStem, getTargetPixels, toast } from './utils.js';
 import { fitViewportToCanvas } from './view.js';
 
 export async function processUpload() {
@@ -43,14 +43,13 @@ export async function processUpload() {
     App.originalName = res.originalName || null;
     App.originalSha256 = res.originalSha256 || null;
     App.originalSize = res.originalSize || null;
-    App.projectName =
-      String(App.originalName || res.originalName || '')
-        .replace(/\.[^.]+$/, '')
-        .trim() || '未命名';
+    App.projectName = fileNameStem(App.originalName || res.originalName || '') || '未命名';
     if (oldOriginalId && oldOriginalId !== App.originalId) {
       api.deleteOriginal(oldOriginalId).catch(() => {});
     }
     applyMapping();
+    // 上传成功后才清空旧快照，避免失败时误丢历史记录
+    historyUI.clearAll({ silent: true });
     setProjectDirty(true);
     const used = C.countUsedColors(App.project.grid, App.project.width, App.project.height);
     toast(`已导入 ${res.width} × ${res.height}，共使用 ${used} 种颜色`, { type: 'success' });

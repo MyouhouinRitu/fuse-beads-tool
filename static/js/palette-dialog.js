@@ -1,17 +1,15 @@
 // 色板配置弹窗：由工具栏「色板配置」按钮打开，内容与原先侧边栏的色板配置一致。
 
 import { els } from './els.js';
-import { closeDialog, openDialog } from './focus.js';
+import { hideDialog, showDialog } from './focus.js';
 
 export function openPaletteDialog() {
-  els.paletteDialog.classList.remove('hidden');
-  openDialog(els.paletteDialog);
+  showDialog(els.paletteDialog);
   els.configSelect.focus();
 }
 
 export function closePaletteDialog() {
-  closeDialog();
-  els.paletteDialog.classList.add('hidden');
+  hideDialog(els.paletteDialog);
 }
 
 export function bindPaletteDialog() {

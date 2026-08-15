@@ -7,9 +7,12 @@
 // 运行：node tests/constants_sync_test.mjs
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { colorDist2, hexToRgb, isLightColor, rgbToLab } from '../static/js/colors.js';
 import * as K from '../static/js/constants.js';
+import { paletteHash } from '../static/js/hash.js';
 
 const ROOT = path.dirname(
   path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
@@ -205,8 +208,160 @@ for (const e of EXCEPTIONS) {
     K.TARGET_PIXELS_MIN,
     'bead/compress.py MIN_TARGET_PIXELS 应与 constants.js 保持一致',
   );
+  assert.equal(
+    pyConst(compressText, 'HARD_CAP_PIXELS'),
+    K.TARGET_PIXELS_MAX,
+    'bead/compress.py HARD_CAP_PIXELS 应与 constants.js TARGET_PIXELS_MAX 保持一致',
+  );
 }
 
 console.log('[OK] 渲染参数与 bead/export.py 一致（图例 / 网格线 / 色号 / 空位样式 / 导出默认值）');
-console.log('[OK] app.py 与 constants.js 的默认目标像素量一致');
+console.log('[OK] app.py / compress.py 与 constants.js 的目标像素量一致');
+
+// ---------------- 版本号（package.json ↔ bead/version.py）----------------
+{
+  const pkg = JSON.parse(read('package.json'));
+  const versionText = read('bead/version.py');
+  const m = versionText.match(/^APP_VERSION\s*=\s*"([^"]+)"/m);
+  assert.ok(m, 'bead/version.py 应包含 APP_VERSION');
+  assert.equal(m[1], pkg.version, 'bead/version.py APP_VERSION 应与 package.json version 保持一致');
+  console.log('[OK] 版本号单一来源：package.json 与 bead/version.py 一致');
+}
+
+// ---------------- 颜色数学（colors.py ↔ colors.js）----------------
+
+function runPython(script, input = '') {
+  return execFileSync(process.env.PYTHON || 'python', ['-c', script], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    input,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    timeout: 30000,
+  });
+}
+
+{
+  const colorsText = read('bead/colors.py');
+  assert.equal(
+    pyConst(colorsText, 'LUMINANCE_THRESHOLD'),
+    K.LUMINANCE_THRESHOLD,
+    'bead/colors.py LUMINANCE_THRESHOLD 应与 constants.js 保持一致',
+  );
+
+  const samples = [
+    [0, 0, 0],
+    [255, 255, 255],
+    [255, 0, 0],
+    [0, 255, 0],
+    [0, 0, 255],
+    [128, 128, 128],
+    [240, 128, 128],
+    [10, 200, 30],
+    [18, 52, 86],
+    [200, 30, 10],
+  ];
+  const pairs = [
+    [0, 1],
+    [2, 3],
+    [4, 7],
+    [5, 6],
+    [8, 9],
+  ];
+  const script = `
+import json
+from bead.colors import is_light_color, lab_distance, rgb_distance, rgb_to_lab
+samples = ${JSON.stringify(samples)}
+pairs = ${JSON.stringify(pairs)}
+out = []
+for rgb in samples:
+    lab = [round(float(v), 9) for v in rgb_to_lab(rgb)]
+    out.append({"rgb": rgb, "light": bool(is_light_color(tuple(rgb))), "lab": lab})
+for a, b in pairs:
+    la = rgb_to_lab(samples[a])
+    lb = rgb_to_lab(samples[b])
+    out.append({
+        "rgbDist": round(float(rgb_distance(samples[a], samples[b])), 9),
+        "labDist": round(float(lab_distance(la, lb)), 9),
+    })
+print(json.dumps(out, ensure_ascii=False))
+`;
+  const pyOut = JSON.parse(runPython(script));
+  const approx = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol;
+  pyOut.slice(0, samples.length).forEach((entry) => {
+    const [r, g, b] = entry.rgb;
+    assert.equal(
+      entry.light,
+      isLightColor([r, g, b]),
+      `isLightColor 应与 Python 一致：${entry.rgb}`,
+    );
+    const lab = rgbToLab(r, g, b);
+    entry.lab.forEach((v, k) => assert.ok(approx(v, lab[k]), `Lab 分量 ${k} 不一致：${entry.rgb}`));
+  });
+  pyOut.slice(samples.length).forEach((entry, i) => {
+    const [a, b] = pairs[i];
+    const [ra, ga, ba] = samples[a];
+    const [rb, gb, bb] = samples[b];
+    assert.ok(
+      approx(entry.rgbDist, colorDist2([ra, ga, ba], [rb, gb, bb], false)),
+      `rgb_distance 不一致：pair ${i}`,
+    );
+    assert.ok(
+      approx(entry.labDist, colorDist2([ra, ga, ba], [rb, gb, bb], true)),
+      `Lab 距离不一致：pair ${i}`,
+    );
+  });
+  console.log('[OK] 颜色数学与 bead/colors.py 一致（亮度阈值 / Lab / 距离公式）');
+}
+
+// ---------------- paletteHash（hash.js ↔ palette.py）----------------
+{
+  const palette = [
+    { index: '2', code: 'B', name: '蓝', hex: '#0000ff' },
+    { index: 1, code: 'A', name: '白', hex: '#FFFFFF' },
+    { index: 2, code: 'B2', name: '', hex: '00ff00' },
+    { index: 3, code: '', name: '红', hex: '#ff0000' },
+    { index: 1.5, code: 'X', name: '浮点', hex: '#123456' },
+    { index: '1.5', code: 'Y', name: '字符串浮点', hex: '#abcdef' },
+    { index: null, code: 'N', name: '空', hex: '#000000' },
+    { index: '', code: 'E', name: '空串', hex: '#111111' },
+    { index: true, code: 'T', name: '布尔', hex: '#222222' },
+    { index: '10', code: 'Z', name: '字符串10', hex: 'ABCDEF' },
+    { index: 1, code: 'A2', name: '重复索引', hex: '#FEDCBA' },
+  ];
+  const script = `
+import json, sys
+from bead.palette import palette_hash
+palette = json.loads(sys.stdin.read())
+print(palette_hash(palette))
+`;
+  assert.equal(
+    paletteHash(palette),
+    runPython(script, JSON.stringify(palette)).trim(),
+    'JS paletteHash 应与 bead/palette.py 对同一色板输出一致（含索引归一化与跳过规则）',
+  );
+  console.log(
+    '[OK] paletteHash 与 bead/palette.py 输出一致（整数索引 / 跳过低效值 / 排序 / hex 大写）',
+  );
+}
+
+// ---------------- hex 归一化（palette.py ↔ colors.js）----------------
+{
+  const inputs = ['#abc', '#ABCDEF', 'abc', 'ABCDEF', '#GGHHII', '', '#aabbcc', '123456', '#12f'];
+  const script = `
+import json
+from bead.palette import normalize_color
+inputs = ${JSON.stringify(inputs)}
+print(json.dumps([normalize_color({"index": 1, "hex": h})["hex"] for h in inputs], ensure_ascii=False))
+`;
+  const pyHexes = JSON.parse(runPython(script));
+  inputs.forEach((h, i) => {
+    assert.deepEqual(
+      hexToRgb(h),
+      hexToRgb(pyHexes[i]),
+      `hex 归一化后 RGB 应一致（前端 hexToRgb vs Python normalize_color）：${h}`,
+    );
+  });
+  console.log('[OK] hex 归一化与 bead/palette.py 一致（3 位缩写展开 / 非法回退白）');
+}
+
 console.log('\n常量同步测试全部通过');

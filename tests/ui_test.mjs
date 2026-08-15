@@ -534,9 +534,7 @@ async function main() {
     };
   });
   assert.ok(
-    fit.cw > 0 &&
-      Math.abs(fit.panX - fit.expectX) < 2 &&
-      Math.abs(fit.panY - fit.expectY) < 2,
+    fit.cw > 0 && Math.abs(fit.panX - fit.expectX) < 2 && Math.abs(fit.panY - fit.expectY) < 2,
     `重新压缩后应居中适应窗口（扣除面板内边距），实际 pan=(${fit.panX.toFixed(1)}, ${fit.panY.toFixed(1)}) 期望 (${fit.expectX.toFixed(1)}, ${fit.expectY.toFixed(1)})`,
   );
   console.log('[OK] 重新压缩后适应窗口');
@@ -658,7 +656,10 @@ async function main() {
     .locator('#quick-picker button:not(.qp-cancel)')
     .first()
     .textContent();
-  assert.ok(/×\d+/.test(firstBtnText), `九宫格候选中已使用的色号应显示数量，实际 ${JSON.stringify(firstBtnText)}`);
+  assert.ok(
+    /×\d+/.test(firstBtnText),
+    `九宫格候选中已使用的色号应显示数量，实际 ${JSON.stringify(firstBtnText)}`,
+  );
   // 第一个候选是周围格子的颜色（绿色）；第二个是按相近度补的相近色（已排除自身白色）
   const candEl = page.locator('#quick-picker button:not(.qp-cancel)').nth(1);
   const candHex = await candEl.evaluate((el) => el.style.background);
@@ -1058,10 +1059,7 @@ async function main() {
     const el = document.querySelector('.color-row input.c-hex');
     return el ? Math.round(el.getBoundingClientRect().width) : 0;
   });
-  assert.ok(
-    hexInputWidth >= 80,
-    `16进制输入框应完整显示 #RRGGBB，实际宽度 ${hexInputWidth}px`,
-  );
+  assert.ok(hexInputWidth >= 80, `16进制输入框应完整显示 #RRGGBB，实际宽度 ${hexInputWidth}px`);
   await page.click('#btn-new-config');
   await promptPopup(page, 'UI测试配置');
   await page.waitForFunction(

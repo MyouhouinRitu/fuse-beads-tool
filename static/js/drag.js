@@ -1,4 +1,4 @@
-// 画布拖拽交互：右键平移 / 左键选择、涂色、裁剪的鼠标事件与状态机。
+// 画布拖拽交互：右键平移 / 左键选择、涂色、裁剪的指针事件（Pointer Events）与状态机。
 // 只依赖视图 / 裁剪 / 快捷选色等下层模块，不反向依赖主入口。
 
 import { axisConstrainedEnd, lineCells, paintStamp, strokeLine } from './brush.js';
@@ -189,8 +189,8 @@ function updateDragMove(e, rect) {
   interactionState.lastCell = cell;
 }
 
-// 统一的 mousemove 入口：先更新 hover，再处理拖拽与裁剪联动
-export function onWindowMouseMove(e) {
+// 统一的 pointermove 入口：先更新 hover，再处理拖拽与裁剪联动
+export function onWindowPointerMove(e) {
   const rect = els.canvas.getBoundingClientRect();
   if (App.tool === TOOLS.CROP) rememberCropMouse(e);
   updateHoverCell(e, rect);
@@ -200,7 +200,7 @@ export function onWindowMouseMove(e) {
   updateCropMagnifier(e);
 }
 
-export function onWindowMouseUp() {
+export function onWindowPointerUp() {
   if (dragState.active && !dragState.moved) {
     if (App.tool === TOOLS.SELECT && dragState.downCell) {
       // 选择模式：单击选中（同色选区勾选时选连通块）
@@ -238,7 +238,7 @@ export function onWindowMouseUp() {
   resetDragState();
 }
 
-export function onCanvasScrollMouseDown(e) {
+export function onCanvasPointerDown(e) {
   if (!App.project) return;
   // pointer capture：即使鼠标/手指移出窗口，move/up 仍持续送达，避免拖拽卡死
   if (e.pointerId != null && e.target?.setPointerCapture) {
@@ -305,29 +305,10 @@ export function onCanvasScrollMouseDown(e) {
     }
     return;
   }
-  // 取色模式：单击在 mouseup 时取色
+  // 取色模式：单击在 pointerup 时取色
 }
 
-// 触摸支持：Pointer Events 统一处理触摸；桌面鼠标仍走 mousemove/mouseup 兼容既有逻辑
-export function onCanvasPointerDown(e) {
-  if (e.pointerType !== 'touch') return;
-  e.preventDefault();
-  onCanvasScrollMouseDown(e);
-}
-
-export function onCanvasPointerMove(e) {
-  if (e.pointerType !== 'touch') return;
-  e.preventDefault();
-  onWindowMouseMove(e);
-}
-
-export function onCanvasPointerUp(e) {
-  if (e.pointerType !== 'touch') return;
-  e.preventDefault();
-  onWindowMouseUp();
-}
-
-export function onCompareMouseDown(e) {
+export function onComparePointerDown(e) {
   if (!App.project || !App.originalImage || !App.settings.compare) return;
   if (e.button !== 2) return; // 对比原图同样改为右键拖拽
   e.preventDefault();
@@ -336,7 +317,7 @@ export function onCompareMouseDown(e) {
   els.canvasOriginal.style.cursor = 'grabbing';
 }
 
-export function onCanvasScrollMouseLeave() {
+export function onCanvasScrollPointerLeave() {
   if (interactionState.hoverCell != null) {
     interactionState.hoverCell = null;
     scheduleCanvasRender();

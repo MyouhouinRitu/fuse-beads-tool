@@ -8,7 +8,9 @@ export function openMenu(trigger, menu) {
   menu.classList.remove('hidden');
   trigger.setAttribute('aria-expanded', 'true');
   const items = menuItems(menu);
-  items.forEach((it, i) => it.setAttribute('tabindex', i === 0 ? '0' : '-1'));
+  items.forEach((it, i) => {
+    it.setAttribute('tabindex', i === 0 ? '0' : '-1');
+  });
   items[0]?.focus();
 }
 
@@ -24,7 +26,8 @@ export function handleMenuKeydown(e, trigger, menu) {
   const idx = items.indexOf(document.activeElement);
   let next = -1;
   if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
-  else if (e.key === 'ArrowUp') next = idx < 0 ? items.length - 1 : (idx - 1 + items.length) % items.length;
+  else if (e.key === 'ArrowUp')
+    next = idx < 0 ? items.length - 1 : (idx - 1 + items.length) % items.length;
   else if (e.key === 'Home') next = 0;
   else if (e.key === 'End') next = items.length - 1;
   else if (e.key === 'Enter' || e.key === ' ') {
@@ -44,6 +47,8 @@ export function handleMenuKeydown(e, trigger, menu) {
   }
   e.preventDefault();
   e.stopPropagation();
-  items.forEach((it, i) => it.setAttribute('tabindex', i === next ? '0' : '-1'));
+  items.forEach((it, i) => {
+    it.setAttribute('tabindex', i === next ? '0' : '-1');
+  });
   items[next]?.focus();
 }
