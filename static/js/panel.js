@@ -15,20 +15,23 @@ import { applyOriginalTransform, applyTransform } from './view.js';
 const PANEL_DOM = {
   'left-panel': {
     panel: els.leftPanel,
-    toggle: els.leftPanelToggle,
-    head: null, // 左侧栏没有独立的标题头，收起/展开走 toggle 与展开条
+    toggle: null,
+    head: els.leftPanelHead, // 编辑工具标题头：点击整条即可收起/展开
+    body: els.leftPanelBody,
     expand: els.leftPanelExpand,
   },
   'color-highlight-panel': {
     panel: els.colorHighlightPanel,
     toggle: null,
     head: els.colorHighlightPanelHead,
+    body: els.colorHighlightPanelBody,
     expand: els.colorHighlightPanelExpand,
   },
   'right-panel': {
     panel: els.rightPanel,
     toggle: null,
     head: els.rightPanelHead,
+    body: els.rightPanelBody,
     expand: els.rightPanelExpand,
   },
 };
@@ -63,6 +66,12 @@ export function setPanelCollapsed(id, collapsed) {
     panDelta = current - target;
   }
   panel.classList.toggle('collapsed', collapsed);
+  if (PANEL_DOM[id].head) {
+    PANEL_DOM[id].head.setAttribute('aria-expanded', String(!collapsed));
+  }
+  if (PANEL_DOM[id].body) {
+    PANEL_DOM[id].body.setAttribute('aria-hidden', String(collapsed));
+  }
   if (panDelta) {
     setProjectDirty(true);
     animatePanCompensation(panDelta);
@@ -111,7 +120,11 @@ export function applyPanelPrefs() {
   const prefs = readPanelPrefs();
   for (const id of PANEL_IDS) {
     const dom = PANEL_DOM[id];
-    if (dom && prefs[id]) dom.panel.classList.add('collapsed');
+    if (dom && prefs[id]) {
+      dom.panel.classList.add('collapsed');
+      dom.head?.setAttribute('aria-expanded', 'false');
+      dom.body?.setAttribute('aria-hidden', 'true');
+    }
   }
 }
 

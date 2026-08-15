@@ -17,7 +17,7 @@ import {
 import { interactionState } from './interaction.js';
 import { ensurePaletteConfig, renderColorTable } from './palette.js';
 import { renderFullNow } from './render-queue.js';
-import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
+import { App, setDirty, setProjectDirty } from './state.js';
 import { toast } from './utils.js';
 
 export function updateUndoUI() {
@@ -44,7 +44,7 @@ export function saveTransaction() {
   setProjectDirty(true);
   setDirty(false);
   renderHistoryUI();
-  toast(`已保存状态#${item.id}（Ctrl+S）`);
+  toast(`已保存快照#${item.id}（Ctrl+S）`, { type: 'success' });
   scheduleAutosave();
 }
 
@@ -95,14 +95,14 @@ export async function switchHistoryItem(id) {
   }
   renderFullNow();
   renderHistoryUI();
-  toast(`已切换到状态#${id}`);
+  toast(`已切换到快照#${id}`);
   scheduleAutosave();
 }
 
-export function deleteHistoryItem(id) {
+export async function deleteHistoryItem(id) {
   const node = findTransaction(App.history, id);
   if (!node) return;
-  if (!confirmDialog(`确定删除事务「${node.label}」吗？此操作不可恢复。`)) return;
+  if (!(await confirmDialog(`确定删除快照「${node.label}」吗？此操作不可恢复。`))) return;
   const prev = App.history.currentId;
   const { newCurrent } = deleteTransaction(App.history, id);
   setProjectDirty(true);
@@ -121,37 +121,22 @@ export function deleteHistoryItem(id) {
   scheduleAutosave();
 }
 
-export function clearAll({ silent = false } = {}) {
-  if (!App.project && App.history.items.length === 0) {
-    if (!silent) toast('当前没有可清空的内容');
+export async function clearAll({ silent = false } = {}) {
+  const hasAny =
+    App.history.items.length > 0 || App.undoStack.length > 0 || App.redoStack.length > 0;
+  if (!hasAny) {
+    if (!silent) toast('当前没有可清空的快照');
     return;
   }
-  if (
-    !silent &&
-    !confirmDialog('确定要清空所有状态吗？\n将清空画布并删除全部事务历史，此操作不可恢复。')
-  )
-    return;
-  App.project = null;
-  App.baseGrid = null;
-  App.compressed = null;
-  App.originalFile = null;
-  const oldOriginalId = App.originalId;
-  App.originalId = null;
-  App.originalName = null;
-  App.originalSha256 = null;
-  App.originalSize = null;
-  App.projectName = null;
-  if (oldOriginalId) api.deleteOriginal(oldOriginalId).catch(() => {});
-  setProjectDirty(false);
+  if (!silent && !(await confirmDialog('确定要清空所有快照吗？此操作不可恢复。'))) return;
   App.history = createEmptyHistory();
-  App.maxColors = 2;
-  App.sliderN = null;
-  App.editedSinceSlider = false;
-  resetProjectEditingState();
+  App.undoStack = [];
+  App.redoStack = [];
+  interactionState.strokeBuffer = null;
+  setProjectDirty(true);
   renderHistoryUI();
-  renderFullNow();
   scheduleAutosave();
-  toast('已清空所有状态');
+  if (!silent) toast('已清空所有快照', { type: 'success' });
 }
 
 export function renderHistoryUI() {
@@ -167,10 +152,10 @@ export function renderHistoryUI() {
 
 // 历史列表事件委托：容器上只绑定一个 click（节点切换 / 删除按钮）
 export function bindHistoryList() {
-  els.historyList.addEventListener('click', (e) => {
+  els.historyList.addEventListener('click', async (e) => {
     const del = e.target.closest('.hi-del');
     if (del) {
-      deleteHistoryItem(Number(del.dataset.id));
+      await deleteHistoryItem(Number(del.dataset.id));
       return;
     }
     const node = e.target.closest('.history-item');
@@ -207,23 +192,14 @@ function renderHistoryItem(item) {
   del.className = 'hi-del';
   del.dataset.id = String(id);
   del.textContent = '删除';
-  del.title = '仅删除该事务节点';
+  del.title = '仅删除该快照节点';
   actions.append(del);
   div.append(head, actions);
   if (App.history.baselineId === id) {
     const dot = document.createElement('span');
     dot.className = 'hi-baseline-dot';
-    dot.title = '当前修改基于此事务';
+    dot.title = '当前修改基于此快照';
     div.appendChild(dot);
   }
   return div;
-}
-
-// 有事务/撤销记录时弹确认并清空；无记录或用户取消时返回 false
-export function confirmClearRecords(message) {
-  if (!hasPendingRecords()) return true;
-  if (!confirmDialog(message)) return false;
-  clearHistoryRecords();
-  renderHistoryUI();
-  return true;
 }

@@ -161,7 +161,8 @@ def list_configs() -> list[dict[str, object]]:
 
 
 def ensure_default_config() -> None:
-    if not list_configs():
+    names = [c["name"] for c in list_configs()]
+    if not names:
         bundled = os.path.join(RESOURCE_DIR, "data", "configs")
         if os.path.isdir(bundled) and any(f.endswith(".csv") for f in os.listdir(bundled)):
             for fn in os.listdir(bundled):
@@ -169,6 +170,15 @@ def ensure_default_config() -> None:
                     shutil.copy2(os.path.join(bundled, fn), os.path.join(CONFIG_DIR, fn))
         else:
             pal.write_csv(config_path("default_48"), pal.DEFAULT_PALETTE)
+            pal.write_csv(
+                config_path(DEFAULT_CONFIG_NAME),
+                pal.read_csv_text(pal.MARD_221_PALETTE_CSV),
+            )
+    elif DEFAULT_CONFIG_NAME not in names:
+        pal.write_csv(
+            config_path(DEFAULT_CONFIG_NAME),
+            pal.read_csv_text(pal.MARD_221_PALETTE_CSV),
+        )
 
 
 def err(msg: str, status: int = 400) -> tuple[object, int]:

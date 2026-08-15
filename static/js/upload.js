@@ -6,9 +6,9 @@ import { resetProjectEditingState } from './canvas.js';
 import * as C from './colors.js';
 import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
-import { confirmClearRecords } from './history-ui.js';
+import * as historyUI from './history-ui.js';
 import { renderFullNow } from './render-queue.js';
-import { App, setProjectDirty } from './state.js';
+import { App, clearHistoryRecords, hasPendingRecords, setProjectDirty } from './state.js';
 import { getTargetPixels, toast } from './utils.js';
 import { fitViewportToCanvas } from './view.js';
 
@@ -53,9 +53,9 @@ export async function processUpload() {
     applyMapping();
     setProjectDirty(true);
     const used = C.countUsedColors(App.project.grid, App.project.width, App.project.height);
-    toast(`已导入 ${res.width} × ${res.height}，共使用 ${used} 种颜色`);
+    toast(`已导入 ${res.width} × ${res.height}，共使用 ${used} 种颜色`, { type: 'success' });
   } catch (err) {
-    toast(`导入失败：${err.message}`);
+    toast(`导入失败：${err.message}`, { type: 'error' });
   }
 }
 
@@ -83,11 +83,18 @@ export async function recompress() {
     toast('请先导入图片');
     return;
   }
-  if (App.project && App.dirty) {
-    if (!confirmDialog('重新压缩将按新设置重新生成图案，并丢弃画布上的手动修改。是否继续？'))
-      return;
+  const consequences = [];
+  if (App.project && App.dirty) consequences.push('丢弃画布上的手动修改');
+  const needClear = hasPendingRecords();
+  if (needClear) consequences.push('清空全部快照与撤销记录');
+  if (consequences.length) {
+    const message = `重新压缩将按新设置重新生成图案，并${consequences.join('、')}。是否继续？`;
+    if (!(await confirmDialog(message))) return;
   }
-  if (!confirmClearRecords('重新压缩将清空全部事务历史与撤销记录。是否继续？')) return;
+  if (needClear) {
+    clearHistoryRecords();
+    historyUI.renderHistoryUI();
+  }
   await processUpload();
   fitViewportToCanvas(); // 重新压缩后默认适应窗口
 }

@@ -38,6 +38,7 @@ function renderFull() {
     canvas.syncHighlightBlink();
     toolState.updateModeControls();
     historyUI.updateUndoUI();
+    colorList.renderColorList();
     if (App.settings.compare || App.settings.syncPan) {
       compare.setCompareEnabled(false, { silent: true });
     }

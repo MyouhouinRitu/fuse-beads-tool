@@ -11,6 +11,7 @@ const elsMap = {};
 const created = [];
 const windowListeners = {};
 let confirmResult = true;
+globalThis.__popupAutoConfirm = true;
 
 class ClassList {
   constructor() {
@@ -68,6 +69,9 @@ class El {
   }
   getAttribute(name) {
     return this[name] ?? null;
+  }
+  removeAttribute(name) {
+    delete this[name];
   }
   // className 与 classList 双向同步（模拟真实 DOM）
   get className() {
@@ -137,6 +141,15 @@ class El {
       return null;
     };
     return walk(this);
+  }
+  querySelectorAll(sel) {
+    const out = [];
+    const walk = (el) => {
+      if (el !== this && matchesSelector(el, sel)) out.push(el);
+      for (const c of el.children || []) walk(c);
+    };
+    walk(this);
+    return out;
   }
   getContext() {
     const ctx = Object.create(ctxStub);
@@ -405,8 +418,10 @@ elsMap['doc-dialog'].classList.add('hidden');
 elsMap['fix-menu'].classList.add('hidden');
 elsMap['target-pixels-menu'].classList.add('hidden');
 elsMap['export-dialog'].classList.add('hidden');
+elsMap['palette-dialog'].classList.add('hidden');
 elsMap['login-mask'].classList.add('hidden');
 elsMap['quick-picker'].classList.add('hidden');
+elsMap['popup-dialog'].classList.add('hidden');
 
 const palette3 = configColors.cfg.map((c) => ({ ...c }));
 function seedProject() {
@@ -451,6 +466,7 @@ export const testState = {
   },
   set confirmResult(v) {
     confirmResult = v;
+    globalThis.__popupAutoConfirm = v;
   },
   get stateResponse() {
     return stateResponse;

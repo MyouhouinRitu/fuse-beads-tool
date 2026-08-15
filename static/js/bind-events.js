@@ -25,8 +25,10 @@ import * as highlight from './highlight.js';
 import * as historyUI from './history-ui.js';
 import { interactionState } from './interaction.js';
 import * as markdown from './markdown.js';
+import * as menu from './menu.js';
 import * as palette from './palette.js';
 import * as panel from './panel.js';
+import * as paletteDialog from './palette-dialog.js';
 import { openProjectViaDialog, saveProjectFile } from './project-file.js';
 import * as quickPicker from './quick-picker.js';
 import { scheduleCanvasRender } from './render-queue.js';
@@ -38,8 +40,46 @@ import * as theme from './theme.js';
 import * as toolState from './tool-state.js';
 import * as undoRedo from './undo-redo.js';
 import * as upload from './upload.js';
-import { clampInt, downloadUrl, getTargetPixels, hintDistanceDeferred, toast } from './utils.js';
+import {
+  clampInt,
+  downloadUrl,
+  getTargetPixels,
+  hintDistanceDeferred,
+  toast,
+  withPending,
+} from './utils.js';
 import * as view from './view.js';
+
+// 目标像素量组合框的当前高亮预设（键盘 ↑↓ / Enter 应用）
+let targetPixelsActive = -1;
+
+function targetPixelsOptions() {
+  return Array.from(els.targetPixelsMenu.querySelectorAll('[role="option"]'));
+}
+
+function setTargetPixelsActive(index, { open = false } = {}) {
+  const opts = targetPixelsOptions();
+  if (!opts.length) return;
+  if (open) els.targetPixelsMenu.classList.remove('hidden');
+  targetPixelsActive = Math.max(0, Math.min(index, opts.length - 1));
+  opts.forEach((o, i) => o.setAttribute('aria-selected', String(i === targetPixelsActive)));
+  els.targetPixels.setAttribute('aria-expanded', 'true');
+  els.targetPixels.setAttribute('aria-activedescendant', opts[targetPixelsActive].id);
+}
+
+function closeTargetPixelsMenu() {
+  els.targetPixelsMenu.classList.add('hidden');
+  els.targetPixels.setAttribute('aria-expanded', 'false');
+  els.targetPixels.removeAttribute('aria-activedescendant');
+  targetPixelsActive = -1;
+}
+
+function applyTargetPixelPreset(btn) {
+  els.targetPixels.value = String(btn.dataset.value);
+  closeTargetPixelsMenu();
+  els.targetPixels.focus();
+  setProjectDirty(true);
+}
 
 function renderTargetPixelOptions() {
   const menu = els.targetPixelsMenu;
@@ -48,15 +88,14 @@ function renderTargetPixelOptions() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'dropdown-item';
-    btn.setAttribute('role', 'menuitem');
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', 'false');
+    btn.tabIndex = -1;
+    btn.id = `target-pixels-option-${p.value}`;
     btn.dataset.value = String(p.value);
     btn.title = p.tip;
     btn.textContent = String(p.value);
-    btn.addEventListener('click', () => {
-      els.targetPixels.value = String(p.value);
-      els.targetPixelsMenu.classList.add('hidden');
-      setProjectDirty(true);
-    });
+    btn.addEventListener('click', () => applyTargetPixelPreset(btn));
     menu.appendChild(btn);
   });
 }
@@ -72,19 +111,51 @@ export function bindEvents() {
   // 箭头展开预设（输入框本身只编辑，光标为文本竖线）
   els.targetPixelsBtn.addEventListener('click', (e) => {
     if (e.stopPropagation) e.stopPropagation();
-    // 控件包在 <label> 内：不 preventDefault 时浏览器会把点击转发给输入框，
-    // 再冒泡到 document 的「点击关闭菜单」处理器，导致菜单刚展开就被收起
     if (e.preventDefault) e.preventDefault();
-    els.targetPixelsMenu.classList.toggle('hidden');
-    els.targetPixelsBtn.setAttribute(
-      'aria-expanded',
-      String(!els.targetPixelsMenu.classList.contains('hidden')),
-    );
+    if (els.targetPixelsMenu.classList.contains('hidden')) {
+      const opts = targetPixelsOptions();
+      const cur = opts.findIndex((o) => o.dataset.value === els.targetPixels.value);
+      setTargetPixelsActive(cur >= 0 ? cur : 0, { open: true });
+    } else {
+      closeTargetPixelsMenu();
+    }
+  });
+  els.targetPixels.addEventListener('keydown', (e) => {
+    const opts = targetPixelsOptions();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (els.targetPixelsMenu.classList.contains('hidden')) {
+        const cur = opts.findIndex((o) => o.dataset.value === els.targetPixels.value);
+        setTargetPixelsActive(e.key === 'ArrowDown' ? Math.max(0, cur) : Math.max(0, cur), {
+          open: true,
+        });
+      } else {
+        const base = targetPixelsActive >= 0 ? targetPixelsActive : 0;
+        const next =
+          e.key === 'ArrowDown' ? Math.min(opts.length - 1, base + 1) : Math.max(0, base - 1);
+        setTargetPixelsActive(next);
+      }
+      return;
+    }
+    if (e.key === 'Enter' && !els.targetPixelsMenu.classList.contains('hidden')) {
+      if (targetPixelsActive >= 0 && opts[targetPixelsActive]) {
+        e.preventDefault();
+        e.stopPropagation();
+        applyTargetPixelPreset(opts[targetPixelsActive]);
+      }
+      return;
+    }
+    if (e.key === 'Escape' && !els.targetPixelsMenu.classList.contains('hidden')) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeTargetPixelsMenu();
+    }
   });
 
-  els.btnLogin.addEventListener('click', auth.tryLogin);
+  els.btnLogin.addEventListener('click', () => withPending(els.btnLogin, auth.tryLogin));
   els.loginToken.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') auth.tryLogin();
+    if (e.key === 'Enter') withPending(els.btnLogin, auth.tryLogin);
   });
   els.btnLogout.addEventListener('click', async () => {
     try {
@@ -95,37 +166,41 @@ export function bindEvents() {
     location.reload();
   });
 
-  els.btnOpenProject.addEventListener('click', openProjectViaDialog);
+  els.btnOpenProject.addEventListener('click', () =>
+    withPending(els.btnOpenProject, openProjectViaDialog),
+  );
   els.projectFileInput.addEventListener('change', async () => {
     const f = els.projectFileInput.files[0];
     els.projectFileInput.value = '';
     if (!f) return;
-    if (App.projectDirty && !confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？'))
+    if (App.projectDirty && !(await confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？')))
       return;
-    try {
-      const res = await api.openProjectUpload(f);
-      await applyProjectDocument(res.document);
-    } catch (e) {
-      toast(`打开项目失败：${e.message}`);
-    }
+    await withPending(els.btnOpenProject, async () => {
+      try {
+        const res = await api.openProjectUpload(f);
+        await applyProjectDocument(res.document);
+      } catch (e) {
+        toast(`打开项目失败：${e.message}`, { type: 'error' });
+      }
+    });
   });
-  els.btnSaveProject.addEventListener('click', saveProjectFile);
-  els.btnImport.addEventListener('click', () => {
-    if (App.projectDirty && !confirmDialog('当前项目有未保存的更改，导入新图片将覆盖。是否继续？'))
+  els.btnSaveProject.addEventListener('click', () => withPending(els.btnSaveProject, saveProjectFile));
+  els.btnImport.addEventListener('click', async () => {
+    if (App.projectDirty && !(await confirmDialog('当前项目有未保存的更改，导入新图片将覆盖。是否继续？')))
       return;
     els.fileInput.click();
   });
-  els.fileInput.addEventListener('change', () => {
+  els.fileInput.addEventListener('change', async () => {
     const f = els.fileInput.files[0];
     if (f) {
       historyUI.clearAll({ silent: true });
       App.originalFile = f;
       compare.loadOriginalImage(f);
-      upload.processUpload();
+      await withPending(els.btnImport, () => upload.processUpload());
     }
     els.fileInput.value = '';
   });
-  els.btnRecompress.addEventListener('click', upload.recompress);
+  els.btnRecompress.addEventListener('click', () => withPending(els.btnRecompress, upload.recompress));
   els.chkCompare.addEventListener('change', () => {
     compare.setCompareEnabled(els.chkCompare.checked);
     setProjectDirty(true);
@@ -163,8 +238,8 @@ export function bindEvents() {
     hintDistanceDeferred();
   });
 
-  els.colorSlider.addEventListener('input', () => {
-    applySlider(parseInt(els.colorSlider.value, 10));
+  els.colorSlider.addEventListener('input', async () => {
+    await applySlider(parseInt(els.colorSlider.value, 10));
   });
   els.emptyStyle.addEventListener('change', () => {
     App.settings.emptyStyle = els.emptyStyle.value;
@@ -175,7 +250,7 @@ export function bindEvents() {
 
   els.btnExport.addEventListener('click', exportDialog.openExportDialog);
   els.dlgCancel.addEventListener('click', exportDialog.closeExportDialog);
-  els.dlgOk.addEventListener('click', exportDialog.doExport);
+  els.dlgOk.addEventListener('click', () => withPending(els.dlgOk, exportDialog.doExport));
   for (const [key, evt] of [
     ['dlgCell', 'input'],
     ['dlgPad', 'input'],
@@ -190,31 +265,39 @@ export function bindEvents() {
   }
 
   els.btnSaveStateSide.addEventListener('click', historyUI.saveTransaction);
-  els.btnClearAll.addEventListener('click', () => historyUI.clearAll());
+  els.btnClearAll.addEventListener('click', async () => {
+    await historyUI.clearAll();
+  });
   els.btnUndo.addEventListener('click', undoRedo.doUndo);
   els.btnRedo.addEventListener('click', undoRedo.doRedo);
   els.btnFixMenu.addEventListener('click', (e) => {
     if (e.stopPropagation) e.stopPropagation();
-    els.fixMenu.classList.toggle('hidden');
-    els.btnFixMenu.setAttribute('aria-expanded', String(!els.fixMenu.classList.contains('hidden')));
+    if (e.preventDefault) e.preventDefault();
+    if (els.fixMenu.classList.contains('hidden')) menu.openMenu(els.btnFixMenu, els.fixMenu);
+    else menu.closeMenu(els.btnFixMenu, els.fixMenu);
   });
+  els.fixMenu.addEventListener('keydown', (e) =>
+    menu.handleMenuKeydown(e, els.btnFixMenu, els.fixMenu),
+  );
   els.fixItemGesture.addEventListener('click', () => {
-    els.fixMenu.classList.add('hidden');
-    els.btnFixMenu.setAttribute('aria-expanded', 'false');
+    menu.closeMenu(els.btnFixMenu, els.fixMenu);
     markdown.openFixDoc('right-drag-gesture-fix');
   });
   els.fixItemShortcuts.addEventListener('click', () => {
-    els.fixMenu.classList.add('hidden');
-    els.btnFixMenu.setAttribute('aria-expanded', 'false');
+    menu.closeMenu(els.btnFixMenu, els.fixMenu);
     markdown.openFixDoc('shortcuts');
   });
   els.docClose.addEventListener('click', markdown.closeFixDoc);
+  els.docDialog.addEventListener('click', (e) => {
+    if (e.target === els.docDialog) markdown.closeFixDoc();
+  });
+  els.exportDialog.addEventListener('click', (e) => {
+    if (e.target === els.exportDialog) exportDialog.closeExportDialog();
+  });
   els.btnTheme.addEventListener('click', theme.toggleTheme);
   document.addEventListener('click', () => {
-    els.fixMenu.classList.add('hidden');
-    els.targetPixelsMenu.classList.add('hidden');
-    els.btnFixMenu.setAttribute('aria-expanded', 'false');
-    els.targetPixelsBtn.setAttribute('aria-expanded', 'false');
+    menu.closeMenu(els.btnFixMenu, els.fixMenu, { restoreFocus: false });
+    closeTargetPixelsMenu();
   });
 
   els.configSelect.addEventListener('change', () => {
@@ -224,34 +307,38 @@ export function bindEvents() {
       palette.loadConfigDetail(name);
     }
   });
-  els.btnNewConfig.addEventListener('click', async () => {
-    const name = promptDialog('新配置名称：');
-    if (!name) return;
-    const colors = App.palette.length
-      ? App.palette.map((c) => ({ ...c }))
-      : [{ index: 1, code: '001', name: '白色', hex: '#FFFFFF' }];
-    try {
-      await api.createConfig(name, colors);
-      await palette.selectAndLoad(name);
-      setProjectDirty(true);
-      toast(`已创建配置「${name}」`);
-    } catch (err) {
-      toast(`创建失败：${err.message}`);
-    }
-  });
+  els.btnNewConfig.addEventListener('click', () =>
+    withPending(els.btnNewConfig, async () => {
+      const name = await promptDialog('新配置名称：');
+      if (!name) return;
+      const colors = App.palette.length
+        ? App.palette.map((c) => ({ ...c }))
+        : [{ index: 1, code: '001', name: '白色', hex: '#FFFFFF' }];
+      try {
+        await api.createConfig(name, colors);
+        await palette.selectAndLoad(name);
+        setProjectDirty(true);
+        toast(`已创建配置「${name}」`, { type: 'success' });
+      } catch (err) {
+        toast(`创建失败：${err.message}`, { type: 'error' });
+      }
+    }),
+  );
   els.btnImportConfig.addEventListener('click', () => els.configFileInput.click());
-  els.configFileInput.addEventListener('change', async () => {
+  els.configFileInput.addEventListener('change', () => {
     const f = els.configFileInput.files[0];
     els.configFileInput.value = '';
     if (!f) return;
-    try {
-      const res = await api.importConfig(f);
-      await palette.selectAndLoad(res.name);
-      setProjectDirty(true);
-      toast(`已导入配置「${res.name}」（${res.colors.length}色）`);
-    } catch (err) {
-      toast(`导入失败：${err.message}`);
-    }
+    return withPending(els.btnImportConfig, async () => {
+      try {
+        const res = await api.importConfig(f);
+        await palette.selectAndLoad(res.name);
+        setProjectDirty(true);
+        toast(`已导入配置「${res.name}」（${res.colors.length}色）`, { type: 'success' });
+      } catch (err) {
+        toast(`导入失败：${err.message}`, { type: 'error' });
+      }
+    });
   });
   els.btnExportConfig.addEventListener('click', () => {
     if (!App.configName) return;
@@ -260,36 +347,40 @@ export function bindEvents() {
       `${App.configName}.csv`,
     );
   });
-  els.btnRenameConfig.addEventListener('click', async () => {
-    if (!App.configName) return;
-    const newName = promptDialog('新的配置名称：', App.configName);
-    if (!newName || newName === App.configName) return;
-    try {
-      await api.renameConfig(App.configName, newName);
-      await palette.selectAndLoad(newName);
-      setProjectDirty(true);
-      toast('已重命名');
-    } catch (err) {
-      toast(`重命名失败：${err.message}`);
-    }
-  });
-  els.btnDeleteConfig.addEventListener('click', async () => {
-    if (!App.configName) return;
-    if (App.configs.length <= 1) {
-      toast('至少保留一个配置');
-      return;
-    }
-    if (!confirmDialog(`确定删除配置「${App.configName}」吗？`)) return;
-    try {
-      await api.deleteConfig(App.configName);
-      const remaining = App.configs.filter((c) => c.name !== App.configName);
-      await palette.selectAndLoad(remaining[0] ? remaining[0].name : null);
-      setProjectDirty(true);
-      toast('已删除配置');
-    } catch (err) {
-      toast(`删除失败：${err.message}`);
-    }
-  });
+  els.btnRenameConfig.addEventListener('click', () =>
+    withPending(els.btnRenameConfig, async () => {
+      if (!App.configName) return;
+      const newName = await promptDialog('新的配置名称：', App.configName);
+      if (!newName || newName === App.configName) return;
+      try {
+        await api.renameConfig(App.configName, newName);
+        await palette.selectAndLoad(newName);
+        setProjectDirty(true);
+        toast('已重命名', { type: 'success' });
+      } catch (err) {
+        toast(`重命名失败：${err.message}`, { type: 'error' });
+      }
+    }),
+  );
+  els.btnDeleteConfig.addEventListener('click', () =>
+    withPending(els.btnDeleteConfig, async () => {
+      if (!App.configName) return;
+      if (App.configs.length <= 1) {
+        toast('至少保留一个配置');
+        return;
+      }
+      if (!(await confirmDialog(`确定删除配置「${App.configName}」吗？`))) return;
+      try {
+        await api.deleteConfig(App.configName);
+        const remaining = App.configs.filter((c) => c.name !== App.configName);
+        await palette.selectAndLoad(remaining[0] ? remaining[0].name : null);
+        setProjectDirty(true);
+        toast('已删除配置', { type: 'success' });
+      } catch (err) {
+        toast(`删除失败：${err.message}`, { type: 'error' });
+      }
+    }),
+  );
   els.btnAddColor.addEventListener('click', palette.addColor);
 
   // 模式按钮：画笔/橡皮/取色互斥切换（画笔未选色时先取调色板最暗色）
@@ -391,18 +482,6 @@ export function bindEvents() {
   els.compareOriginal.addEventListener('mousedown', drag.onCompareMouseDown);
   els.compareOriginal.addEventListener('wheel', drag.onCompareWheel, { passive: false });
 
-  const tabs = document.querySelectorAll('.tabs .tab');
-  tabs.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      tabs.forEach((b) => {
-        b.classList.remove('active');
-      });
-      btn.classList.add('active');
-      const tab = btn.dataset.tab;
-      els.tabPalette.classList.toggle('hidden', tab !== 'palette');
-      els.tabEdit.classList.toggle('hidden', tab !== 'edit');
-    });
-  });
-
+  paletteDialog.bindPaletteDialog();
   bindShortcuts();
 }

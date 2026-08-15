@@ -129,7 +129,7 @@ def default_project_filename(original_name: str | None = None) -> str:
     return f"{date}_{stem}_拼豆图.ssfbp"
 
 
-def meta_json(app_version: str = "0.4.1") -> bytes:
+def meta_json(app_version: str = "0.5.0") -> bytes:
     return json.dumps({
         "formatVersion": FORMAT_VERSION,
         "appVersion": app_version,

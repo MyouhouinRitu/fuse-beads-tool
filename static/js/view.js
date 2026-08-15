@@ -134,8 +134,10 @@ export function fitOriginal() {
   const vh = pane.clientHeight;
   if (!vw || !vh) return;
   const fit = fitToViewport(cv.width, cv.height, vw, vh, FIT_ZOOM_CAP);
+  // 原图画布位于带内边距的对比面板内，需扣掉它的静态偏移，否则缩放后偏右下
+  const offset = staticOffsetTo(pane, cv);
   App.origZoom = fit.zoom;
-  App.origPan = fit.pan;
+  App.origPan = { x: fit.pan.x - offset.x, y: fit.pan.y - offset.y };
   applyOriginalTransform();
 }
 
@@ -176,10 +178,25 @@ export function fitViewportToCanvas() {
   const ch = els.canvas.height;
   if (!cw || !ch) return;
   const fit = fitToViewport(cw, ch, vw, vh, FIT_ZOOM_CAP);
+  // 画布位于带内边距的面板内，扣掉静态偏移，避免适应窗口后整体偏右下、顶部留出多余空白
+  const offset = staticOffsetTo(vp, els.canvas);
   App.zoom = fit.zoom;
-  App.pan = fit.pan;
+  App.pan = { x: fit.pan.x - offset.x, y: fit.pan.y - offset.y };
   applyTransform();
   runAfterZoom();
+}
+
+// 沿 offsetParent 链累加元素相对目标容器的静态布局偏移（不受 transform 影响）
+function staticOffsetTo(target, el) {
+  let x = 0;
+  let y = 0;
+  let node = el;
+  while (node && node !== target) {
+    x += node.offsetLeft;
+    y += node.offsetTop;
+    node = node.offsetParent;
+  }
+  return { x, y };
 }
 
 // 围绕鼠标位置缩放工作区（缩放后由钩子触发 overlay 重绘与联动）

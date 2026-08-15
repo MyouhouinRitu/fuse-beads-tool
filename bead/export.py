@@ -40,7 +40,7 @@ GRID_BOUNDARY_COLOR = "#000000"      # 图片边缘粗黑线
 
 # 格内色号
 CODE_MIN_CELL = 8                    # 格尺寸小于该值时不在格内显示色号
-CODE_FONT_RATIO = 0.5                # 格内色号字号（格）
+CODE_FONT_RATIO = 0.4                # 格内色号字号（格）
 FONT_MIN = 8
 FONT_CANDIDATES = (
     "msyh.ttc",
@@ -54,7 +54,7 @@ FONT_CANDIDATES = (
 
 # 边缘行列号
 EDGE_NUMBER_BG = "#D6E6F7"           # 行列号格底色（浅蓝）
-EDGE_NUMBER_FONT_RATIO = 0.5         # 行列号字号（格，与格内色号一致）
+EDGE_NUMBER_FONT_RATIO = 0.5         # 行列号字号（格）
 EDGE_NUMBER_MIN_CELL = 8             # 格尺寸小于该值时隐藏行列号
 
 # 空位斜线

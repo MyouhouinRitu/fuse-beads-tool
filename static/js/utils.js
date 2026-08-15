@@ -18,41 +18,45 @@ let toastImportant = false;
 let pendingNormal = null;
 const TOAST_FADE_MS = 250; // 与 #toast 的 opacity transition 时长一致
 
-export function toast(msg, { important = false } = {}) {
+export function toast(msg, { important = false, type = 'info' } = {}) {
   const text = String(msg);
+  const item = { text, important, type };
   if (important) {
-    toastQueue.push(text);
+    toastQueue.push(item);
     if (!toastVisible) showNextToast();
     return;
   }
   if (!toastVisible) {
-    showToast(text, false);
+    showToast(text, false, type);
     return;
   }
   if (toastImportant) {
-    pendingNormal = text;
+    pendingNormal = item;
     return;
   }
   clearTimeout(App.toastTimer);
-  showToast(text, false);
+  showToast(text, false, type);
 }
 
 function showNextToast() {
   if (toastQueue.length) {
-    showToast(toastQueue.shift(), true);
+    const item = toastQueue.shift();
+    showToast(item.text, true, item.type);
     return;
   }
   if (pendingNormal) {
-    const text = pendingNormal;
+    const item = pendingNormal;
     pendingNormal = null;
-    showToast(text, false);
+    showToast(item.text, false, item.type);
     return;
   }
   toastVisible = false;
 }
 
-function showToast(text, important) {
+function showToast(text, important, type = 'info') {
   els.toast.textContent = text;
+  els.toast.classList.toggle('toast-success', type === 'success');
+  els.toast.classList.toggle('toast-error', type === 'error');
   els.toast.classList.add('show');
   toastVisible = true;
   toastImportant = important;
@@ -64,8 +68,25 @@ function showToast(text, important) {
   }, TOAST_DURATION_MS);
 }
 
+// 异步操作防重复：pending 期间禁用触发器并标记 aria-busy，结束后恢复
+export async function withPending(trigger, task) {
+  if (!trigger) return task();
+  if (trigger.disabled) return;
+  trigger.disabled = true;
+  trigger.setAttribute('aria-busy', 'true');
+  try {
+    return await task();
+  } finally {
+    trigger.disabled = false;
+    trigger.removeAttribute('aria-busy');
+  }
+}
+
 export function getToastQueue() {
-  return [...toastQueue, ...(pendingNormal ? [pendingNormal] : [])];
+  return [
+    ...toastQueue.map((item) => item.text),
+    ...(pendingNormal ? [pendingNormal.text] : []),
+  ];
 }
 
 let paletteHintShownAt = 0;

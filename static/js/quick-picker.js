@@ -32,6 +32,8 @@ const QUICK_PICKER_NEIGHBORS = [
   [1, 1],
 ];
 
+let restoreFocusEl = null;
+
 // 构建九宫格候选色：周围 8 格的颜色优先，不足 9 个时用最相近颜色补齐
 export function buildQuickCandidates(cell) {
   const { grid, width, height } = App.project;
@@ -152,6 +154,7 @@ export function positionQuickPicker(cell) {
 
 export function openQuickPicker(cell) {
   if (!App.appliedPalette.length) return;
+  restoreFocusEl = document.activeElement;
   const scored = buildQuickCandidates(cell);
   renderQuickPicker(scored);
   positionQuickPicker(cell);
@@ -199,4 +202,10 @@ export function closeQuickPicker() {
   interactionState.pickerCell = null;
   els.quickPicker.classList.add('hidden');
   interactionState.pickerCandidates = null;
+  if (restoreFocusEl && typeof restoreFocusEl.focus === 'function') {
+    restoreFocusEl.focus();
+  } else if (els.canvas && typeof els.canvas.focus === 'function') {
+    els.canvas.focus();
+  }
+  restoreFocusEl = null;
 }

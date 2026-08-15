@@ -15,6 +15,7 @@ export function currentTheme() {
 export function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   els.btnTheme.textContent = theme === 'dark' ? '☀ 日间模式' : '🌙 夜间模式';
+  els.btnTheme.setAttribute('aria-pressed', String(theme === 'dark'));
   els.btnTheme.title =
     theme === 'dark' ? '当前为夜间模式，点击切换为日间' : '当前为日间模式，点击切换为夜间';
   try {

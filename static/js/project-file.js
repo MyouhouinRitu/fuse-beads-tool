@@ -18,17 +18,17 @@ export async function saveProjectFile() {
     const res = await api.saveProject(buildProjectDocument(), defaultProjectFileName());
     downloadUrl(`data:application/octet-stream;base64,${res.dataBase64}`, res.filename);
     App.projectName = fileNameStem(res.filename);
-    toast('已生成项目文件（浏览器下载）');
+    toast('已生成项目文件（浏览器下载）', { type: 'success' });
     setDirty(false);
     setProjectDirty(false);
     updateProjectNameLabel();
   } catch (e) {
-    toast(`保存项目失败：${e.message}`);
+    toast(`保存项目失败：${e.message}`, { type: 'error' });
   }
 }
 
 export async function openProjectViaDialog() {
-  if (App.projectDirty && !confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？'))
+  if (App.projectDirty && !(await confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？')))
     return;
   // 统一使用浏览器文件选择器打开项目
   els.projectFileInput.click();

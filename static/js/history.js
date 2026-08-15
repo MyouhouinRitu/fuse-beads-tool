@@ -23,7 +23,7 @@ export function sanitizeHistory(h) {
     items.push({
       id,
       createdAt: Number(it.createdAt) || Date.now(),
-      label: it.label ? String(it.label) : `状态 #${id}`,
+      label: it.label ? String(it.label) : `快照 #${id}`,
       snapshot: it.snapshot,
     });
   }
@@ -107,7 +107,7 @@ export function findTransaction(history, id) {
 
 export function createTransaction(history, snapshot) {
   const id = history.nextId++;
-  const item = { id, createdAt: Date.now(), label: `状态 #${id}`, snapshot };
+  const item = { id, createdAt: Date.now(), label: `快照 #${id}`, snapshot };
   history.items.push(item);
   history.currentId = id;
   history.baselineId = id;

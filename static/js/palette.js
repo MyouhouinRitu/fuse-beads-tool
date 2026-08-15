@@ -3,11 +3,16 @@
 import * as api from './api.js';
 import { scheduleAutosave } from './autosave.js';
 import { CONFIG_SAVE_DELAY_MS } from './constants.js';
-import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
+import { renderFullNow } from './render-queue.js';
 import { App, setProjectDirty } from './state.js';
 import { hintPaletteDeferred, toast } from './utils.js';
+
+// 未导入项目时，编辑工具的颜色列表直接反映当前配置色板，改动后需要同步刷新
+function refreshIdleColorList() {
+  if (!App.project) renderFullNow();
+}
 
 export async function loadConfigs(selectName) {
   const res = await api.getConfigs();
@@ -47,6 +52,7 @@ export async function loadConfigDetail(name) {
   scheduleAutosave();
   // 首次打开加载默认配置不算「更改」，不弹提示
   if (hadPalette) hintPaletteDeferred();
+  refreshIdleColorList();
 }
 
 async function configHashByName(name) {
@@ -108,7 +114,7 @@ function scheduleConfigSave() {
       const cfg = App.configs.find((c) => c.name === App.configName);
       if (cfg) cfg.paletteHash = paletteHash(App.palette);
     } catch (err) {
-      toast(`配置保存失败：${err.message}`);
+      toast(`配置保存失败：${err.message}`, { type: 'error' });
     }
   }, CONFIG_SAVE_DELAY_MS);
 }
@@ -134,6 +140,7 @@ export function bindColorTable() {
       setProjectDirty(true);
       scheduleConfigSave();
       hintPaletteDeferred();
+      refreshIdleColorList();
     }
   });
   tb.addEventListener('change', (e) => {
@@ -151,6 +158,7 @@ export function bindColorTable() {
       setProjectDirty(true);
       scheduleConfigSave();
       hintPaletteDeferred();
+      refreshIdleColorList();
     } else if (e.target.classList.contains('c-code') || e.target.classList.contains('c-name')) {
       const codeInput = row.querySelector('.c-code');
       const nameInput = row.querySelector('.c-name');
@@ -158,6 +166,7 @@ export function bindColorTable() {
       App.palette[i].name = nameInput ? nameInput.value.trim() : '';
       setProjectDirty(true);
       scheduleConfigSave();
+      refreshIdleColorList();
     }
   });
   tb.addEventListener('click', (e) => {
@@ -218,14 +227,6 @@ export function renderColorTable() {
 }
 
 function removeColor(i) {
-  const used = App.project?.grid.some((v) => v === i);
-  if (
-    used &&
-    !confirmDialog(
-      '该颜色正在被使用，删除后重新压缩时已使用的格子会自动替换为最相近的颜色。是否继续？',
-    )
-  )
-    return;
   const oldPalette = App.palette;
   App.palette = App.palette.filter((_, k) => k !== i);
   if (!App.palette.length) {
@@ -239,6 +240,7 @@ function removeColor(i) {
   setProjectDirty(true);
   scheduleConfigSave();
   hintPaletteDeferred();
+  refreshIdleColorList();
 }
 
 export function addColor() {

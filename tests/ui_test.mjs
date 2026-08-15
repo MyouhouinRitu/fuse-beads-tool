@@ -114,6 +114,26 @@ async function near(actual, expected, tol = 12) {
   );
 }
 
+async function acceptPopup(page) {
+  await page.waitForSelector('#popup-dialog:not(.hidden)', { timeout: 5000 });
+  await page.click('#popup-ok');
+}
+
+async function promptPopup(page, text) {
+  await page.waitForSelector('#popup-dialog:not(.hidden)', { timeout: 5000 });
+  await page.fill('#popup-input', text);
+  await page.click('#popup-ok');
+}
+
+async function acceptPopupIfVisible(page, waitMs = 400) {
+  try {
+    await page.waitForSelector('#popup-dialog:not(.hidden)', { timeout: waitMs });
+    await page.click('#popup-ok');
+  } catch {
+    /* 没有弹窗则跳过 */
+  }
+}
+
 async function main() {
   if (fs.existsSync(STATE)) fs.unlinkSync(STATE);
   makeTestImage();
@@ -129,8 +149,10 @@ async function main() {
   // 1. 导入图片
   await page.goto(`${BASE}/?test=1`, { waitUntil: 'networkidle' });
   // 本测试的断言基于 48 色示例色板，先切过去（默认色板是 221 色 MARD）
+  await page.click('#btn-config');
   await page.selectOption('#config-select', 'default_48');
   await page.waitForTimeout(400);
+  await page.click('#palette-dialog-close');
   await page.fill('#target-pixels', '2304'); // 48x48 原大小，不做缩放
   await page.uncheck('#chk-sharpen'); // 关闭锐化，避免色块边缘产生过渡色
   await page.setInputFiles('#file-input', IMG);
@@ -211,7 +233,7 @@ async function main() {
         (t) => t.textContent.trim() === '记录',
       ),
       hasHistoryTitle: [...document.querySelectorAll('#right-panel .panel-title')].some(
-        (t) => t.textContent.trim() === '事务历史',
+        (t) => t.textContent.trim() === '快照清单',
       ),
       hasDirtyIndicator: !!document.querySelector('#right-panel #dirty-indicator'),
       hasHistoryList: !!document.querySelector('#right-panel #history-list'),
@@ -238,7 +260,7 @@ async function main() {
       layout.hasHistoryTitle &&
       layout.hasDirtyIndicator &&
       layout.hasHistoryList,
-    '右侧面板应为单一事务历史块并带未保存提示',
+    '右侧面板应为单一快照清单块并带未保存提示',
   );
   assert.ok(
     layout.hasExportEmptyStyle && layout.hasExportPreview,
@@ -272,7 +294,7 @@ async function main() {
   // 1.5 侧边栏折叠 / 展开：收起后宽度收缩、工作区变宽，展开后恢复
   {
     const panelSpec = [
-      { id: 'left-panel', trigger: '#left-panel-toggle' },
+      { id: 'left-panel', trigger: '#left-panel-head' },
       { id: 'color-highlight-panel', trigger: '#color-highlight-panel-head' },
       { id: 'right-panel', trigger: '#right-panel-head' },
     ];
@@ -369,7 +391,6 @@ async function main() {
 
     // 画笔模式下点击左侧原图不应修改拼豆图
     const gridBefore = await page.evaluate(() => Array.from(window.__app.project.grid));
-    await page.click('.tab[data-tab="edit"]');
     await page.click('#color-list .color-item:first-child');
     const origBox = await page.locator('#compare-original').boundingBox();
     await page.mouse.click(origBox.x + 60, origBox.y + 60);
@@ -490,26 +511,37 @@ async function main() {
   assert.equal(unmergedCounts, 3, '滑块回到最大后应显示 3 个数量');
 
   // 2.5 重新压缩后默认适应窗口（居中）
-  const onDlg = (d) => d.accept();
-  page.on('dialog', onDlg);
   await page.click('#btn-recompress');
-  await page.waitForTimeout(1500);
-  page.off('dialog', onDlg);
+  await acceptPopupIfVisible(page);
+  await page.waitForTimeout(1400);
   const fit = await page.evaluate(() => {
     const a = window.__app;
     const c = document.querySelector('#canvas');
     const vp = document.querySelector('#canvas-scroll');
-    const expectX = (vp.clientWidth - c.width * a.zoom) / 2;
-    return { panX: a.pan.x, expectX, zoom: a.zoom, cw: c.width };
+    const pane = document.querySelector('#bead-pane');
+    const cs = getComputedStyle(pane);
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const padT = parseFloat(cs.paddingTop) || 0;
+    const expectX = (vp.clientWidth - c.width * a.zoom) / 2 - padL;
+    const expectY = (vp.clientHeight - c.height * a.zoom) / 2 - padT;
+    return {
+      panX: a.pan.x,
+      panY: a.pan.y,
+      expectX,
+      expectY,
+      zoom: a.zoom,
+      cw: c.width,
+    };
   });
   assert.ok(
-    fit.cw > 0 && Math.abs(fit.panX - fit.expectX) < 2,
-    `重新压缩后应居中适应窗口，实际 panX=${fit.panX.toFixed(1)} 期望 ${fit.expectX.toFixed(1)}`,
+    fit.cw > 0 &&
+      Math.abs(fit.panX - fit.expectX) < 2 &&
+      Math.abs(fit.panY - fit.expectY) < 2,
+    `重新压缩后应居中适应窗口（扣除面板内边距），实际 pan=(${fit.panX.toFixed(1)}, ${fit.panY.toFixed(1)}) 期望 (${fit.expectX.toFixed(1)}, ${fit.expectY.toFixed(1)})`,
   );
   console.log('[OK] 重新压缩后适应窗口');
 
   // 3. 画笔涂色（选择白色后点击格子）
-  await page.click('.tab[data-tab="edit"]');
   const countsBefore = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#color-list .ci-count'))
       .map((e) => e.textContent)
@@ -566,7 +598,7 @@ async function main() {
   assert.equal(
     await page.locator('#history-list .history-item').count(),
     0,
-    '撤销/重做不应产生事务',
+    '撤销/重做不应产生快照',
   );
   assert.ok((await page.textContent('#undo-info')).includes('1/20'), '撤销/重做后应保留这一步记录');
   assert.notEqual(
@@ -626,7 +658,7 @@ async function main() {
     .locator('#quick-picker button:not(.qp-cancel)')
     .first()
     .textContent();
-  assert.ok(/×\d+/.test(firstBtnText), `九宫格候选中已使用的色号应显示数量，实际 ${firstBtnText}`);
+  assert.ok(/×\d+/.test(firstBtnText), `九宫格候选中已使用的色号应显示数量，实际 ${JSON.stringify(firstBtnText)}`);
   // 第一个候选是周围格子的颜色（绿色）；第二个是按相近度补的相近色（已排除自身白色）
   const candEl = page.locator('#quick-picker button:not(.qp-cancel)').nth(1);
   const candHex = await candEl.evaluate((el) => el.style.background);
@@ -847,24 +879,24 @@ async function main() {
   assert.equal(
     await page.locator('#history-list .history-item').count(),
     2,
-    '保存两次应有 2 个状态',
+    '保存两次应有 2 个快照',
   );
   assert.equal(
     await page.locator('#history-list .hi-baseline-dot').count(),
     1,
-    '当前事务应显示红色基线圆点',
+    '当前快照应显示红色基线圆点',
   );
   assert.equal(
     await page.evaluate(() => getComputedStyle(document.querySelector('#dirty-indicator')).display),
     'none',
-    '保存事务后应隐藏「有未保存的修改」提示',
+    '保存快照后应隐藏「有未保存的修改」提示',
   );
-  page.once('dialog', (d) => d.accept());
   await page.click('#history-list .history-item.current .hi-actions button:first-child');
+  await acceptPopup(page);
   await page.waitForTimeout(400);
-  assert.equal(await page.locator('#history-list .history-item').count(), 1, '删除后应剩 1 个状态');
-  assert.match(await page.textContent('#history-list .hi-label'), /状态 #1/, '当前应切回状态 #1');
-  console.log('[OK] 事务历史保存 / 删除 / 切换');
+  assert.equal(await page.locator('#history-list .history-item').count(), 1, '删除后应剩 1 个快照');
+  assert.match(await page.textContent('#history-list .hi-label'), /快照 #1/, '当前应切回快照 #1');
+  console.log('[OK] 快照清单保存 / 删除 / 切换');
 
   // 7. 导出 JPG：实时预览 + 图例开关生效
   await page.click('#btn-export');
@@ -966,7 +998,7 @@ async function main() {
       : stateNow.project
         ? `缺失/非数组(${typeof stateNow.project.grid})`
         : 'n/a',
-    '事务数:',
+    '快照数:',
     stateNow.history && Array.isArray(stateNow.history.items)
       ? stateNow.history.items.length
       : 'n/a',
@@ -1021,21 +1053,30 @@ async function main() {
   console.log('[OK] 刷新后原图缓存恢复');
 
   // 9. 新建 / 删除配置
-  await page.click('.tab[data-tab="palette"]');
-  page.once('dialog', (d) => d.accept('UI测试配置'));
+  await page.click('#btn-config');
+  const hexInputWidth = await page.evaluate(() => {
+    const el = document.querySelector('.color-row input.c-hex');
+    return el ? Math.round(el.getBoundingClientRect().width) : 0;
+  });
+  assert.ok(
+    hexInputWidth >= 80,
+    `16进制输入框应完整显示 #RRGGBB，实际宽度 ${hexInputWidth}px`,
+  );
   await page.click('#btn-new-config');
+  await promptPopup(page, 'UI测试配置');
   await page.waitForFunction(
     () => document.querySelector('#config-select')?.value === 'UI测试配置',
     null,
     { timeout: 5000 },
   );
-  page.once('dialog', (d) => d.accept());
   await page.click('#btn-delete-config');
+  await acceptPopup(page);
   await page.waitForFunction(
     () => document.querySelector('#config-select')?.value !== 'UI测试配置',
     null,
     { timeout: 5000 },
   );
+  await page.click('#palette-dialog-close');
   console.log('[OK] 配置新建与删除');
 
   // 10. 双副本：编辑后再次使用滑块 → 警告 + 清除上次滑块后的事务 + 从基副本重建
@@ -1045,20 +1086,19 @@ async function main() {
   assert.equal(
     await page.locator('#history-list .history-item').count(),
     treeBefore + 1,
-    '应能保存出滑块后的新事务',
+    '应能保存出滑块后的新快照',
   );
   // 编辑一个像素（画笔涂色），使滑块处于“编辑后”状态
-  await page.click('.tab[data-tab="edit"]');
   await page.click('#color-list .color-item:first-child');
   const paintPt = await canvasPoint(page, 30, 30);
   await page.mouse.click(paintPt.x, paintPt.y);
   await page.waitForTimeout(200);
-  page.once('dialog', (d) => d.accept());
   await page.evaluate(() => {
     const s = document.querySelector('#color-slider');
     s.value = '2';
     s.dispatchEvent(new Event('input'));
   });
+  await acceptPopup(page);
   await page.waitForFunction(
     () => document.querySelectorAll('#history-list .history-item').length === 0,
     null,
@@ -1067,16 +1107,16 @@ async function main() {
   assert.equal(
     await page.locator('#history-list .history-item').count(),
     0,
-    '编辑后再次使用滑块应清除上次滑块之后的事务',
+    '编辑后再次使用滑块应清除上次滑块之后的快照',
   );
   assert.ok(
     (await page.textContent('#used-colors')).includes('2 种颜色'),
     '滑块重建后应基于基副本显示合并色数',
   );
-  console.log('[OK] 双副本滑块语义（警告/清事务/基副本重建）');
+  console.log('[OK] 双副本滑块语义（警告/清快照/基副本重建）');
 
   // 11. 色板配置修改：不即时更新图片/画笔，重新压缩后才应用
-  await page.click('.tab[data-tab="palette"]');
+  await page.click('#btn-config');
   // 刷新后 originalFile 已丢失，先重新导入图片（当前 staging 为 mard-221）
   await page.setInputFiles('#file-input', IMG);
   await page.waitForFunction(() => document.querySelector('#canvas')?.width > 0, null, {
@@ -1091,8 +1131,8 @@ async function main() {
       r.request().method() === 'GET',
     { timeout: 5000 },
   );
-  page.once('dialog', (d) => d.accept(paletteCfgName));
   await page.click('#btn-new-config');
+  await promptPopup(page, paletteCfgName);
   await detailResp;
   // 等「色板配置修改后需重新压缩」提示的 3 秒节流过期，让后续改色能再次弹出提示
   await page.waitForTimeout(3200);
@@ -1116,10 +1156,10 @@ async function main() {
     null,
     { timeout: 3000 },
   );
-  page.on('dialog', onDlg);
+  await page.click('#palette-dialog-close');
   await page.click('#btn-recompress');
-  await page.waitForTimeout(1500);
-  page.off('dialog', onDlg);
+  await acceptPopupIfVisible(page);
+  await page.waitForTimeout(1400);
   assert.equal(
     await page.evaluate(() => window.__app.appliedPalette[0].hex),
     '#00FF00',
@@ -1129,13 +1169,15 @@ async function main() {
     (await page.textContent('#brush-label')).includes('#00FF00'),
     '重新压缩后画笔颜色应同步更新',
   );
-  page.once('dialog', (d) => d.accept());
+  await page.click('#btn-config');
   await page.click('#btn-delete-config');
+  await acceptPopup(page);
   await page.waitForFunction(
     (n) => document.querySelector('#config-select')?.value !== n,
     paletteCfgName,
     { timeout: 5000 },
   );
+  await page.click('#palette-dialog-close');
   console.log('[OK] 色板配置修改不即时生效，重新压缩后应用');
 
   // 12. 大图：同步换算应包含「网格宽 / 原图显示宽」比例

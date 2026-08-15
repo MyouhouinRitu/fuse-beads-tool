@@ -20,7 +20,7 @@
 
 ### 保存与撤销
 
-- `Ctrl+S`：保存事务
+- `Ctrl+S`：保存快照
 - `Ctrl+Shift+S`：保存项目（.ssfbp）
 - `Ctrl+Z`：撤销
 - `Ctrl+Shift+Z` / `Ctrl+Y`：重做

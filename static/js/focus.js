@@ -5,6 +5,7 @@ const FOCUSABLE_SELECTOR =
 
 let activeDialog = null;
 let restoreFocusEl = null;
+let scrollLockCount = 0;
 
 function focusableOf(dialog) {
   if (typeof dialog.querySelectorAll !== 'function') return [];
@@ -36,12 +37,16 @@ export function openDialog(dialog) {
   restoreFocusEl = document.activeElement;
   focusableOf(dialog)[0]?.focus();
   document.addEventListener('keydown', trapKeydown, true);
+  scrollLockCount += 1;
+  document.body.style.overflow = 'hidden';
 }
 
 export function closeDialog() {
   if (!activeDialog) return;
   document.removeEventListener?.('keydown', trapKeydown, true);
   activeDialog = null;
+  scrollLockCount = Math.max(0, scrollLockCount - 1);
+  if (!scrollLockCount) document.body.style.overflow = '';
   if (restoreFocusEl && typeof restoreFocusEl.focus === 'function') restoreFocusEl.focus();
   restoreFocusEl = null;
 }

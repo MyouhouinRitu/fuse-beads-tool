@@ -7,6 +7,9 @@ import * as exportDialog from './export-dialog.js';
 import * as historyUI from './history-ui.js';
 import { interactionState } from './interaction.js';
 import * as markdown from './markdown.js';
+import * as menu from './menu.js';
+import * as paletteDialog from './palette-dialog.js';
+import * as popup from './popup.js';
 import { saveProjectFile } from './project-file.js';
 import * as quickPicker from './quick-picker.js';
 import * as selection from './selection.js';
@@ -22,6 +25,18 @@ export function bindShortcuts() {
       t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
     const mod = e.ctrlKey || e.metaKey;
     if (e.key === 'Escape') {
+      if (popup.isPopupOpen()) {
+        popup.cancelPopup();
+        blurActive();
+        e.preventDefault();
+        return;
+      }
+      if (!els.paletteDialog.classList.contains('hidden')) {
+        paletteDialog.closePaletteDialog();
+        blurActive();
+        e.preventDefault();
+        return;
+      }
       if (!els.docDialog.classList.contains('hidden')) {
         markdown.closeFixDoc();
         blurActive();
@@ -29,16 +44,14 @@ export function bindShortcuts() {
         return;
       }
       if (!els.fixMenu.classList.contains('hidden')) {
-        els.fixMenu.classList.add('hidden');
-        els.btnFixMenu.setAttribute('aria-expanded', 'false');
-        blurActive();
+        menu.closeMenu(els.btnFixMenu, els.fixMenu);
         e.preventDefault();
         return;
       }
       if (!els.targetPixelsMenu.classList.contains('hidden')) {
         els.targetPixelsMenu.classList.add('hidden');
-        els.targetPixelsBtn.setAttribute('aria-expanded', 'false');
-        blurActive();
+        els.targetPixels.setAttribute('aria-expanded', 'false');
+        els.targetPixels.removeAttribute('aria-activedescendant');
         e.preventDefault();
         return;
       }
@@ -59,7 +72,6 @@ export function bindShortcuts() {
       if (inField) return; // 输入框内不处理工具/选区 Escape
       if (!els.quickPicker.classList.contains('hidden')) {
         quickPicker.closeQuickPicker();
-        blurActive();
         e.preventDefault();
         return;
       }

@@ -168,7 +168,7 @@ async function renderPdfPreview() {
     drawPdfPreviewPage();
   } catch (e) {
     els.dlgPdfPages.classList.add('hidden');
-    toast(`PDF 预览生成失败：${e.message}`);
+    toast(`PDF 预览生成失败：${e.message}`, { type: 'error' });
   } finally {
     els.dlgPreviewMask.classList.add('hidden');
   }
@@ -237,7 +237,7 @@ export async function doExport() {
     await new Promise((r) => setTimeout(r, EXPORT_COMPLETE_DELAY_MS)); // 稍作停留显示完成状态
     closeExportDialog();
   } catch (err) {
-    toast(`导出失败：${err.message}`);
+    toast(`导出失败：${err.message}`, { type: 'error' });
   } finally {
     els.dlgBusy.classList.add('hidden');
   }

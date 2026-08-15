@@ -66,12 +66,12 @@ import {
 
   // 删除非当前事务：仅删除该节点，当前节点不变
   const firstId = App.history.items[0].id;
-  hooks.deleteHistoryItem(firstId);
+  await hooks.deleteHistoryItem(firstId);
   assert.equal(App.history.items.length, 1, '删除应只移除一个事务节点');
   assert.equal(App.history.items[0].id, App.history.currentId, '删除非当前节点后当前节点不变');
 
   // 删除当前事务：切到相邻节点
-  hooks.deleteHistoryItem(App.history.currentId);
+  await hooks.deleteHistoryItem(App.history.currentId);
   assert.equal(App.history.items.length, 0, '删除当前节点后历史清空');
   assert.equal(App.history.currentId, null);
   assert.equal(elsMap['history-list'].children.length, 0, '历史面板应显示空状态');
@@ -240,12 +240,12 @@ import {
   assert.ok(App.history.items.length > 0 && App.undoStack.length > 0, '前置：存在事务与撤销记录');
 
   testState.confirmResult = false;
-  hooks.applySlider(1);
+  await hooks.applySlider(1);
   assert.equal(App.history.items.length, 1, '取消确认后不应清空事务');
   assert.equal(App.undoStack.length, 1, '取消确认后不应清空撤销记录');
 
   testState.confirmResult = true;
-  hooks.applySlider(1);
+  await hooks.applySlider(1);
   assert.equal(App.history.items.length, 0, '确认后应清空全部事务');
   assert.equal(App.undoStack.length, 0, '确认后应清空撤销记录');
   assert.equal(App.redoStack.length, 0, '确认后应清空重做记录');
@@ -418,7 +418,7 @@ import {
       {
         id: 1,
         createdAt: 1,
-        label: '状态 #1',
+        label: '快照 #1',
         snapshot: { width: 2, height: 2, grid: [0, 1, 0, 1] },
       },
     ],

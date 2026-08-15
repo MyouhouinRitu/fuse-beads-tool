@@ -10,17 +10,23 @@ import { codeOf, countBadge, titleOf, toast } from './utils.js';
 
 // ---------- 画笔 ----------
 
+// 未导入项目时没有“已应用色板”，此时用当前配置色板作为画笔色板，允许提前选色
+function brushPalette() {
+  return App.project && App.appliedPalette.length ? App.appliedPalette : App.palette;
+}
+
 export function updateBrush() {
-  if (App.brushColor != null && App.brushColor >= App.appliedPalette.length) {
-    App.brushColor = Math.max(0, App.appliedPalette.length - 1);
+  const palette = brushPalette();
+  if (App.brushColor != null && App.brushColor >= palette.length) {
+    App.brushColor = Math.max(0, palette.length - 1);
   }
-  if (App.brushColor == null || !App.appliedPalette.length) {
+  if (App.brushColor == null || !palette.length) {
     els.brushSwatch.style.background = '#ffffff';
     els.brushSwatch.style.border = '2px dashed #b9bec7';
-    els.brushLabel.textContent = '未选择颜色（点击左侧颜色进入画笔模式）';
+    els.brushLabel.textContent = '未选择颜色';
     return;
   }
-  const c = App.appliedPalette[App.brushColor];
+  const c = palette[App.brushColor];
   if (!c) {
     els.brushSwatch.style.background = '#cccccc';
     els.brushSwatch.style.border = '';
@@ -32,12 +38,12 @@ export function updateBrush() {
   els.brushLabel.textContent = titleOf(c);
 }
 
-// 已应用调色板中最暗的颜色索引（按感知亮度），画笔未选色时用作默认颜色
-function darkestPaletteIndex() {
-  if (!App.appliedPalette.length) return null;
+// 调色板中最暗的颜色索引（按感知亮度），画笔未选色时用作默认颜色
+function darkestPaletteIndex(palette) {
+  if (!palette.length) return null;
   let best = 0;
   let bestLum = Infinity;
-  App.appliedPalette.forEach((c, i) => {
+  palette.forEach((c, i) => {
     if (!c?.hex) return;
     const [r, g, b] = C.hexToRgb(c.hex);
     const lum = C.luminance([r, g, b]);
@@ -52,7 +58,7 @@ function darkestPaletteIndex() {
 // 画笔未选色时取调色板最暗色；调色板为空时提示并返回 false
 export function ensureBrushColor() {
   if (App.brushColor != null) return true;
-  const dark = darkestPaletteIndex();
+  const dark = darkestPaletteIndex(brushPalette());
   if (dark == null) {
     toast('调色板为空，请先导入颜色配置');
     return false;
@@ -94,10 +100,11 @@ export function renderColorList(counts) {
   if (!counts && App.project) {
     counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   }
+  const palette = brushPalette();
   const list = els.colorList;
   list.innerHTML = '';
   const frag = document.createDocumentFragment();
-  App.appliedPalette.forEach((c, i) => {
+  palette.forEach((c, i) => {
     const item = document.createElement('div');
     item.className = `color-item${App.brushColor === i ? ' selected' : ''}`;
     item.dataset.index = String(i);
@@ -109,12 +116,15 @@ export function renderColorList(counts) {
     codeLabel.className = 'ci-code';
     codeLabel.textContent = codeOf(c);
     const rgb = C.hexToRgb(c.hex);
-    codeLabel.style.color = C.isLightColor(rgb) ? '#111111' : '#FFFFFF';
+    const textColor = C.isLightColor(rgb) ? '#111111' : '#FFFFFF';
+    codeLabel.style.color = textColor;
     sw.appendChild(codeLabel);
     const count = document.createElement('span');
     count.className = 'ci-count';
     count.textContent = counts?.[i] ? countBadge(counts[i]) : '';
-    item.append(sw, count);
+    count.style.color = textColor;
+    sw.appendChild(count);
+    item.appendChild(sw);
     frag.appendChild(item);
   });
   list.appendChild(frag);

@@ -95,7 +95,7 @@ export const RAISED_GLOSS_ALPHA = 0.45; // 左上高光点透明度
 
 // ---------- 边缘行列号 ----------
 export const EDGE_NUMBER_MIN_CELL = 8; // 格尺寸小于该值时隐藏边缘行列号
-export const EDGE_NUMBER_FONT_RATIO = 0.5; // 行列号字号 = 格尺寸 × 该比例（与格内色号一致）
+export const EDGE_NUMBER_FONT_RATIO = 0.5; // 行列号字号 = 格尺寸 × 该比例
 export const EDGE_NUMBER_BG = '#D6E6F7'; // 行列号格底色（浅蓝）
 
 // ---------- 对比原图 ----------
@@ -147,7 +147,7 @@ export const GRID_LINE_COLOR = '#9A9A9A'; // 格内灰色网格线
 export const GRID_BOUNDARY_COLOR = '#000000'; // 图片边缘粗黑线
 // 格内色号
 export const CODE_MIN_CELL = 8; // 格尺寸小于该值时不在格内显示色号
-export const CODE_FONT_RATIO = 0.5; // 格内色号字号（格）
+export const CODE_FONT_RATIO = 0.4; // 格内色号字号（格）
 export const CODE_FONT_MIN = 8; // 格内色号字号下限
 // 空位格（橡皮擦除后）使用同一底色与斜线
 export const EMPTY_STYLES = {

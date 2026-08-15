@@ -23,6 +23,8 @@ export const els = {
   targetPixelsMenu: $('target-pixels-menu'),
   /** @type {HTMLButtonElement} */
   btnRecompress: $('btn-recompress'),
+  /** @type {HTMLButtonElement} */
+  btnConfig: $('btn-config'),
   /** @type {HTMLInputElement} */
   chkSharpen: $('chk-sharpen'),
   /** @type {HTMLInputElement} */
@@ -64,16 +66,18 @@ export const els = {
   colorTable: $('color-table'),
   /** @type {HTMLButtonElement} */
   btnAddColor: $('btn-add-color'),
-  tabPalette: $('tab-palette'),
   tabEdit: $('tab-edit'),
   leftPanel: $('left-panel'),
-  leftPanelToggle: $('left-panel-toggle'),
+  leftPanelHead: $('left-panel-head'),
+  leftPanelBody: $('left-panel-body'),
   leftPanelExpand: $('left-panel-expand'),
   colorHighlightPanel: $('color-highlight-panel'),
   colorHighlightPanelHead: $('color-highlight-panel-head'),
+  colorHighlightPanelBody: $('color-highlight-panel-body'),
   colorHighlightPanelExpand: $('color-highlight-panel-expand'),
   rightPanel: $('right-panel'),
   rightPanelHead: $('right-panel-head'),
+  rightPanelBody: $('right-panel-body'),
   rightPanelExpand: $('right-panel-expand'),
   /** @type {HTMLButtonElement} */
   toolBrush: $('tool-brush'),
@@ -151,6 +155,9 @@ export const els = {
   /** @type {HTMLButtonElement} */
   docClose: $('doc-close'),
   exportDialog: $('export-dialog'),
+  paletteDialog: $('palette-dialog'),
+  /** @type {HTMLButtonElement} */
+  paletteDialogClose: $('palette-dialog-close'),
   /** @type {HTMLInputElement} */
   dlgCell: $('dlg-cell-size'),
   /** @type {HTMLInputElement} */
@@ -184,6 +191,13 @@ export const els = {
   /** @type {HTMLButtonElement} */
   btnLogin: $('btn-login'),
   loginError: $('login-error'),
+  popupDialog: $('popup-dialog'),
+  popupTitle: $('popup-title'),
+  popupMessage: $('popup-message'),
+  popupInput: $('popup-input'),
+  popupError: $('popup-error'),
+  popupOk: $('popup-ok'),
+  popupCancel: $('popup-cancel'),
 };
 
 // 启动时校验关键 DOM 元素，缺 id 时立即报错，避免运行到一半才崩溃

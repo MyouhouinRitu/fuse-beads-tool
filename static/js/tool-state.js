@@ -64,6 +64,7 @@ export function setTool(t) {
   App.tool = t;
   for (const u of TOOL_UI) {
     els[u.btn].classList.toggle('active', t === u.tool);
+    els[u.btn].setAttribute('aria-pressed', String(t === u.tool));
     els.canvas.classList.toggle(u.modeClass, t === u.tool);
   }
   if (t === TOOLS.BRUSH || t === TOOLS.ERASER) {

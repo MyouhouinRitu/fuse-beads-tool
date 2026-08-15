@@ -649,7 +649,7 @@ import {
   const kd = windowListeners.keydown[0];
   kd({ key: 'd', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
   assert.ok(interactionState.pickerCell, '前置：九宫格应打开并设置目标格');
-  hooks.applySlider(1);
+  await hooks.applySlider(1);
   assert.ok(elsMap['quick-picker'].classList.contains('hidden'), '调整滑块后应关闭九宫格');
   assert.equal(interactionState.pickerCell, null, '调整滑块后应清空目标格');
   assert.equal(App.selection.size, 0, '调整滑块后应清空选区（与重新压缩一致）');

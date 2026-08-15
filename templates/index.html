@@ -27,7 +27,7 @@
       <div class="brand">拼豆工具</div>
       <span id="project-name-label" class="brand-sub"></span>
       <span class="spacer"></span>
-      <button type="button" id="btn-theme" title="切换日间 / 夜间模式">🌙 夜间模式</button>
+      <button type="button" id="btn-theme" title="切换日间 / 夜间模式" aria-pressed="false">🌙 夜间模式</button>
     </div>
     <div class="tb-row">
       <button type="button" id="btn-open-project" title="打开 .ssfbp 项目文件">打开项目</button>
@@ -36,8 +36,8 @@
       <input type="file" id="project-file-input" accept=".ssfbp" hidden>
       <label class="field">目标像素量
         <span class="target-pixels-wrap">
-          <input type="number" id="target-pixels" min="100" max="80000" step="100" value="4000" title="图片压缩后的总像素量">
-          <button type="button" id="target-pixels-btn" class="target-pixels-arrow" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量" aria-haspopup="menu" aria-expanded="false" aria-controls="target-pixels-menu"></button>
+          <input type="number" id="target-pixels" min="100" max="80000" step="100" value="4000" title="图片压缩后的总像素量" role="combobox" aria-expanded="false" aria-controls="target-pixels-menu" aria-autocomplete="none">
+          <button type="button" id="target-pixels-btn" class="target-pixels-arrow" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量" aria-hidden="true"></button>
           <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden" role="menu"></div>
         </span>
       </label>
@@ -48,6 +48,7 @@
           <option value="rgb">RGB</option>
         </select>
       </label>
+      <button type="button" id="btn-config" title="打开色板配置">色板配置</button>
       <button type="button" id="btn-recompress" title="按当前设置重新压缩并重新生成图案">重新压缩</button>
       <span class="spacer"></span>
       <div class="dropdown" id="fix-dropdown">
@@ -80,44 +81,22 @@
 
   <main>
     <aside id="left-panel">
-      <div class="panel-body">
-        <nav class="tabs">
-          <button type="button" class="tab active" data-tab="palette">色板配置</button>
-          <button type="button" class="tab" data-tab="edit">编辑工具</button>
-          <button id="left-panel-toggle" class="panel-toggle" type="button" title="收起色板配置与编辑工具">‹</button>
-        </nav>
+      <div id="left-panel-body" class="panel-body">
+      <button type="button" id="left-panel-head" class="panel-head" title="收起 / 展开编辑工具"
+        aria-expanded="true" aria-controls="left-panel-body">
+        <span class="panel-title">编辑工具</span>
+        <span class="spacer"></span>
+        <span class="panel-chevron">‹</span>
+      </button>
 
-        <section id="tab-palette" class="tab-panel">
-          <div class="panel-block">
-            <div class="row">
-              <select id="config-select" title="当前色板配置"></select>
-            </div>
-            <div class="row">
-              <button type="button" id="btn-new-config" title="新建一个配置">新建</button>
-              <button type="button" id="btn-import-config" title="从 CSV 文件导入配置">导入</button>
-              <button type="button" id="btn-export-config" title="将当前配置导出为 CSV">导出CSV</button>
-            </div>
-            <div class="row">
-              <button type="button" id="btn-rename-config" title="重命名当前配置">重命名</button>
-              <button type="button" id="btn-delete-config" class="danger" title="删除当前配置">删除</button>
-            </div>
-            <input type="file" id="config-file-input" accept=".csv,text/csv" hidden>
-          </div>
-          <div class="panel-block grow">
-            <div class="panel-title">颜色表（可直接编辑）</div>
-            <div id="color-table" class="color-table"></div>
-            <button type="button" id="btn-add-color" class="add-btn">+ 添加颜色</button>
-          </div>
-        </section>
-
-        <section id="tab-edit" class="tab-panel hidden">
+        <section id="tab-edit" class="tab-panel">
           <div class="panel-block">
             <div class="tool-row">
-              <button type="button" id="tool-brush" class="tool" title="用当前颜色涂色（ESC 返回选择模式）">画笔</button>
-              <button type="button" id="tool-picker" class="tool" title="点击像素取色（ESC 返回选择模式）">取色</button>
-              <button type="button" id="tool-eraser" class="tool" title="擦除格子（空位）">橡皮</button>
-              <button type="button" id="tool-crop" class="tool" title="裁剪图案（R 键；ESC 返回选择模式）">裁剪</button>
-              <button type="button" id="tool-wand" class="tool" title="点击选中四向相连的相似颜色（M 键；容差可调）">魔棒</button>
+              <button type="button" id="tool-brush" class="tool" title="用当前颜色涂色（ESC 返回选择模式）" aria-pressed="false">画笔</button>
+              <button type="button" id="tool-picker" class="tool" title="点击像素取色（ESC 返回选择模式）" aria-pressed="false">取色</button>
+              <button type="button" id="tool-eraser" class="tool" title="擦除格子（空位）" aria-pressed="false">橡皮</button>
+              <button type="button" id="tool-crop" class="tool" title="裁剪图案（R 键；ESC 返回选择模式）" aria-pressed="false">裁剪</button>
+              <button type="button" id="tool-wand" class="tool" title="点击选中四向相连的相似颜色（M 键；容差可调）" aria-pressed="false">魔棒</button>
             </div>
             <div class="mode-line">
               当前模式：<span id="mode-label" class="mode-label">选择模式</span>
@@ -155,8 +134,8 @@
           </div>
         </section>
       </div>
-      <button id="left-panel-expand" class="panel-expand" type="button" title="展开色板配置与编辑工具">
-        <span class="pe-label">色板配置 · 编辑工具</span>
+      <button id="left-panel-expand" class="panel-expand" type="button" title="展开编辑工具">
+        <span class="pe-label">编辑工具</span>
         <span class="pe-icon">›</span>
       </button>
     </aside>
@@ -195,12 +174,13 @@
     </section>
 
     <aside id="color-highlight-panel">
-      <div class="panel-body">
-        <div class="panel-head" id="color-highlight-panel-head" title="点击收起 / 展开">
+      <div id="color-highlight-panel-body" class="panel-body">
+        <button type="button" class="panel-head" id="color-highlight-panel-head" title="点击收起 / 展开"
+          aria-expanded="true" aria-controls="color-highlight-panel-body">
           <span class="panel-title">颜色清单</span>
           <span class="spacer"></span>
           <span class="panel-chevron">›</span>
-        </div>
+        </button>
         <div class="panel-block grow">
           <div id="highlight-color-list" class="highlight-color-list"></div>
         </div>
@@ -212,32 +192,33 @@
     </aside>
 
     <aside id="right-panel">
-      <div class="panel-body">
-        <div class="panel-head" id="right-panel-head" title="点击收起 / 展开">
-          <span class="panel-title">事务历史</span>
-          <span id="dirty-indicator" class="dirty-indicator hidden" title="当前画布有尚未保存为事务的修改">有未保存的修改</span>
+      <div id="right-panel-body" class="panel-body">
+        <button type="button" class="panel-head" id="right-panel-head" title="点击收起 / 展开"
+          aria-expanded="true" aria-controls="right-panel-body">
+          <span class="panel-title">快照清单</span>
+          <span id="dirty-indicator" class="dirty-indicator hidden" title="当前画布有尚未保存为快照的修改">有未保存的修改</span>
           <span class="spacer"></span>
           <span class="panel-chevron">›</span>
-        </div>
+        </button>
         <div class="panel-block">
           <div class="row">
-            <button type="button" id="btn-save-state-side" class="primary" title="Ctrl+S / Cmd+S">保存当前状态</button>
-            <button type="button" id="btn-clear-all" class="danger" title="清空画布并删除全部事务历史">清空所有状态</button>
+            <button type="button" id="btn-save-state-side" class="primary" title="Ctrl+S / Cmd+S">保存快照</button>
+            <button type="button" id="btn-clear-all" class="danger" title="删除全部快照，保留当前画布">清空所有快照</button>
           </div>
           <div id="history-list"></div>
-          <div id="history-empty" class="muted">暂无历史记录</div>
+          <div id="history-empty" class="muted">暂无快照记录</div>
         </div>
       </div>
-      <button id="right-panel-expand" class="panel-expand" type="button" title="展开事务历史">
-        <span class="pe-label">事务历史</span>
+      <button id="right-panel-expand" class="panel-expand" type="button" title="展开快照清单">
+        <span class="pe-label">快照清单</span>
         <span class="pe-icon">‹</span>
       </button>
     </aside>
   </main>
 
   <div id="doc-dialog" class="dialog-mask hidden">
-    <div class="dialog dialog-wide">
-      <h3>使用问题修复</h3>
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="doc-title">
+      <h3 id="doc-title">使用问题修复</h3>
       <div class="dialog-body">
         <div id="doc-content" class="doc-content"></div>
       </div>
@@ -248,8 +229,8 @@
   </div>
 
   <div id="export-dialog" class="dialog-mask hidden">
-    <div class="dialog dialog-wide">
-      <h3>导出图片</h3>
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="export-title">
+      <h3 id="export-title">导出图片</h3>
       <div id="dlg-busy" class="dlg-busy hidden">
         <div class="dlg-progress"><div class="dlg-progress-bar"></div></div>
         <div id="dlg-status" class="dlg-status" aria-live="polite">正在导出…</div>
@@ -300,15 +281,69 @@
   </div>
 
   <div id="login-mask" class="dialog-mask hidden">
-    <div class="dialog">
-      <h3>需要 Token 验证</h3>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="login-title">
+      <h3 id="login-title">需要 Token 验证</h3>
       <div class="dialog-body">
         <p class="muted">请输入访问 Token 后继续使用本工具。</p>
-        <input type="password" id="login-token" placeholder="Token" autocomplete="current-password">
-        <div id="login-error" class="login-error hidden"></div>
+        <input type="password" id="login-token" placeholder="Token" autocomplete="current-password" aria-describedby="login-error">
+        <div id="login-error" class="login-error hidden" aria-live="polite"></div>
       </div>
       <div class="dialog-actions">
         <button type="button" id="btn-login" class="primary">登录</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="palette-dialog" class="dialog-mask hidden">
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="palette-dialog-title">
+      <h3 id="palette-dialog-title">色板配置</h3>
+      <div class="dialog-body">
+        <div class="panel-block">
+          <div class="row">
+            <select id="config-select" title="当前色板配置"></select>
+          </div>
+          <div class="row">
+            <button type="button" id="btn-new-config" title="新建一个配置">新建</button>
+            <button type="button" id="btn-import-config" title="从 CSV 文件导入配置">导入</button>
+            <button type="button" id="btn-export-config" title="将当前配置导出为 CSV">导出CSV</button>
+          </div>
+          <div class="row">
+            <button type="button" id="btn-rename-config" title="重命名当前配置">重命名</button>
+            <button type="button" id="btn-delete-config" class="danger" title="删除当前配置">删除</button>
+          </div>
+          <input type="file" id="config-file-input" accept=".csv,text/csv" hidden>
+        </div>
+        <div class="panel-block">
+          <div class="panel-title">颜色表（可直接编辑）</div>
+          <div class="color-row color-header" aria-hidden="true">
+            <span class="h-index">序号</span>
+            <span class="h-code">色号</span>
+            <span class="h-name">名称</span>
+            <span class="h-color">颜色</span>
+            <span class="h-hex">16进制</span>
+            <span class="h-op">操作</span>
+          </div>
+          <div id="color-table" class="color-table"></div>
+          <button type="button" id="btn-add-color" class="add-btn">+ 添加颜色</button>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="palette-dialog-close" class="primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="popup-dialog" class="dialog-mask hidden">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="popup-title">
+      <h3 id="popup-title"></h3>
+      <div class="dialog-body">
+        <p id="popup-message" class="muted"></p>
+        <input type="text" id="popup-input" class="hidden" />
+        <p id="popup-error" class="login-error hidden" aria-live="polite"></p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="popup-cancel"></button>
+        <button type="button" id="popup-ok" class="primary"></button>
       </div>
     </div>
   </div>
