@@ -77,8 +77,6 @@ export const LUMINANCE_THRESHOLD = 150; // 感知亮度阈值：≥ 该值视为
 // ---------- 颜色清单高亮 ----------
 export const HIGHLIGHT_STROKE_RATIO = 0.14; // 描边宽 = 格尺寸 × 该比例
 export const HIGHLIGHT_MIN_SCREEN_STROKE = 2.5; // 描边至少的屏幕像素
-export const HIGHLIGHT_WASH_DARK = 0.36; // 暗色格子叠白色覆盖层的透明度
-export const HIGHLIGHT_WASH_LIGHT = 0.3; // 亮色格子叠黑色覆盖层的透明度
 export const HIGHLIGHT_FRAME_DARK = 0.95; // 暗色格子的浅色描边透明度
 export const HIGHLIGHT_FRAME_LIGHT = 0.9; // 亮色格子的深色描边透明度
 

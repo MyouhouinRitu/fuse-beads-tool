@@ -390,12 +390,12 @@ import {
   assert.equal(App.selection.size, 8, 'Shift + 魔棒点击应追加选区');
   assert.ok(App.selection.has(7), 'Shift 后应包含红色格');
 
-  // ESC 返回选择模式但保留选区；M 键再切回魔棒
+  // ESC 返回选择模式但保留选区；T 键再切回魔棒
   kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
   assert.equal(App.tool, 'select', 'ESC 应返回选择模式');
   assert.equal(App.selection.size, 8, '返回选择模式后应保留魔棒选区');
-  kd({ key: 'm', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
-  assert.equal(App.tool, 'wand', 'M 键应切换到魔棒');
+  kd({ key: 't', ctrlKey: false, metaKey: false, target: null, preventDefault() {} });
+  assert.equal(App.tool, 'wand', 'T 键应切换到魔棒');
 
   App.selection.clear();
   hooks.setTool('select');

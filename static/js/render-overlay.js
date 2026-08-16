@@ -10,8 +10,6 @@ import {
   HIGHLIGHT_FRAME_LIGHT,
   HIGHLIGHT_MIN_SCREEN_STROKE,
   HIGHLIGHT_STROKE_RATIO,
-  HIGHLIGHT_WASH_DARK,
-  HIGHLIGHT_WASH_LIGHT,
   HOVER_DASH_MIN,
   HOVER_DASH_RATIO,
   HOVER_STROKE_RATIO,
@@ -36,7 +34,6 @@ let highlightComponentsCache = {
   width: 0,
   height: 0,
   components: null,
-  runs: null,
 };
 
 // 收集连通块外边界边（画布坐标 + 所属格索引），供选区虚线 / 色号高亮描边复用
@@ -65,22 +62,6 @@ function strokeEdges(ctx, edges) {
     ctx.lineTo(e.x1, e.y1);
   }
   ctx.stroke();
-}
-
-// 把连通块按行合并成连续段，供高亮覆盖层批量绘制（减少逐格 fillRect）
-function componentWashRuns(comp, width) {
-  const set = new Set(comp);
-  const runs = [];
-  for (const p of comp) {
-    const x = p % width;
-    const y = (p / width) | 0;
-    if (x === 0 || !set.has(p - 1)) {
-      let x1 = x;
-      while (x1 + 1 < width && set.has(y * width + x1 + 1)) x1++;
-      runs.push({ x, y, w: x1 - x + 1 });
-    }
-  }
-  return runs;
 }
 
 // 选区显示：与鼠标悬停一致的黑白虚线，连通区域（四方向）合并为整块外轮廓
@@ -233,7 +214,7 @@ export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, o
 
   drawSelection(ctx, opts.selected, width, height, ox, oy, cell, opts.zoom || 1);
 
-  // 颜色清单高亮：半透明覆盖层 + 亮度自适应描边（描边带屏幕像素下限）
+  // 颜色清单高亮：仅亮度自适应描边（描边带屏幕像素下限），不再叠加半透明遮罩
   if (opts.highlightColor != null && opts.highlightBlink !== false) {
     const zoom = opts.zoom || 1;
     const hlw = adaptiveStrokeWidth(
@@ -260,17 +241,7 @@ export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, o
         width,
         height,
         components,
-        runs: components.flatMap((comp) => componentWashRuns(comp, width)),
       };
-    }
-    // 半透明覆盖层：按行合并后的连续段批量绘制，避免大色块逐格 fillRect
-    for (const run of highlightComponentsCache.runs) {
-      const p = run.y * width + run.x;
-      const light = isLightColor(rgbFromPacked(displayRgb[p]));
-      ctx.fillStyle = light
-        ? `rgba(0, 0, 0, ${HIGHLIGHT_WASH_LIGHT})`
-        : `rgba(255, 255, 255, ${HIGHLIGHT_WASH_DARK})`;
-      ctx.fillRect(ox + run.x * cell, oy + run.y * cell, run.w * cell, cell);
     }
     // 外轮廓：整块只描一次边界，内部不再逐格描边
     for (const comp of highlightComponentsCache.components) {

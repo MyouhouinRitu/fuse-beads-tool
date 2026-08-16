@@ -168,7 +168,7 @@ const SHORTCUTS = [
     },
   },
   {
-    test: (e, ctx) => !ctx.mod && !dragState.active && e.key.toLowerCase() === 'm',
+    test: (e, ctx) => !ctx.mod && !dragState.active && e.key.toLowerCase() === 't',
     run: (e) => {
       e.preventDefault();
       colorList.switchToolShortcut(TOOLS.WAND);

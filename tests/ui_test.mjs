@@ -746,7 +746,7 @@ async function main() {
   );
   console.log('[OK] 工作区拖拽平移');
 
-  // 5.9 颜色清单高亮：点击色号 → 图中对应像素出现覆盖层+亮度自适应描边，再点/切换模式取消
+  // 5.9 颜色清单高亮：点击色号 → 图中对应像素仅亮度自适应描边（无半透明遮罩），再点/切换模式取消
   assert.ok(
     (await page.locator('#highlight-color-list .hc-item').count()) >= 2,
     '颜色清单应显示已用颜色',
@@ -791,18 +791,41 @@ async function main() {
   });
   assert.ok(redIdx >= 0, '清单中应能找到红色');
   const hcItem = page.locator('#highlight-color-list .hc-item').nth(redIdx);
-  await hcItem.click();
-  await page.waitForTimeout(150);
+  // 点击后整帧对比：描边会改变边界像素，而格内采样点应保持原色（不再叠加半透明遮罩）
+  const diffCount = await page.evaluate((idx) => {
+    const c = document.querySelector('#canvas');
+    const g = c.getContext('2d');
+    const before = g.getImageData(0, 0, c.width, c.height).data;
+    document.querySelectorAll('#highlight-color-list .hc-item')[idx].click();
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const after = g.getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 0; i < before.length; i += 4) {
+          if (
+            Math.abs(before[i] - after[i]) > 24 ||
+            Math.abs(before[i + 1] - after[i + 1]) > 24 ||
+            Math.abs(before[i + 2] - after[i + 2]) > 24
+          ) {
+            n++;
+          }
+        }
+        resolve(n);
+      }, 150);
+    });
+  }, redIdx);
   const frame = await px(
     page,
     OP + MARGIN + 5 * CELL + 2,
     OP + MARGIN + 5 * CELL + Math.floor(CELL / 2),
   );
-  // 红色偏暗 → 白色覆盖层提亮 + 浅色描边：样本点应明显变亮
   assert.ok(
-    frame[0] >= baseRed[0] - 2 && frame[1] >= baseRed[1] + 25 && frame[2] >= baseRed[2] + 25,
-    `颜色高亮后暗色格子应被提亮，实际 ${frame} vs 基线 ${baseRed}`,
+    Math.abs(frame[0] - baseRed[0]) <= 8 &&
+      Math.abs(frame[1] - baseRed[1]) <= 8 &&
+      Math.abs(frame[2] - baseRed[2]) <= 8,
+    `颜色高亮后格内不应再叠加遮罩，实际 ${frame} vs 基线 ${baseRed}`,
   );
+  assert.ok(diffCount > 0, '颜色高亮后应存在亮度自适应描边（画布帧差异）');
   assert.ok(await hcItem.evaluate((el) => el.classList.contains('active')), '清单项应显示高亮态');
   await hcItem.click(); // 再次点击取消
   await page.waitForTimeout(150);
