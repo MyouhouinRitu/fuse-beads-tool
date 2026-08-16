@@ -9,7 +9,7 @@ from PIL import Image, ImageFilter, ImageOps
 
 # 目标像素量上下限：与前端 #target-pixels 输入框的 min/max 保持一致
 MIN_TARGET_PIXELS = 100
-HARD_CAP_PIXELS = 80000
+HARD_CAP_PIXELS = 30000
 # 中间画布上限：透明占比很高时，需要比目标豆量更大的中间像素量才能补回非透明豆量
 MAX_INTERMEDIATE_PIXELS = 500000
 
@@ -68,6 +68,11 @@ def compress(
     scale = math.sqrt(target / (w * h))
     nw = max(1, round(w * scale))
     nh = max(1, round(h * scale))
+    if nw * nh > target:
+        # 四舍五入后可能略超目标像素量：按同一比例下调一维，保证结果不超过上限
+        fix = math.sqrt(target / (nw * nh))
+        nw = max(1, math.floor(nw * fix))
+        nh = max(1, math.floor(nh * fix))
     img = img.resize((nw, nh), Image.BOX)
     if sharpen:
         img = img.filter(

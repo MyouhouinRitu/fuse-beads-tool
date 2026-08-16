@@ -33,7 +33,7 @@ import * as quickPicker from './quick-picker.js';
 import { scheduleCanvasRender } from './render-queue.js';
 import { applyProjectDocument } from './restore.js';
 import { bindShortcuts } from './shortcuts.js';
-import { applySlider } from './slider.js';
+import { scheduleSliderApply } from './slider.js';
 import { App, setProjectDirty } from './state.js';
 import { bindTargetPixels, closeTargetPixelsMenu } from './target-pixels.js';
 import * as theme from './theme.js';
@@ -153,9 +153,7 @@ export function bindEvents() {
     hintDistanceDeferred();
   });
 
-  els.colorSlider.addEventListener('input', async () => {
-    await applySlider(parseInt(els.colorSlider.value, 10));
-  });
+  els.colorSlider.addEventListener('input', () => scheduleSliderApply());
   els.emptyStyle.addEventListener('change', () => {
     App.settings.emptyStyle = els.emptyStyle.value;
     canvas.rebuildCanvas();
@@ -369,11 +367,13 @@ export function bindEvents() {
       const r = vp.getBoundingClientRect();
       view.zoomAtCore(r.left + r.width / 2, r.top + r.height / 2, factor);
       setProjectDirty(true);
+      scheduleAutosave();
     });
   }
   els.zoomFit.addEventListener('click', () => {
     view.fitViewportToCanvas();
     setProjectDirty(true);
+    scheduleAutosave();
   });
 
   els.canvasScroll.addEventListener('pointerdown', drag.onCanvasPointerDown);

@@ -10,12 +10,18 @@ export const CANVAS_EDGE_CELLS = 1; // 画布四周行列号条的格数（图�
 export const OUTER_PAD = 20; // 导出时图案外侧纯白边距（像素）
 export const DEFAULT_TARGET_PIXELS = 4000; // 「目标像素量」输入框默认值
 export const TARGET_PIXELS_MIN = 100; // 「目标像素量」下限（与 bead/compress.py MIN_TARGET_PIXELS 一致）
-export const TARGET_PIXELS_MAX = 80000; // 「目标像素量」上限
+export const TARGET_PIXELS_MAX = 30000; // 「目标像素量」上限（与 bead/compress.py HARD_CAP_PIXELS 一致）
 export const TARGET_PIXEL_PRESETS = [
-  { value: 400, tip: '初次尝试拼豆的儿童建议量，可以适当增加，但不建议超过500，且强烈建议使用5mm的豆并在监护人陪同下体验' },
+  {
+    value: 400,
+    tip: '初次尝试拼豆的儿童建议量，可以适当增加，但不建议超过500，且强烈建议使用5mm的豆并在监护人陪同下体验',
+  },
   { value: 2000, tip: '初次尝试拼豆的成人推荐量，不建议超过 3000' },
   { value: 4000, tip: '有一定经验的成人推荐量，可以适当增加，但不建议超过 5500' },
-  { value: 8000, tip: '8000以上的豆很可能要花2天时间，并且长/宽大于100可能不方便用烫豆机熨烫，谨慎选择' },
+  {
+    value: 8000,
+    tip: '8000以上的豆很可能要花2天时间，并且长/宽大于100可能不方便用烫豆机熨烫，谨慎选择',
+  },
 ];
 export const BRUSH_SIZE_MIN = 1; // 画笔 / 橡皮最小尺寸
 export const BRUSH_SIZE_MAX = 10; // 画笔 / 橡皮最大尺寸（与模板中滑块 max 一致）
@@ -57,7 +63,7 @@ export const GRID_THICK_MIN_SCREEN_CELL = 4; // 低于该值时隐藏每 5/10 �
 
 export const SCREEN_CELL_MIN = 2; // 超大图案自动缩小格时的最小格尺寸
 export const SCREEN_CELL_MAX_DIM = 28000; // 画布允许的最大边长（像素）
-export const SCREEN_CELL_MAX_AREA = 80000000; // 画布允许的最大面积（像素²）
+export const SCREEN_CELL_MAX_AREA = 30000000; // 画布允许的最大面积（像素²，与 3 万格上限配套，防止极端长宽比下内存失控）
 export const ZOOM_MIN = 0.05;
 export const ZOOM_MAX = 8;
 export const FIT_ZOOM_CAP = 1.5; // 「适应窗口」的最大缩放
@@ -160,6 +166,7 @@ export const EMPTY_STYLES = {
 export const TOAST_DURATION_MS = 2600;
 export const HINT_THROTTLE_MS = 3000;
 export const AUTOSAVE_DELAY_MS = 800;
+export const SLIDER_APPLY_DELAY_MS = 150; // 颜色数量滑块输入防抖：拖动停顿后再重算
 export const CONFIG_SAVE_DELAY_MS = 500;
 export const HIGHLIGHT_BLINK_MS = 500;
 export const PANEL_ANIMATION_MS = 180; // 侧边栏宽度过渡时长（与 CSS 一致）

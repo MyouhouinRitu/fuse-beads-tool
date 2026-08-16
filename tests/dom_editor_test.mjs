@@ -436,6 +436,49 @@ import {
   console.log('[OK] 选择模式 Ctrl 往返拖拽重新反选');
 }
 
+// ---------------- 14.10 笔划中增量重绘：只画脏格，笔划结束统一全量刷新 ----------------
+{
+  seedProject();
+  App.project = { width: 3, height: 3, grid: Int16Array.from(Array(9).fill(0)) };
+  App.baseGrid = App.project.grid.slice();
+  App.tool = 'brush';
+  App.brushColor = 2;
+  App.settings.brushSize = 1;
+  App.selection.clear();
+  interactionState.hoverCell = null;
+  interactionState.highlightColor = null;
+  interactionState.strokeBuffer = [];
+  interactionState.painting = true; // 模拟 pointerdown 之后的笔划进行中状态
+  clearTimeout(App.saveTimer);
+  App.saveTimer = null;
+  hooks.renderAll();
+
+  const fillsBefore = drawLog.fills.length;
+  hooks.paintStamp({ x: 1, y: 1 });
+  const stampFills = drawLog.fills.slice(fillsBefore);
+  assert.equal(App.project.grid[4], 2, '笔划中应已写入网格');
+  assert.equal(App.undoStack.length, 0, '笔划中不应提交撤销步');
+  assert.equal(App.saveTimer, null, '笔划中不应调度自动保存');
+  assert.equal(
+    stampFills.filter((f) => Math.round(f.x) === 56 && Math.round(f.y) === 56).length,
+    1,
+    '笔划中应只增量重绘目标格',
+  );
+  assert.ok(stampFills.length <= 1, '笔划中不应触发全量底图重建');
+
+  // 笔划结束：统一记一步、全量刷新并调度自动保存
+  const mu = windowListeners.pointerup[0];
+  mu({});
+  assert.equal(App.undoStack.length, 1, '笔划结束应记一步撤销');
+  assert.ok(App.saveTimer != null, '笔划结束应调度自动保存');
+  assert.ok(
+    drawLog.fills.length - fillsBefore - stampFills.length >= 9,
+    '笔划结束应全量重建底图（所有格子重绘）',
+  );
+  assert.equal(interactionState.painting, false, '笔划结束后应复位 painting');
+  console.log('[OK] 笔划中增量重绘：只画脏格，笔划结束统一全量刷新');
+}
+
 // ---------------- 15. 选择模式：单击 / 矩形 / 同色 / Shift / 填充 / 取色 / 九宫格 / 高亮转选区 ----------------
 {
   seedProject();

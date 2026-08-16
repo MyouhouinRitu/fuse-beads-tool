@@ -1,5 +1,6 @@
 // 画笔 / 橡皮涂色：单格与矩形笔刷、连续画线。
 
+import * as canvas from './canvas.js';
 import { TOOLS } from './constants.js';
 import { interactionState } from './interaction.js';
 import { applyGridChanges } from './mutations.js';
@@ -24,16 +25,34 @@ export function paintCell(x, y, { silent = false } = {}) {
 export function paintStamp(cell) {
   if (!cell) return;
   const r = App.settings.brushSize - 1;
-  const { width, height } = App.project;
+  const { grid, width, height } = App.project;
   const x0 = Math.max(0, cell.x - r);
   const y0 = Math.max(0, cell.y - r);
   const x1 = Math.min(width - 1, cell.x + r);
   const y1 = Math.min(height - 1, cell.y + r);
+  const v = App.tool === TOOLS.ERASER ? -1 : App.brushColor != null ? App.brushColor : -2;
+  if (v === -2) return; // 未选择颜色
+  const changes = [];
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      paintCell(x, y);
+      const p = y * width + x;
+      if (grid[p] === v) continue;
+      changes.push({ x, y, from: grid[p], to: v });
     }
   }
+  const applied = applyGridChanges(changes, {
+    silent: true,
+    buffer: interactionState.strokeBuffer,
+  });
+  if (!applied.length) return applied;
+  if (interactionState.painting) {
+    // 笔划进行中：只增量重绘脏格，不触发全量刷新 / 自动保存；
+    // 笔划结束（recordGridChanges）统一全量刷新、记撤销步并落盘。
+    canvas.repaintBaseCells(applied);
+  } else {
+    scheduleRender();
+  }
+  return applied;
 }
 
 export function lineCells(a, b) {

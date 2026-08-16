@@ -23,7 +23,7 @@ python app.py
 ### 1. 导入与压缩
 
 - 支持常见图片格式并处理 EXIF 方向；PNG 透明区显示为空位（浅灰 ×），半透明像素按白底合成。
-- 「分块平均 + 感知色域量化」压缩，可勾选锐化；目标像素量默认 4000（上限 80000），提供 400 / 2000 / 4000 / 8000 预设下拉（带提示），超出自动等比缩放。目标像素量按“期望的非空豆量”计算：含透明区域的图片会先按透明比例放大中间压缩目标，使最终非空豆量接近输入值。
+- 「分块平均 + 感知色域量化」压缩，可勾选锐化；目标像素量默认 4000（上限 30000），提供 400 / 2000 / 4000 / 8000 预设下拉（带提示），超出自动等比缩放。目标像素量按“期望的非空豆量”计算：含透明区域的图片会先按透明比例放大中间压缩目标，使最终非空豆量接近输入值。
 - 画布按像素格显示（默认每格 28px；边缘粗黑、格内细灰、每 5 格粗灰虚线、每 10 格粗灰实线，四周 1 格浅蓝底行列号条，外圈无线），右下角显示总量与空位数；工具栏可切换显示色号 / 透明色（仅影响工作区，导出时单独设置）。
 
 ### 2. 豆色配置
@@ -74,7 +74,7 @@ python app.py
 - 「打开项目」在导入图片左侧，「保存项目」在导出图片右侧；快捷键 Ctrl+Shift+S 保存项目，Ctrl+S 仍是保存快照。
 - `.ssfbp` 是单一二进制文件：内部为段表结构，包含格式版本、状态、原图、视口（缩放 / 平移）与校验信息；不保存撤销栈、当前工具、选区等运行态。
 - 保存 / 打开统一使用浏览器能力：打开项目走浏览器文件选择器；每次保存都会生成一份新的 `.ssfbp` 文件并触发浏览器下载，不依赖后端系统对话框，跨平台行为一致。
-- 打开项目前如果任何会写入项目文件的文档数据（设置、画布、快照、色板等）发生过变化，会先提示确认；纯像素编辑的 `dirty` 不参与该提示。
+- 打开项目前如果任何会写入项目文件的文档数据（设置、画布、快照、色板等）发生过变化，会先提示确认；纯像素编辑同样计入该提示。
 - 快照清单随项目文件保存，打开后整体替换当前快照清单；基线红点也会保留；打开时会还原保存时的工作区缩放与平移。
 
 ## 数据存放位置
@@ -89,6 +89,11 @@ python app.py
 
 ## 版本记录
 
+- **0.5.3（维护版）**：健壮性 / 一致性修复、性能优化与测试工具链完善。
+  - 健壮性：修复 D 键九宫格悬停预览未真正渲染候选色（补像素级回归测试）；修复 lint 格式问题；颜色数量滑块输入防抖 + 防重入，避免多个确认弹窗叠加；自动保存 PUT 串行化，慢写入期间排队补写最新状态。
+  - 一致性：明确像素编辑同样计入「打开项目将覆盖」确认（README 与实现对齐）；目标像素量预设、视图缩放 / 平移、侧边栏折叠等所有设置与视图变更统一调度自动保存。
+  - 性能：目标像素量上限 80000 → 30000（前后端同步）；画布面积上限收紧至 3000 万像素²，防止极端长宽比内存失控；快照上限按网格规模自适应（历史区约 4MB 体积预算）；压缩结果严格不超过目标像素量；画笔 / 橡皮笔划中只增量重绘脏格，笔划结束统一全量刷新。
+  - 测试与工具链：重写并接线 Token 认证端到端测试（auth_test），Playwright 纳入 devDependencies，UI / 渲染一致性 / 认证三套 Playwright 测试全部进入 CI；补齐快照体积预算与笔划增量重绘回归测试；新增核心领域类型声明（types/domain.d.ts）作为后续开启 strict 的类型地基。
 - **0.5.2（维护版）**：界面细节统一与文案整理。
   - 下拉框：所有 select 内边距统一为 `5px 28px 5px 8px`；颜色距离加宽至完整显示「Lab（人眼感知）」；工作区「空位显示」高度统一为 31px；导出弹窗「空位显示」宽度与格式下拉一致；「常见问题说明与帮助」按钮改用与目标像素量一致的 SVG 箭头。
   - 导出：导出图片默认勾选「显示行列号」。
@@ -154,12 +159,13 @@ node tests/dom_editor_test.mjs          # DOM 编辑工具
 node tests/dom_contract_test.mjs        # 组件契约（ARIA / 焦点 / pending / 设计令牌）
 node tests/ui_test.mjs                  # 完整界面回归（需 Playwright + Chromium）
 node tests/render_consistency_test.mjs  # 前端 / 后端渲染一致性（需 Playwright + Chromium）
+node tests/auth_test.mjs                # Token 认证端到端（需 Playwright + Chromium）
 node tests/constants_sync_test.mjs      # 前端 / 后端 / CSS 布局与渲染参数一致性
 ```
 
 ## 前端工具链
 
-前端使用 Biome（格式化 / lint）与 TypeScript `checkJs`（类型检查），通过 npm 脚本统一入口（需要 Node.js 在 PATH 中）：
+前端使用 Biome（格式化 / lint）与 TypeScript `checkJs`（类型检查），通过 npm 脚本统一入口（需要 Node.js 在 PATH 中）；Playwright 已作为 devDependency 引入，首次运行前执行 `npx playwright install chromium`（CI 会自动安装）：
 
 ```bash
 npm run format        # Biome 格式化并写入
@@ -170,7 +176,8 @@ npm run typecheck     # tsc --noEmit（checkJs 类型检查）
 npm test              # 纯 Node 测试（逻辑 / DOM 行为 / 常量同步）
 npm run test:ui       # Playwright 完整界面回归
 npm run test:render   # Playwright 前后端渲染一致性
-npm run test:playwright # Playwright 全部（UI + 渲染一致性）
+npm run test:auth     # Playwright Token 认证端到端
+npm run test:playwright # Playwright 全部（UI + 渲染一致性 + Token 认证）
 npm run test:backend  # 后端接口冒烟
 npm run test:all      # 全部测试（Node + Playwright）
 npm run check         # lint + typecheck + test 一键检查

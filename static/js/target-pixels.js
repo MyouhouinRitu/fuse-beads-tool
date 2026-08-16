@@ -1,5 +1,6 @@
 // 目标像素量组合框：预设菜单渲染、↑↓ / Enter / Esc 键盘交互与 aria 同步。
 
+import { scheduleAutosave } from './autosave.js';
 import { TARGET_PIXEL_PRESETS } from './constants.js';
 import { els } from './els.js';
 import { setProjectDirty } from './state.js';
@@ -34,6 +35,7 @@ function applyTargetPixelPreset(btn) {
   closeTargetPixelsMenu();
   els.targetPixels.focus();
   setProjectDirty(true);
+  scheduleAutosave();
 }
 
 function renderTargetPixelOptions() {

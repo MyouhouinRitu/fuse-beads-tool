@@ -4,7 +4,10 @@
 export {
   adaptiveStrokeWidth,
   canvasMetrics,
+  drawCodes,
+  drawGridLines,
   drawPatternBase,
+  drawPatternCells,
   findConnectedComponents,
 } from './render-base.js';
 export {

@@ -2,19 +2,17 @@
 // 用同一份网格 / 调色板分别让前端 canvas 渲染器（render.js）与后端 PIL 渲染器（export.py）出图，
 // 逐像素对比，防止两边参数漂移（网格线规范、行列号条等）。
 // 前端行列号条的像素断言在 ui_test 中已有，这里补充后端的结构性采样。
+// Playwright 解析与 ui_test 一致：默认项目 devDependency，可用 PLAYWRIGHT_PATH 覆盖。
 // 运行：node tests/render_consistency_test.mjs
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
-const require = createRequire(import.meta.url);
-const pwPath =
-  process.env.PLAYWRIGHT_PATH || 'C:/Users/myouh/AppData/Local/Temp/pwauth/node_modules/playwright';
-const { chromium } = require(pwPath);
+import { chromium } from './helpers/playwright-loader.mjs';
+
 const ROOT = path.dirname(
   path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
 );

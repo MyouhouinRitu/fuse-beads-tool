@@ -174,9 +174,25 @@ import {
 
   // 悬停候选 → 实时预览（不进撤销栈）
   const target = interactionState.pickerCandidates[0].i;
+  const fillsBeforeHover = drawLog.fills.length;
   btns[0].emit('mouseover');
   assert.equal(grid[0], target, '悬停候选应立即预览颜色');
   assert.equal(App.undoStack.length, 0, '预览不应进入撤销栈');
+  // 预览必须真的渲染到画布：目标格 (0,0) 应出现候选色填充（工作区含 1 格行列号偏移，起点 28px）
+  const candidateHex = App.appliedPalette[target].hex.toLowerCase();
+  assert.ok(
+    drawLog.fills
+      .slice(fillsBeforeHover)
+      .some(
+        (f) =>
+          Math.round(f.x) === 28 &&
+          Math.round(f.y) === 28 &&
+          Math.round(f.w) === 28 &&
+          Math.round(f.h) === 28 &&
+          String(f.style).toLowerCase() === candidateHex,
+      ),
+    '悬停候选应在画布上渲染候选色',
+  );
 
   // 移出弹窗 → 还原原始颜色
   elsMap['quick-picker'].emit('mouseleave');
@@ -498,6 +514,8 @@ import {
 // ---------------- 8. 侧边栏折叠 / 展开 ----------------
 {
   seedProject();
+  clearTimeout(App.saveTimer);
+  App.saveTimer = null;
   const panBefore = App.pan.x;
   for (const id of ['left-panel', 'color-highlight-panel', 'right-panel']) {
     const panel = elsMap[id];
@@ -511,6 +529,7 @@ import {
     assert.ok(panel.classList.contains('collapsed'), `${id} 点击折叠按钮后应收起`);
     if (id === 'left-panel') {
       assert.equal(App.pan.x, panBefore + 288, '折叠左侧栏后应补偿画布位移，保持画面绝对位置');
+      assert.ok(App.saveTimer != null, '折叠左侧栏（视图变化）应调度自动保存');
     } else {
       assert.equal(App.pan.x, panBefore, '折叠右侧栏不应改变画布位置');
     }
@@ -682,4 +701,27 @@ import {
   assert.equal(App.undoStack.length, 1, '撤销栈应过滤非法项');
   assert.equal(App.redoStack.length, 0, '重做栈应过滤非法项');
   console.log('[OK] 恢复损坏 history / 撤销栈：过滤非法项、画布不受影响');
+}
+
+// ---------------- 23. 自动保存写串行化：慢写入期间的新保存排队补写，避免旧写覆盖新状态 ----------------
+// 放在文件末尾：用例需要真实等待定时器/慢请求，避免改变前面用例的 toast 队列时序。
+{
+  const { scheduleAutosave } = await import('../static/js/autosave.js');
+  seedProject();
+  testState.statePutDelayMs = 1000;
+  try {
+    // 第一次保存：t=0 调度，t=800 开始写入，写请求持续 1000ms
+    scheduleAutosave();
+    await new Promise((r) => setTimeout(r, 850));
+    // 第一次写入仍在途中时产生新状态并再次调度（t=1650 触发，此时应排队补写）
+    App.project.grid[0] = 2;
+    scheduleAutosave();
+    // 等待第一次写入完成 + 排队补写完成
+    await new Promise((r) => setTimeout(r, 2200));
+    const saved = decodeInt16Grid(testState.stateResponse.project.gridBase64);
+    assert.equal(saved[0], 2, '自动保存应串行补写最新状态，而不是让旧写入覆盖新状态');
+  } finally {
+    testState.statePutDelayMs = 0;
+  }
+  console.log('[OK] 自动保存写串行化：慢写入期间的新保存排队补写最新状态');
 }

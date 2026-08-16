@@ -1,5 +1,6 @@
 // 侧边栏折叠/展开：偏好持久化、画布位移补偿与过渡动画。
 
+import { scheduleAutosave } from './autosave.js';
 import {
   PANEL_ANIMATION_MS,
   PANEL_COLLAPSED_WIDTH,
@@ -74,6 +75,7 @@ export function setPanelCollapsed(id, collapsed) {
   }
   if (panDelta) {
     setProjectDirty(true);
+    scheduleAutosave();
     animatePanCompensation(panDelta);
   }
   const prefs = readPanelPrefs();

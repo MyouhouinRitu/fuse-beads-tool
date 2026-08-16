@@ -116,11 +116,32 @@ export function scheduleAutosave() {
   App.saveTimer = setTimeout(saveStateNow, AUTOSAVE_DELAY_MS);
 }
 
-async function saveStateNow() {
+let saveInFlight = false;
+let saveQueued = false;
+
+async function writeState() {
   try {
     await api.putState(buildStatePayload());
     els.autosave.textContent = `已自动保存 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
   } catch (_err) {
     els.autosave.textContent = '自动保存失败，修改可能丢失';
+  }
+}
+
+// 自动保存写串行化：同一时间只发一个 PUT，避免前一次慢请求晚于后一次完成、
+// 把较旧的状态覆盖到较新的状态上；排队期间有新的保存请求时，完成后立即补写最新载荷。
+async function saveStateNow() {
+  if (saveInFlight) {
+    saveQueued = true;
+    return;
+  }
+  saveInFlight = true;
+  try {
+    do {
+      saveQueued = false;
+      await writeState();
+    } while (saveQueued);
+  } finally {
+    saveInFlight = false;
   }
 }

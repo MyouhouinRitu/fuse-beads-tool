@@ -339,8 +339,8 @@ def main():
 
         img_path = os.path.join(tmp, "test.png")
         make_test_image(img_path)
-        s, j = upload(img_path, 40000, True)
-        assert s == 200 and j["width"] * j["height"] <= 40000
+        s, j = upload(img_path, 30000, True)
+        assert s == 200 and j["width"] * j["height"] <= 30000
         print(f"[OK] 图片压缩：{j['width']} × {j['height']}")
         original_id = j["originalId"]
         assert original_id
@@ -353,15 +353,15 @@ def main():
 
         transp_path = os.path.join(tmp, "transparent.png")
         make_transparent_image(transp_path)
-        s, j = upload(transp_path, 40000, False)
+        s, j = upload(transp_path, 30000, False)
         assert s == 200
         timg = Image.open(io.BytesIO(base64.b64decode(j["pngBase64"])))
         assert timg.mode == "RGBA", "透明 PNG 应保留 alpha 通道"
         alpha = timg.getchannel("A")
         assert alpha.getextrema() == (0, 255), "返回图像应同时包含透明与不透明像素"
         opaque = sum(1 for v in alpha.getdata() if v >= 128)
-        assert abs(opaque - 40000) <= 8000, (
-            f"透明图压缩后非空豆量应接近目标 40000，实际 {opaque}"
+        assert abs(opaque - 30000) <= 8000, (
+            f"透明图压缩后非空豆量应接近目标 30000，实际 {opaque}"
         )
         print("[OK] 透明 PNG 保留 alpha")
 

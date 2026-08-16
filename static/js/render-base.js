@@ -98,7 +98,7 @@ function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
 // 网格线规范：
 // - 图案边缘粗黑实线；格内细灰线；每 5 格粗灰虚线；每 10 格粗灰实线
 // - 行列号条内：通常细灰线、每 5 格粗灰实线（不用虚线）；外圈不画线
-function drawGridLines(
+export function drawGridLines(
   ctx,
   originX,
   originY,
@@ -252,7 +252,7 @@ function drawEdgeNumbers(ctx, width, height, originX, originY, cell, viewport = 
   ctx.textBaseline = 'alphabetic';
 }
 
-function drawCodes(
+export function drawCodes(
   ctx,
   width,
   height,
@@ -264,28 +264,43 @@ function drawCodes(
   cell,
   zoom = 1,
   viewport = null,
+  cells = null,
 ) {
   if (cell * (zoom || 1) < GRID_FINE_MIN_SCREEN_CELL) return;
   const font = Math.max(CODE_FONT_MIN, Math.round(cell * CODE_FONT_RATIO));
   ctx.font = `${font}px Consolas, "Courier New", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const cx0 = viewport ? Math.max(0, viewport.x0) : 0;
-  const cx1 = viewport ? Math.min(width - 1, viewport.x1) : width - 1;
-  const cy0 = viewport ? Math.max(0, viewport.y0) : 0;
-  const cy1 = viewport ? Math.min(height - 1, viewport.y1) : height - 1;
-  for (let y = cy0; y <= cy1; y++) {
-    for (let x = cx0; x <= cx1; x++) {
-      const p = y * width + x;
-      if (displayIdx[p] < 0) continue;
-      const code = codes[p];
-      if (!code) continue;
-      const x0 = originX + x * cell + cell / 2;
-      const y0 = originY + y * cell + cell / 2;
-      const v = displayRgb[p];
-      const c = v ? rgbFromPacked(v) : CODE_FALLBACK_RGB;
-      ctx.fillStyle = textColor(c[0], c[1], c[2]);
-      ctx.fillText(code, x0, y0);
+  const draw = (x, y) => {
+    const p = y * width + x;
+    if (displayIdx[p] < 0) return;
+    const code = codes[p];
+    if (!code) return;
+    const x0 = originX + x * cell + cell / 2;
+    const y0 = originY + y * cell + cell / 2;
+    const v = displayRgb[p];
+    const c = v ? rgbFromPacked(v) : CODE_FALLBACK_RGB;
+    ctx.fillStyle = textColor(c[0], c[1], c[2]);
+    ctx.fillText(code, x0, y0);
+  };
+  if (cells) {
+    for (const p of cells) {
+      const x = p % width;
+      const y = (p / width) | 0;
+      if (viewport && (x < viewport.x0 || x > viewport.x1 || y < viewport.y0 || y > viewport.y1)) {
+        continue;
+      }
+      draw(x, y);
+    }
+  } else {
+    const cx0 = viewport ? Math.max(0, viewport.x0) : 0;
+    const cx1 = viewport ? Math.min(width - 1, viewport.x1) : width - 1;
+    const cy0 = viewport ? Math.max(0, viewport.y0) : 0;
+    const cy1 = viewport ? Math.min(height - 1, viewport.y1) : height - 1;
+    for (let y = cy0; y <= cy1; y++) {
+      for (let x = cx0; x <= cx1; x++) {
+        draw(x, y);
+      }
     }
   }
   ctx.textAlign = 'start';
@@ -354,6 +369,71 @@ export function findConnectedComponents(width, height, isMember) {
   }
   return components;
 }
+
+function drawCellAt(ctx, width, displayIdx, displayRgb, ox, oy, cell, hatch, emptyStyle, p) {
+  const x = p % width;
+  const y = (p / width) | 0;
+  const x0 = ox + x * cell;
+  const y0 = oy + y * cell;
+  const v = displayIdx[p];
+  if (v >= 0) {
+    ctx.fillStyle = `#${hex6(displayRgb[p])}`;
+    ctx.fillRect(x0, y0, cell, cell);
+  } else if (hatch) {
+    drawEmptyCell(ctx, x0, y0, cell, emptyStyle);
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x0, y0, cell, cell);
+  }
+}
+
+// 只画指定格（cells：格索引集合）或整幅图案（cells 为 null）。
+// 笔划中的增量重绘与全量渲染共用同一实现，保证格子外观完全一致。
+export function drawPatternCells(
+  ctx,
+  width,
+  height,
+  displayIdx,
+  displayRgb,
+  ox,
+  oy,
+  cell,
+  { hatch = true, emptyStyle = 'default', viewport = null } = {},
+  cells = null,
+) {
+  if (cells) {
+    for (const p of cells) {
+      const x = p % width;
+      const y = (p / width) | 0;
+      if (viewport && (x < viewport.x0 || x > viewport.x1 || y < viewport.y0 || y > viewport.y1)) {
+        continue;
+      }
+      drawCellAt(ctx, width, displayIdx, displayRgb, ox, oy, cell, hatch, emptyStyle, p);
+    }
+    return;
+  }
+  const cx0 = viewport ? Math.max(0, viewport.x0) : 0;
+  const cx1 = viewport ? Math.min(width - 1, viewport.x1) : width - 1;
+  const cy0 = viewport ? Math.max(0, viewport.y0) : 0;
+  const cy1 = viewport ? Math.min(height - 1, viewport.y1) : height - 1;
+  for (let y = cy0; y <= cy1; y++) {
+    for (let x = cx0; x <= cx1; x++) {
+      drawCellAt(
+        ctx,
+        width,
+        displayIdx,
+        displayRgb,
+        ox,
+        oy,
+        cell,
+        hatch,
+        emptyStyle,
+        y * width + x,
+      );
+    }
+  }
+}
+
 // 底图：单元格 + 行列号条 + 网格线 + 行列号数字 + 格内色号 + 图例（不含选区 / 高亮 / hover）
 export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts) {
   const cell = opts.cell || CELL;
@@ -389,27 +469,11 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   }
 
   // 单元格：只画图案本身（外侧无透明边距）；视口模式只画窗口内的图案格
-  const cx0 = viewport ? Math.max(0, viewport.x0) : 0;
-  const cx1 = viewport ? Math.min(width - 1, viewport.x1) : width - 1;
-  const cy0 = viewport ? Math.max(0, viewport.y0) : 0;
-  const cy1 = viewport ? Math.min(height - 1, viewport.y1) : height - 1;
-  for (let y = cy0; y <= cy1; y++) {
-    const y0 = oy + y * cell;
-    for (let x = cx0; x <= cx1; x++) {
-      const x0 = ox + x * cell;
-      const p = y * width + x;
-      const v = displayIdx[p];
-      if (v >= 0) {
-        ctx.fillStyle = `#${hex6(displayRgb[p])}`;
-        ctx.fillRect(x0, y0, cell, cell);
-      } else if (hatch) {
-        drawEmptyCell(ctx, x0, y0, cell, emptyStyle);
-      } else {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x0, y0, cell, cell);
-      }
-    }
-  }
+  drawPatternCells(ctx, width, height, displayIdx, displayRgb, ox, oy, cell, {
+    hatch,
+    emptyStyle,
+    viewport,
+  });
 
   // 行列号条底色铺在网格线之下
   if (opts.edgeNumbers) {

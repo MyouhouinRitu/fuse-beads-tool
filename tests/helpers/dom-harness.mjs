@@ -349,6 +349,7 @@ globalThis.Image = class {
 let stateResponse = {};
 let pdfPreviewResponse = { pages: [] };
 let pdfPreviewFail = false;
+let statePutDelayMs = 0;
 const configs = [
   { name: 'cfg', colorCount: 3 },
   { name: 'other', colorCount: 2 },
@@ -385,6 +386,9 @@ globalThis.fetch = async (url, options = {}) => {
   if (u === '/api/state' && (!options.method || options.method === 'GET'))
     return json(stateResponse);
   if (u === '/api/state' && options.method === 'PUT') {
+    if (statePutDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, statePutDelayMs));
+    }
     stateResponse = JSON.parse(options.body);
     return json({ ok: true });
   }
@@ -502,6 +506,12 @@ export const testState = {
   },
   set pdfPreviewFail(v) {
     pdfPreviewFail = v;
+  },
+  get statePutDelayMs() {
+    return statePutDelayMs;
+  },
+  set statePutDelayMs(v) {
+    statePutDelayMs = v;
   },
 };
 

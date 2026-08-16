@@ -1,6 +1,7 @@
 // 画布拖拽交互：右键平移 / 左键选择、涂色、裁剪的指针事件（Pointer Events）与状态机。
 // 只依赖视图 / 裁剪 / 快捷选色等下层模块，不反向依赖主入口。
 
+import { scheduleAutosave } from './autosave.js';
 import { axisConstrainedEnd, lineCells, paintStamp, strokeLine } from './brush.js';
 import { applyPickerColor } from './color-list.js';
 import { DRAG_THRESHOLD_PX, TOOLS, ZOOM_WHEEL_FACTOR } from './constants.js';
@@ -120,6 +121,7 @@ function updateDragMove(e, rect) {
         App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
       }
       setProjectDirty(true);
+      scheduleAutosave();
       applyOriginalTransform();
       if (App.settings.syncPan) applyTransform();
       els.canvasOriginal.style.cursor = 'grabbing';
@@ -133,6 +135,7 @@ function updateDragMove(e, rect) {
   if (dragState.moved && dragState.panning) {
     App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
     setProjectDirty(true);
+    scheduleAutosave();
     if (App.settings.syncPan && App.originalImage) {
       mirrorBeadToOrig();
       applyOriginalTransform();
@@ -332,6 +335,7 @@ export function onCanvasWheel(e) {
   e.preventDefault();
   zoomAtCore(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
   setProjectDirty(true);
+  scheduleAutosave();
 }
 
 export function onCompareWheel(e) {
@@ -340,4 +344,5 @@ export function onCompareWheel(e) {
   e.stopPropagation();
   zoomAtOriginal(e.clientX, e.clientY, e.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR);
   setProjectDirty(true);
+  scheduleAutosave();
 }

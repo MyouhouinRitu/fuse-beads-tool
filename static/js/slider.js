@@ -3,6 +3,7 @@
 import { scheduleAutosave } from './autosave.js';
 import * as canvas from './canvas.js';
 import * as C from './colors.js';
+import { SLIDER_APPLY_DELAY_MS } from './constants.js';
 import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import * as historyUI from './history-ui.js';
@@ -36,4 +37,21 @@ export async function applySlider(n) {
   canvas.resetProjectEditingState();
   renderFullNow();
   scheduleAutosave();
+}
+
+let sliderTimer = null;
+let sliderApplying = false;
+
+// 滑块 input 高频触发：防抖到拖动停顿后再应用，并防止上一轮（含确认弹窗）未结束时
+// 又启动新一轮重算，避免多个异步确认叠在一起或拖拽过程中反复全量重算。
+export function scheduleSliderApply() {
+  if (sliderApplying) return;
+  clearTimeout(sliderTimer);
+  sliderTimer = setTimeout(() => {
+    sliderTimer = null;
+    sliderApplying = true;
+    applySlider(parseInt(els.colorSlider.value, 10)).finally(() => {
+      sliderApplying = false;
+    });
+  }, SLIDER_APPLY_DELAY_MS);
 }

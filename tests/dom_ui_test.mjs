@@ -457,8 +457,11 @@ import {
     '预设项应带悬浮提示',
   );
   elsMap['target-pixels'].value = '';
+  clearTimeout(App.saveTimer);
+  App.saveTimer = null;
   opt.emit('click');
   assert.equal(elsMap['target-pixels'].value, '400', '点击预设应写入输入框');
+  assert.ok(App.saveTimer != null, '选择预设（设置变化）应调度自动保存');
   assert.ok(elsMap['target-pixels-menu'].classList.contains('hidden'), '选择后应关闭菜单');
 
   // 箭头可再次展开；输入框文本区不弹菜单，仅直接编辑数值
@@ -476,7 +479,7 @@ import {
   assert.equal(elsMap['target-pixels'].value, '100', '低于 100 的目标像素量应在失焦时夹到 100');
   elsMap['target-pixels'].value = '100000';
   elsMap['target-pixels'].emit('change');
-  assert.equal(elsMap['target-pixels'].value, '80000', '超过上限应在失焦时夹到 80000');
+  assert.equal(elsMap['target-pixels'].value, '30000', '超过上限应在失焦时夹到 30000');
   console.log('[OK] 目标像素量下拉预设');
 }
 
@@ -534,4 +537,21 @@ import {
   assert.equal(blurred, true, 'ESC 应取消键盘焦点');
   globalThis.document.activeElement = null;
   console.log('[OK] ESC 取消键盘焦点');
+}
+
+// ---------------- 31. 缩放按钮 / 适应窗口触发自动保存 ----------------
+{
+  seedProject();
+  clearTimeout(App.saveTimer);
+  App.saveTimer = null;
+  const zoomBefore = App.zoom;
+  elsMap['zoom-in'].emit('click');
+  assert.ok(App.zoom > zoomBefore, '点击放大按钮应放大工作区');
+  assert.ok(App.saveTimer != null, '缩放按钮（视图变化）应调度自动保存');
+
+  clearTimeout(App.saveTimer);
+  App.saveTimer = null;
+  elsMap['zoom-fit'].emit('click');
+  assert.ok(App.saveTimer != null, '适应窗口（视图变化）应调度自动保存');
+  console.log('[OK] 缩放按钮 / 适应窗口触发自动保存');
 }

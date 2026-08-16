@@ -6,13 +6,29 @@ import { decodeInt16Grid } from './grid-codec.js';
 
 export const MAX_UNDO_STEPS = 20;
 export const MAX_SNAPSHOTS = 100; // 快照数量上限：防止 state.json 无限膨胀
+export const SNAPSHOT_BUDGET_BYTES = 4 * 1024 * 1024; // 历史区序列化体积预算（网格 base64 后约 4MB）
+const SNAPSHOT_BYTES_PER_CELL = (2 * 4) / 3; // 每格 Int16 2 字节 + base64 膨胀 4/3
 
+// 按网格规模收缩快照上限：大网格少存快照，使历史区体积始终落在预算内
+function snapshotLimit(cells) {
+  const byBudget = Math.floor(
+    SNAPSHOT_BUDGET_BYTES / (Math.max(1, cells) * SNAPSHOT_BYTES_PER_CELL),
+  );
+  return Math.max(1, Math.min(MAX_SNAPSHOTS, byBudget));
+}
+
+export function maxSnapshotsFor(width, height) {
+  return snapshotLimit(Math.floor(Number(width) * Number(height)));
+}
+
+/** @returns {FuseHistory} */
 export function createEmptyHistory() {
   return { items: [], currentId: null, nextId: 1, baselineId: null };
 }
 
 // 历史数据清洗：仅保留含完整快照的合法节点；
 // 无法解析的旧 / 损坏数据直接返回空历史。
+/** @param {any} h @returns {FuseHistory} */
 export function sanitizeHistory(h) {
   if (!h || typeof h !== 'object' || !Array.isArray(h.items)) return createEmptyHistory();
   const items = [];
@@ -32,8 +48,13 @@ export function sanitizeHistory(h) {
       snapshot,
     });
   }
-  // 只保留最近 MAX_SNAPSHOTS 个快照（丢弃最旧）
-  const dropped = Math.max(0, items.length - MAX_SNAPSHOTS);
+  // 只保留最近上限个快照（上限按最大网格规模自适应，丢弃最旧）
+  let maxCells = 0;
+  for (const it of items) {
+    maxCells = Math.max(maxCells, it.snapshot.width * it.snapshot.height);
+  }
+  const limit = snapshotLimit(maxCells);
+  const dropped = Math.max(0, items.length - limit);
   if (dropped) items.splice(0, dropped);
   const keptIds = new Set(items.map((it) => it.id));
   let currentId = h.currentId;
@@ -79,6 +100,7 @@ function sanitizeSnapshot(s) {
 }
 
 // 恢复单步撤销/重做栈：丢弃结构损坏、坐标/快照不完整的步骤，并限制在 MAX_UNDO_STEPS 内
+/** @param {unknown} raw @returns {FuseStep[]} */
 export function sanitizeUndoStack(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
@@ -120,15 +142,18 @@ export function sanitizeUndoStack(raw) {
   return out;
 }
 
+/** @param {FuseHistory} history @param {number} id @returns {FuseHistoryItem | null} */
 export function findTransaction(history, id) {
   return history.items.find((it) => it.id === id) || null;
 }
 
+/** @param {FuseHistory} history @param {FuseSnapshot} snapshot @returns {FuseHistoryItem} */
 export function createTransaction(history, snapshot) {
   const id = history.nextId++;
   const item = { id, createdAt: Date.now(), label: `快照 #${id}`, snapshot };
   history.items.push(item);
-  while (history.items.length > MAX_SNAPSHOTS) history.items.shift();
+  const limit = snapshotLimit(snapshot.width * snapshot.height);
+  while (history.items.length > limit) history.items.shift();
   history.currentId = id;
   history.baselineId = id;
   return item;
@@ -193,6 +218,7 @@ export function applyStepToGrid(grid, width, changes, mode) {
 // ---------------- 结构型步骤（裁剪等改变画布尺寸的操作） ----------------
 
 // 结构型步骤的快照：包含尺寸、网格与滑块基副本（基副本随裁剪同步变化，撤销时需一并还原）
+/** @param {{ width: number, height: number, grid: Int16Array, baseGrid?: Int16Array }} projectLike @returns {FuseSnapshot} */
 function snapshotOf(projectLike) {
   return {
     width: projectLike.width,

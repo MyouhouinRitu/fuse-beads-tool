@@ -13,9 +13,11 @@ import {
   findTransaction,
   MAX_SNAPSHOTS,
   MAX_UNDO_STEPS,
+  maxSnapshotsFor,
   recordStep,
   recordStructuralStep,
   redoStep,
+  SNAPSHOT_BUDGET_BYTES,
   sanitizeHistory,
   sanitizeUndoStack,
   undoStep,
@@ -213,6 +215,36 @@ import {
   assert.deepEqual(cleaned.items[0].snapshot.grid, [3], 'base64 快照应解码为数组');
   assert.equal(cleaned.baselineId, null, '被丢弃的基线应清空');
   console.log('[OK] 快照数量上限：保存与清洗均封顶 / base64 快照解码');
+}
+
+// ---- 快照上限按网格规模自适应：大网格按体积预算收缩，小网格仍用硬上限 ----
+{
+  const limit = maxSnapshotsFor(200, 150); // 30000 格
+  assert.ok(limit >= 1 && limit < MAX_SNAPSHOTS, '大网格应收缩快照上限');
+  const history = createEmptyHistory();
+  for (let i = 0; i < MAX_SNAPSHOTS + 5; i++) {
+    createTransaction(history, { width: 200, height: 150, grid: new Array(30000).fill(i % 3) });
+  }
+  assert.equal(history.items.length, limit, '保存端应按网格规模限制快照数量');
+
+  const items = Array.from({ length: MAX_SNAPSHOTS + 3 }, (_, i) => ({
+    id: i + 1,
+    createdAt: i + 1,
+    snapshot: { width: 200, height: 150, grid: new Array(30000).fill(i % 3) },
+  }));
+  const cleaned = sanitizeHistory({ items, currentId: items.length, baselineId: 1 });
+  assert.equal(cleaned.items.length, limit, '清洗端应按网格规模限制快照数量');
+  assert.equal(maxSnapshotsFor(2, 2), MAX_SNAPSHOTS, '小网格仍应使用快照硬上限');
+  // 体积预算回归：3 万格按自适应上限存满时，历史区 base64 总长不应超过预算
+  const budgetGrid = new Int16Array(30000).fill(1);
+  const budgetLimit = maxSnapshotsFor(200, 150);
+  let totalBytes = 0;
+  for (let i = 0; i < budgetLimit; i++) totalBytes += encodeInt16Grid(budgetGrid).length;
+  assert.ok(
+    totalBytes <= SNAPSHOT_BUDGET_BYTES,
+    `历史区 base64 体积应落在预算内：${totalBytes} > ${SNAPSHOT_BUDGET_BYTES}`,
+  );
+  console.log('[OK] 快照上限按网格规模自适应（体积预算 + 实际体积回归）');
 }
 
 // ---- 单步撤销/重做：增量记录 + 20 步上限 ----

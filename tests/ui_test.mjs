@@ -1,5 +1,5 @@
-// 界面自动化测试（需要本机已安装 Playwright + Chromium）：
-//   PLAYWRIGHT_PATH 指向 playwright 包目录；默认使用临时目录中的 playwright@1.57.0。
+// 界面自动化测试（需要 Playwright + Chromium）：
+//   默认使用项目 devDependencies 中的 playwright；可用 PLAYWRIGHT_PATH 覆盖包目录。
 // 运行：node tests/ui_test.mjs
 // 说明：本套件按功能分为 1~12 段，但共享同一个服务端 / 浏览器会话与连续编辑状态，
 //       因此保持为单一文件串行执行，不再按段拆文件（避免每段重放导入与编辑前置）。
@@ -7,14 +7,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
-const require = createRequire(import.meta.url);
-const pwPath =
-  process.env.PLAYWRIGHT_PATH || 'C:/Users/myouh/AppData/Local/Temp/pwauth/node_modules/playwright';
-const { chromium } = require(pwPath);
+import { chromium } from './helpers/playwright-loader.mjs';
 
 const ROOT = path.dirname(
   path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),

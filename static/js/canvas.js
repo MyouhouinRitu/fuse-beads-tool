@@ -15,7 +15,16 @@ import { els } from './els.js';
 import { interactionState } from './interaction.js';
 import { gridRevision } from './mutations.js';
 import { closeQuickPicker } from './quick-picker.js';
-import { canvasMetrics, clearCanvas, drawPatternBase, drawPatternOverlay } from './render.js';
+import {
+  canvasMetrics,
+  clearCanvas,
+  drawCodes,
+  drawGridLines,
+  drawPatternBase,
+  drawPatternCells,
+  drawPatternOverlay,
+} from './render.js';
+import { scheduleCanvasRender } from './render-queue.js';
 import { App, dragState, setDirty } from './state.js';
 import { codeOf, rectCells } from './utils.js';
 import { applyTransform } from './view.js';
@@ -155,6 +164,69 @@ export function syncBaseLayerDetail() {
   baseDetailKey = key;
 }
 
+// 笔划中的增量重绘：只更新脏格对应的显示数据与底图局部，再调度一次 overlay 合成。
+// 笔划结束时由 recordGridChanges 触发全量刷新，保证计数 / 颜色清单 / 撤销 UI 同步。
+export function repaintBaseCells(changes) {
+  const project = App.project;
+  if (!project || !changes?.length || !lastDisplay) return;
+  const { width, height } = project;
+  const n = width * height;
+  const display = lastDisplay;
+  const paletteRgb = App.appliedPalette.map((c) => (c ? C.hexToRgb(c.hex) : null));
+  const cells = new Set();
+  for (const ch of changes) {
+    if (!ch || !Number.isInteger(ch.x) || !Number.isInteger(ch.y)) continue;
+    const p = ch.y * width + ch.x;
+    if (p < 0 || p >= n) continue;
+    const v = ch.to;
+    display.idx[p] = v;
+    display.rgb[p] = v < 0 ? 0 : C.packRgb(paletteRgb[v] || [255, 255, 255]);
+    cells.add(p);
+  }
+  if (!cells.size) return;
+  const cell = App.screenCell;
+  const metrics = canvasMetrics(width, height, cell, 0, 0, cell);
+  drawPatternCells(
+    baseCtx,
+    width,
+    height,
+    display.idx,
+    display.rgb,
+    metrics.originX,
+    metrics.originY,
+    cell,
+    {
+      hatch: true,
+      emptyStyle: App.settings.emptyStyle,
+    },
+    cells,
+  );
+  // 网格线跨整幅底图，逐格重绘会盖掉线，这里统一重画一次（O(宽+高)，成本可忽略）
+  drawGridLines(baseCtx, metrics.originX, metrics.originY, width, height, cell, 1, App.zoom, null);
+  if (App.settings.showCodes) {
+    const codes = [];
+    for (const p of cells) {
+      const v = display.idx[p];
+      if (v >= 0) codes[p] = codeOf(App.appliedPalette[v]);
+    }
+    drawCodes(
+      baseCtx,
+      width,
+      height,
+      display.idx,
+      display.rgb,
+      codes,
+      metrics.originX,
+      metrics.originY,
+      cell,
+      App.zoom,
+      null,
+      cells,
+    );
+  }
+  scheduleCanvasRender();
+}
+
 // 选区 + 拖选预览的合并集合（带缓存：引用不变时复用上次结果）
 function buildRenderSelection() {
   if (
@@ -178,6 +250,19 @@ function buildRenderSelection() {
 }
 
 // 把底图 + 覆盖层（选区/高亮/hover/九宫格目标格）合成到主画布
+function drawPickerPreview(ctx, originX, originY, cell) {
+  // 九宫格悬停预览只临时改 grid，不重建底图显示数据；
+  // 这里在覆盖层之下直接补画候选色，避免整幅底图重建，移出/取消时恢复绘制底图原色
+  const pc = interactionState.pickerCell;
+  const k = interactionState.pickerPreviewIndex;
+  const cand = k == null ? null : interactionState.pickerCandidates?.[k];
+  if (!pc || !cand) return;
+  const c = App.appliedPalette[cand.i];
+  if (!c) return;
+  ctx.fillStyle = c.hex;
+  ctx.fillRect(originX + pc.x * cell, originY + pc.y * cell, cell, cell);
+}
+
 export function renderCanvas() {
   const project = App.project;
   if (!project) return;
@@ -197,6 +282,7 @@ export function renderCanvas() {
   if (ctx.canvas.height !== metrics.h) ctx.canvas.height = metrics.h;
   ctx.clearRect(0, 0, metrics.w, metrics.h); // 清掉上一帧残留（如裁剪蒙版留在四角的像素）
   ctx.drawImage(baseCanvas, 0, 0);
+  drawPickerPreview(ctx, metrics.originX, metrics.originY, App.screenCell);
   drawPatternOverlay(ctx, project.width, project.height, display.idx, display.rgb, {
     cell: App.screenCell,
     outerPad: 0,
