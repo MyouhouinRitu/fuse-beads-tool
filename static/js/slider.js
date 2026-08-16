@@ -19,7 +19,7 @@ export async function applySlider(n) {
   if (hasHistory || App.editedSinceSlider) {
     if (
       !(await confirmDialog(
-        '调整滑块将清空全部快照与撤销记录，并丢弃滑块调整后的编辑，从基副本重新生成图案。是否继续？',
+        '调整滑块将清空全部快照与撤销记录，并丢弃滑块调整后的编辑，按新的颜色数量重新生成图案。是否继续？',
       ))
     ) {
       els.colorSlider.value = String(App.sliderN ?? Math.max(2, baseUsed));

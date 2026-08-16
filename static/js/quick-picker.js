@@ -126,7 +126,7 @@ export function renderQuickPicker(scored) {
   }
   const cancel = document.createElement('button');
   cancel.className = 'qp-cancel';
-  cancel.textContent = '取消（esc）';
+  cancel.textContent = '取消（Esc）';
   frag.appendChild(cancel);
   box.appendChild(frag);
   box.classList.remove('hidden');

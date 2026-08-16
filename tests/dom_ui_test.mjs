@@ -451,7 +451,11 @@ import {
   assert.ok(!elsMap['target-pixels-menu'].classList.contains('hidden'), '点击箭头应展开菜单');
   assert.equal(elsMap['target-pixels-menu'].children.length, 4, '应渲染 4 个预设项');
   const opt = elsMap['target-pixels-menu'].children[0];
-  assert.equal(opt.title, '初次尝试拼豆的儿童建议不超过 500', '预设项应带悬浮提示');
+  assert.equal(
+    opt.title,
+    '初次尝试拼豆的儿童建议量，可以适当增加，但不建议超过500，且强烈建议使用5mm的豆并在监护人陪同下体验',
+    '预设项应带悬浮提示',
+  );
   elsMap['target-pixels'].value = '';
   opt.emit('click');
   assert.equal(elsMap['target-pixels'].value, '400', '点击预设应写入输入框');

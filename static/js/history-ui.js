@@ -22,7 +22,7 @@ import { toast } from './utils.js';
 export function updateUndoUI() {
   els.btnUndo.disabled = App.undoStack.length === 0;
   els.btnRedo.disabled = App.redoStack.length === 0;
-  els.undoInfo.textContent = `单步记录：${App.undoStack.length}/${MAX_UNDO_STEPS}`;
+  els.undoInfo.textContent = `撤销步数：${App.undoStack.length}/${MAX_UNDO_STEPS}`;
 }
 
 export function saveTransaction() {
@@ -43,7 +43,7 @@ export function saveTransaction() {
   setProjectDirty(true);
   setDirty(false);
   renderHistoryUI();
-  toast(`已保存快照#${item.id}（Ctrl+S）`, { type: 'success' });
+  toast(`已保存快照 #${item.id}（Ctrl+S）`, { type: 'success' });
   scheduleAutosave();
 }
 
@@ -94,7 +94,7 @@ export async function switchHistoryItem(id) {
   }
   renderFullNow();
   renderHistoryUI();
-  toast(`已切换到快照#${id}`);
+  toast(`已切换到快照 #${id}`);
   scheduleAutosave();
 }
 

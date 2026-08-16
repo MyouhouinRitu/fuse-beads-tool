@@ -12,10 +12,10 @@ export const DEFAULT_TARGET_PIXELS = 4000; // 「目标像素量」输入框默�
 export const TARGET_PIXELS_MIN = 100; // 「目标像素量」下限（与 bead/compress.py MIN_TARGET_PIXELS 一致）
 export const TARGET_PIXELS_MAX = 80000; // 「目标像素量」上限
 export const TARGET_PIXEL_PRESETS = [
-  { value: 400, tip: '初次尝试拼豆的儿童建议不超过 500' },
-  { value: 2000, tip: '初次尝试拼豆的成人建议不超过 2500' },
-  { value: 4000, tip: '有一定经验的成年人建议不超过 5000' },
-  { value: 8000, tip: '10000 的豆量通常需要消耗 1-2 天时间' },
+  { value: 400, tip: '初次尝试拼豆的儿童建议量，可以适当增加，但不建议超过500，且强烈建议使用5mm的豆并在监护人陪同下体验' },
+  { value: 2000, tip: '初次尝试拼豆的成人推荐量，不建议超过 3000' },
+  { value: 4000, tip: '有一定经验的成人推荐量，可以适当增加，但不建议超过 5500' },
+  { value: 8000, tip: '8000以上的豆很可能要花2天时间，并且长/宽大于100可能不方便用烫豆机熨烫，谨慎选择' },
 ];
 export const BRUSH_SIZE_MIN = 1; // 画笔 / 橡皮最小尺寸
 export const BRUSH_SIZE_MAX = 10; // 画笔 / 橡皮最大尺寸（与模板中滑块 max 一致）

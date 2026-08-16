@@ -67,7 +67,7 @@ function renderFull() {
   els.emptyHint.style.display = 'none';
 
   const empty = project.grid.length - filled;
-  els.cellInfo.textContent = `${project.width} × ${project.height} · 总量 ${filled} · 空位 ${empty}`;
+  els.cellInfo.textContent = `${project.width} × ${project.height} · 非空 ${filled} · 空位 ${empty}`;
   colorList.renderColorList(counts);
   highlight.renderHighlightColorList(counts);
   canvas.syncHighlightBlink();

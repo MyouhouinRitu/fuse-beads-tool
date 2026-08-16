@@ -175,5 +175,5 @@ export function clearSelectionToEmpty() {
   if (!applied.length) return;
   recordGridChanges(applied);
   renderHistoryUI();
-  toast(`已清除 ${applied.length} 格为空位`);
+  toast(`已将 ${applied.length} 个格子清除为空位`);
 }

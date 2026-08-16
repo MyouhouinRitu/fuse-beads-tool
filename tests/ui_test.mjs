@@ -902,6 +902,7 @@ async function main() {
   // 7. 导出 JPG：实时预览 + 图例开关生效
   await page.click('#btn-export');
   await page.fill('#dlg-cell-size', '10');
+  await page.uncheck('#dlg-edge-numbers');
   await page.waitForFunction(() => document.querySelector('#dlg-preview')?.width > 0, null, {
     timeout: 5000,
   });

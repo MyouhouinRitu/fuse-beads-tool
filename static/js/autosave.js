@@ -121,6 +121,6 @@ async function saveStateNow() {
     await api.putState(buildStatePayload());
     els.autosave.textContent = `已自动保存 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
   } catch (_err) {
-    els.autosave.textContent = '自动保存失败';
+    els.autosave.textContent = '自动保存失败，修改可能丢失';
   }
 }

@@ -21,7 +21,7 @@ export async function loadConfigs(selectName) {
   for (const c of res.configs) {
     const opt = document.createElement('option');
     opt.value = c.name;
-    opt.textContent = `${c.name}（${c.colorCount}色）`;
+    opt.textContent = `${c.name}（${c.colorCount} 色）`;
     els.configSelect.appendChild(opt);
   }
   const name =
@@ -95,7 +95,7 @@ export async function ensurePaletteConfig(colors, preferredName) {
   toast(`已自动创建恢复色板「${res.name}」，原配置未覆盖`, { important: true });
   const opt = document.createElement('option');
   opt.value = res.name;
-  opt.textContent = `${res.name}（${res.colors.length}色）`;
+  opt.textContent = `${res.name}（${res.colors.length} 色）`;
   els.configSelect.appendChild(opt);
   return { name: res.name, hash, created: true };
 }
@@ -230,7 +230,7 @@ function removeColor(i) {
   const oldPalette = App.palette;
   App.palette = App.palette.filter((_, k) => k !== i);
   if (!App.palette.length) {
-    toast('至少保留一个颜色');
+    toast('至少需要保留一个颜色');
     App.palette = oldPalette;
     return;
   }

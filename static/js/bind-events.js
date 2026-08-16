@@ -224,7 +224,7 @@ export function bindEvents() {
   });
   els.btnNewConfig.addEventListener('click', () =>
     withPending(els.btnNewConfig, async () => {
-      const name = await promptDialog('新配置名称：');
+      const name = await promptDialog('配置名称：');
       if (!name) return;
       const colors = App.palette.length
         ? App.palette.map((c) => ({ ...c }))
@@ -249,7 +249,7 @@ export function bindEvents() {
         const res = await api.importConfig(f);
         await palette.selectAndLoad(res.name);
         setProjectDirty(true);
-        toast(`已导入配置「${res.name}」（${res.colors.length}色）`, { type: 'success' });
+        toast(`已导入配置「${res.name}」（${res.colors.length} 色）`, { type: 'success' });
       } catch (err) {
         toast(`导入失败：${err.message}`, { type: 'error' });
       }
@@ -265,7 +265,7 @@ export function bindEvents() {
   els.btnRenameConfig.addEventListener('click', () =>
     withPending(els.btnRenameConfig, async () => {
       if (!App.configName) return;
-      const newName = await promptDialog('新的配置名称：', App.configName);
+      const newName = await promptDialog('配置名称：', App.configName);
       if (!newName || newName === App.configName) return;
       try {
         await api.renameConfig(App.configName, newName);
@@ -281,7 +281,7 @@ export function bindEvents() {
     withPending(els.btnDeleteConfig, async () => {
       if (!App.configName) return;
       if (App.configs.length <= 1) {
-        toast('至少保留一个配置');
+        toast('至少需要保留一个配置');
         return;
       }
       if (!(await confirmDialog(`确定删除配置「${App.configName}」吗？`))) return;

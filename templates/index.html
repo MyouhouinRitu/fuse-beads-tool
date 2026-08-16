@@ -36,7 +36,7 @@
       <input type="file" id="project-file-input" accept=".ssfbp" hidden>
       <label class="field">目标像素量
         <span class="target-pixels-wrap">
-          <input type="number" id="target-pixels" min="100" max="80000" step="100" value="4000" title="图片压缩后的总像素量" role="combobox" aria-expanded="false" aria-controls="target-pixels-menu" aria-autocomplete="none">
+          <input type="number" id="target-pixels" min="100" max="80000" step="100" value="4000" title="压缩后的目标豆量（非空像素数）" role="combobox" aria-expanded="false" aria-controls="target-pixels-menu" aria-autocomplete="none">
           <button type="button" id="target-pixels-btn" class="target-pixels-arrow" tabindex="-1" title="选择常用像素量" aria-label="选择常用像素量"></button>
           <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden" role="menu"></div>
         </span>
@@ -45,23 +45,23 @@
       <label class="field">颜色距离
         <select id="sel-distance">
           <option value="lab" selected>Lab（人眼感知）</option>
-          <option value="rgb">RGB</option>
+          <option value="rgb">RGB（数值距离）</option>
         </select>
       </label>
       <button type="button" id="btn-config" title="打开色板配置">色板配置</button>
       <button type="button" id="btn-recompress" title="按当前设置重新压缩并重新生成图案">重新压缩</button>
       <span class="spacer"></span>
       <div class="dropdown" id="fix-dropdown">
-        <button type="button" id="btn-fix-menu" title="查看常见使用问题的修复说明" aria-haspopup="menu" aria-expanded="false" aria-controls="fix-menu">使用问题修复 <span class="caret">▾</span></button>
+        <button type="button" id="btn-fix-menu" title="查看常见使用问题和修复说明" aria-haspopup="menu" aria-expanded="false" aria-controls="fix-menu">常见问题说明与帮助</button>
         <div id="fix-menu" class="dropdown-menu hidden" role="menu">
-          <button type="button" id="fix-item-gesture" class="dropdown-item" role="menuitem">右键在界面上只画线不拖拽</button>
           <button type="button" id="fix-item-shortcuts" class="dropdown-item" role="menuitem">快捷键说明</button>
+          <button type="button" id="fix-item-gesture" class="dropdown-item" role="menuitem">右键在界面上只画线不拖拽</button>
         </div>
       </div>
       <span class="tb-divider"></span>
       <button type="button" id="btn-undo" disabled title="撤销上一步修改（Ctrl+Z）">撤销</button>
       <button type="button" id="btn-redo" disabled title="重做已撤销的修改（Ctrl+Shift+Z / Ctrl+Y）">重做</button>
-      <span id="undo-info" class="muted" title="当前单步记录数量（最多 20 步）">单步记录：0/20</span>
+      <span id="undo-info" class="muted" title="当前单步记录数量（最多 20 步）">撤销步数：0/20</span>
       <span id="autosave-indicator" class="indicator" aria-live="polite"></span>
       <span class="tb-divider"></span>
       <button type="button" id="btn-export" class="primary">导出图片</button>
@@ -75,7 +75,7 @@
       </label>
       <span id="used-colors" class="muted"></span>
       <span class="spacer"></span>
-      <span class="hint">右键拖拽平移 · 滚轮缩放 · 快捷键说明见「使用问题修复 → 快捷键说明」</span>
+      <span class="hint">右键拖拽平移 · 滚轮缩放 · 快捷键说明见「常见问题说明与帮助 → 快捷键说明」</span>
     </div>
   </header>
 
@@ -105,7 +105,7 @@
                   <input type="checkbox" id="same-color-select">同色选区
                 </label>
                 <button id="select-highlight" type="button" class="tool-mini"
-                  title="选中当前高亮色号的全部像素并取消高亮显示" disabled>选中高亮</button>
+                  title="选中当前高亮色号的全部像素并取消高亮显示" disabled>全选高亮色</button>
               </span>
               <span id="crop-controls" class="selection-controls hidden">
                 <button id="btn-auto-crop" type="button" class="tool-mini" title="自动收缩到非空格的包围盒">自动裁剪</button>
@@ -149,7 +149,7 @@
         <label class="chk" title="将工作区分成左右两块：左侧显示原图，右侧显示拼豆图"><input type="checkbox" id="chk-compare">对比原图</label>
         <label class="chk" title="左侧原图与右侧拼豆图使用一致的坐标与缩放"><input type="checkbox" id="chk-sync-pan">同步拖拽</label>
         <label class="chk"><input type="checkbox" id="chk-codes" checked title="仅影响工作区显示，不影响导出">显示色号</label>
-        <label class="field empty-style-field" title="仅影响工作区显示，不影响导出">透明色
+        <label class="field empty-style-field" title="仅影响工作区显示，不影响导出">空位显示
           <select id="empty-style">
             <option value="default">默认（浅灰）</option>
             <option value="black">纯黑</option>
@@ -203,7 +203,7 @@
         <div class="panel-block">
           <div class="row">
             <button type="button" id="btn-save-state-side" class="primary" title="Ctrl+S / Cmd+S">保存快照</button>
-            <button type="button" id="btn-clear-all" class="danger" title="删除全部快照，保留当前画布">清空所有快照</button>
+            <button type="button" id="btn-clear-all" class="danger" title="删除全部快照与撤销记录，保留当前画布">清空所有快照</button>
           </div>
           <div id="history-list"></div>
           <div id="history-empty" class="muted">暂无快照记录</div>
@@ -252,10 +252,10 @@
           <label class="field">外部白边（像素）
             <input type="number" id="dlg-pad" min="0" max="200" value="20">
           </label>
-          <label class="chk" title="在导出图片四周显示浅蓝底行列号"><input type="checkbox" id="dlg-edge-numbers">显示行列号</label>
+          <label class="chk" title="在导出图片四周显示浅蓝底行列号"><input type="checkbox" id="dlg-edge-numbers" checked>显示行列号</label>
           <label class="chk"><input type="checkbox" id="dlg-codes" checked>显示色号</label>
           <label class="chk"><input type="checkbox" id="dlg-legend" checked>附带色号图例</label>
-          <label class="field">透明色
+          <label class="field">空位显示
             <select id="dlg-empty-style">
               <option value="default">默认（浅灰）</option>
               <option value="black">纯黑</option>
@@ -266,9 +266,9 @@
             <select id="dlg-format">
               <option value="jpg" selected>JPG</option>
               <option value="png">PNG</option>
-              <option value="pdf-a4">PDF (A4单页)</option>
-              <option value="pdf-multi-a4">PDF (A4多页)</option>
-              <option value="pdf-a3-a4">PDF (A3或A4)</option>
+              <option value="pdf-a4">PDF（A4单页）</option>
+              <option value="pdf-multi-a4">PDF（A4多页）</option>
+              <option value="pdf-a3-a4">PDF（A3/A4 自适应）</option>
             </select>
           </label>
         </div>
@@ -304,8 +304,8 @@
           </div>
           <div class="row">
             <button type="button" id="btn-new-config" title="新建一个配置">新建</button>
-            <button type="button" id="btn-import-config" title="从 CSV 文件导入配置">导入</button>
-            <button type="button" id="btn-export-config" title="将当前配置导出为 CSV">导出CSV</button>
+            <button type="button" id="btn-import-config" title="从 CSV 文件导入配置">导入 CSV</button>
+            <button type="button" id="btn-export-config" title="将当前配置导出为 CSV">导出 CSV</button>
           </div>
           <div class="row">
             <button type="button" id="btn-rename-config" title="重命名当前配置">重命名</button>
@@ -320,7 +320,7 @@
             <span class="h-code">色号</span>
             <span class="h-name">名称</span>
             <span class="h-color">颜色</span>
-            <span class="h-hex">16进制</span>
+            <span class="h-hex">Hex 值</span>
             <span class="h-op">操作</span>
           </div>
           <div id="color-table" class="color-table"></div>
