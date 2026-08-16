@@ -237,7 +237,7 @@ def _render_multi_a4(
     legend: list[dict],
     options: dict,
     dpi: int = DPI,
-) -> list[tuple[str | None, Image.Image]]:
+) -> list[tuple[str, Image.Image]]:
     pages = [(
         "总",
         _render_page(
@@ -298,13 +298,14 @@ def build_pdf_pages(
 ) -> list[tuple[str | None, Image.Image, tuple[float, float]]]:
     """按模式生成 PDF 各页图像（标签 + 图像 + 纸张），导出与预览共用。"""
     palette_map = build_palette_map(palette)
+    pages: list[tuple[str | None, Image.Image, tuple[float, float]]] = []
     if mode == "pdf-a4":
-        pages = [("1", _render_single(width, height, grid, palette_map, codes, legend, options, A4_MM, dpi=dpi), A4_MM)]
+        pages.append(("1", _render_single(width, height, grid, palette_map, codes, legend, options, A4_MM, dpi=dpi), A4_MM))
     elif mode == "pdf-multi-a4":
-        pages = [(*p, A4_MM) for p in _render_multi_a4(width, height, grid, palette_map, codes, legend, options, dpi=dpi)]
+        pages.extend((*p, A4_MM) for p in _render_multi_a4(width, height, grid, palette_map, codes, legend, options, dpi=dpi))
     elif mode == "pdf-a3-a4":
         paper = pdf_paper(width, height)
-        pages = [("1", _render_single(width, height, grid, palette_map, codes, legend, options, paper, dpi=dpi), paper)]
+        pages.append(("1", _render_single(width, height, grid, palette_map, codes, legend, options, paper, dpi=dpi), paper))
     else:
         raise ValueError("不支持的 PDF 格式")
     return pages

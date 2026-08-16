@@ -11,6 +11,7 @@ export const OUTER_PAD = 20; // 导出时图案外侧纯白边距（像素）
 export const DEFAULT_TARGET_PIXELS = 4000; // 「目标像素量」输入框默认值
 export const TARGET_PIXELS_MIN = 100; // 「目标像素量」下限（与 bead/compress.py MIN_TARGET_PIXELS 一致）
 export const TARGET_PIXELS_MAX = 30000; // 「目标像素量」上限（与 bead/compress.py HARD_CAP_PIXELS 一致）
+export const TARGET_PIXELS_STEP = 100; // 「目标像素量」输入框步长（与模板 input step 一致）
 export const TARGET_PIXEL_PRESETS = [
   {
     value: 400,
@@ -129,8 +130,6 @@ export const EXPORT_COMPLETE_DELAY_MS = 900; // 导出完成后停留显示时�
 // 图例布局
 export const LEGEND_ENTRY_W = 7.0; // 图例每项预估宽度（以格为单位），用于分行的保守估算
 export const LEGEND_PAD_RATIO = 0.9; // 图例左右留白（格）
-export const LEGEND_ROW_HEIGHT_CELLS = 2.0; // 图例每行高度（格）
-export const LEGEND_ROW_GAP = 8; // 图例行间距（像素）
 export const LEGEND_BOTTOM_GAP_RATIO = 0.6; // 图例下方留白（格）
 export const LEGEND_TOP_OFFSET_RATIO = 0.6; // 图例起始纵偏移（格）
 export const LEGEND_FONT_RATIO = 0.9; // 图例字体大小（格）

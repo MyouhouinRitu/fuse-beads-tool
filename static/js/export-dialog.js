@@ -18,11 +18,12 @@ import { els } from './els.js';
 import { hideDialog, showDialog } from './focus.js';
 import { drawPattern } from './render.js';
 import { App } from './state.js';
-import { clampInt, codeOf, downloadUrl, toast } from './utils.js';
+import { clampInt, codeOf, downloadBlob, toast } from './utils.js';
 
 let pdfPreviewPages = [];
 let pdfPreviewIndex = 0;
 let pdfPreviewTimer = null;
+let pdfPreviewSeq = 0;
 
 function buildExportData() {
   const n = App.project.width * App.project.height;
@@ -58,6 +59,7 @@ export function openExportDialog() {
     toast('请先导入图片');
     return;
   }
+  pdfPreviewSeq++;
   clearTimeout(pdfPreviewTimer);
   pdfPreviewPages = [];
   pdfPreviewIndex = 0;
@@ -72,6 +74,7 @@ export function openExportDialog() {
 
 // 关闭导出弹窗并重置全部弹窗状态，避免下次打开残留进度 / 页码 / 状态文案
 export function closeExportDialog() {
+  pdfPreviewSeq++;
   clearTimeout(pdfPreviewTimer);
   pdfPreviewPages = [];
   pdfPreviewIndex = 0;
@@ -85,6 +88,7 @@ export function closeExportDialog() {
 // 导出预览：用前端渲染器即时绘制一张小图（不经过后端，秒级响应）
 export async function renderExportPreview() {
   if (!App.project) return;
+  pdfPreviewSeq++;
   clearTimeout(pdfPreviewTimer);
   const fmt = els.dlgFormat.value;
   if (fmt.startsWith('pdf-')) {
@@ -148,6 +152,7 @@ function buildExportOptions(fmt) {
 async function renderPdfPreview() {
   const fmt = els.dlgFormat.value;
   if (!fmt.startsWith('pdf-') || !App.project) return;
+  const seq = pdfPreviewSeq;
   const { grid, palette, legend, codes } = buildExportData();
   els.dlgPreviewMask.classList.remove('hidden');
   try {
@@ -160,15 +165,17 @@ async function renderPdfPreview() {
       codes,
       options: buildExportOptions(fmt),
     });
+    if (seq !== pdfPreviewSeq) return; // 已有更新的预览请求，丢弃过期响应
     pdfPreviewPages = res.pages || [];
     pdfPreviewIndex = Math.min(pdfPreviewIndex, Math.max(0, pdfPreviewPages.length - 1));
     renderPdfPageButtons();
     drawPdfPreviewPage();
   } catch (e) {
+    if (seq !== pdfPreviewSeq) return;
     els.dlgPdfPages.classList.add('hidden');
     toast(`PDF 预览生成失败：${e.message}`, { type: 'error' });
   } finally {
-    els.dlgPreviewMask.classList.add('hidden');
+    if (seq === pdfPreviewSeq) els.dlgPreviewMask.classList.add('hidden');
   }
 }
 
@@ -220,7 +227,7 @@ export async function doExport() {
   els.dlgBusy.classList.remove('hidden');
   els.dlgStatus.textContent = '正在导出…';
   try {
-    const res = await api.exportImage({
+    const blob = await api.exportImage({
       width: App.project.width,
       height: App.project.height,
       grid,
@@ -230,7 +237,7 @@ export async function doExport() {
       options: buildExportOptions(fmt),
     });
     const ext = fmt.startsWith('pdf-') ? 'pdf' : fmt === 'png' ? 'png' : 'jpg';
-    downloadUrl(res.dataUrl, `拼豆图案.${ext}`);
+    downloadBlob(blob, `拼豆图案.${ext}`);
     els.dlgStatus.textContent = '导出完成';
     await new Promise((r) => setTimeout(r, EXPORT_COMPLETE_DELAY_MS)); // 稍作停留显示完成状态
     closeExportDialog();

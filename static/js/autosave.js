@@ -37,9 +37,33 @@ function buildProjectPayload() {
     : null;
 }
 
-// 自动保存载荷专用：快照网格编码为 base64；内存态与项目文档（.ssfbp）仍保持数组
+// 自动保存载荷专用：快照网格编码为 base64；内存态与项目文档（.ssfbp）仍保持数组。
+// 快照网格创建后只读（仅 paletteName 等元数据可变），因此按轻量指纹缓存编码结果，
+// 避免每次自动保存都把所有快照重新 base64 编码。
+let historyEncodeCache = { key: null, value: null };
+
+function historyEncodeKey(history) {
+  const parts = history.items.map((it) => {
+    const s = it.snapshot || {};
+    const grid = s.grid || [];
+    return [
+      it.id,
+      it.label,
+      s.paletteName || '',
+      s.width,
+      s.height,
+      grid.length,
+      grid[0] ?? '',
+      grid[grid.length - 1] ?? '',
+    ].join('|');
+  });
+  return [history.nextId, history.currentId, history.baselineId, parts.join(';')].join('#');
+}
+
 function encodeHistoryForState(history) {
-  return {
+  const key = historyEncodeKey(history);
+  if (historyEncodeCache.key === key) return historyEncodeCache.value;
+  const value = {
     ...history,
     items: history.items.map((it) => {
       if (!it.snapshot) return it;
@@ -47,6 +71,8 @@ function encodeHistoryForState(history) {
       return { ...it, snapshot: { ...snapshot, gridBase64: encodeInt16Grid(grid) } };
     }),
   };
+  historyEncodeCache = { key, value };
+  return value;
 }
 
 function buildOriginalPayload() {

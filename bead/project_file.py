@@ -139,6 +139,32 @@ def parse_project_file(data: bytes) -> dict[str, bytes]:
     return {e["name"]: raw for e, raw in zip(entries, payloads)}
 
 
+def validate_project_document(doc: dict) -> None:
+    """校验项目文档的领域载荷：尺寸 / 网格长度 / 网格值域。
+
+    与前端 static/js/validate.js 保持同一套规则；
+    不合法时抛 ValueError（由路由转成 JSON 400），避免把损坏文档写入原图目录或状态。
+    """
+    project = doc.get("project")
+    if not isinstance(project, dict):
+        raise ValueError("项目缺少画布数据")
+    width = project.get("width")
+    height = project.get("height")
+    if (
+        not isinstance(width, int)
+        or not isinstance(height, int)
+        or width <= 0
+        or height <= 0
+    ):
+        raise ValueError("项目尺寸无效")
+    grid = project.get("grid")
+    if not isinstance(grid, list) or len(grid) != width * height:
+        raise ValueError("项目网格数据无效")
+    for v in grid:
+        if not isinstance(v, int) or v < -1:
+            raise ValueError("项目网格包含非法值")
+
+
 def safe_filename(name: str, fallback: str = "未命名") -> str:
     return clean_filename(name, fallback)
 

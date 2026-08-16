@@ -20,10 +20,11 @@ export let gridRevision = 0;
  */
 export function applyGridChanges(changes, { silent = false, buffer = null } = {}) {
   if (!App.project || !changes?.length) return [];
-  const { grid, width } = App.project;
+  const { grid, width, height } = App.project;
   const applied = [];
   for (const ch of changes) {
     if (!Number.isInteger(ch.x) || !Number.isInteger(ch.y) || !Number.isInteger(ch.to)) continue;
+    if (ch.x < 0 || ch.y < 0 || ch.x >= width || ch.y >= height || ch.to < -1) continue;
     const p = ch.y * width + ch.x;
     const from = ch.from ?? grid[p];
     if (from === ch.to) continue;
@@ -55,5 +56,6 @@ export function recordGridChanges(changes) {
 
 // 临时预览写入（九宫格悬停等）：不标记 dirty / 撤销，调用方必须负责还原
 export function setGridPreview(p, value) {
+  if (!App.project || p < 0 || p >= App.project.grid.length) return;
   App.project.grid[p] = value;
 }

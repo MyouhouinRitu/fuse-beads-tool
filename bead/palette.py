@@ -8,7 +8,8 @@ import io
 import json
 import os
 import re
-from typing import TypedDict
+from collections.abc import Mapping, Sequence
+from typing import Any, TypedDict
 
 
 class Color(TypedDict):
@@ -323,7 +324,7 @@ MARD_221_PALETTE_CSV = """编号,色号,名称,颜色
 _HEX_RE = re.compile(r"^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
-def normalize_color(c: dict[str, object] | None = None) -> Color:
+def normalize_color(c: dict[str, Any] | None = None) -> Color:
     c = dict(c or {})
     try:
         index = int(c.get("index", 0))
@@ -343,7 +344,7 @@ def normalize_color(c: dict[str, object] | None = None) -> Color:
     return {"index": index, "code": code, "name": name, "hex": hexv}
 
 
-def normalize_colors(colors: list[dict[str, object]] | None) -> list[Color]:
+def normalize_colors(colors: Sequence[Mapping[str, Any]] | None) -> list[Color]:
     out = []
     for i, c in enumerate(colors or [], 1):
         c = dict(c)
@@ -352,7 +353,7 @@ def normalize_colors(colors: list[dict[str, object]] | None) -> list[Color]:
     return out
 
 
-def _column_map(header: list[str]) -> dict[str, str]:
+def _column_map(header: Sequence[str]) -> dict[str, str]:
     mapping = {}
     for raw in header:
         key = str(raw).strip().lower()
@@ -385,11 +386,11 @@ def read_csv_text(text: str) -> list[Color]:
 
 
 def read_csv(path: str) -> list[Color]:
-    with open(path, "r", encoding="utf-8-sig") as fh:
+    with open(path, encoding="utf-8-sig") as fh:
         return read_csv_text(fh.read())
 
 
-def write_csv(path: str, colors: list[dict[str, object]]) -> None:
+def write_csv(path: str, colors: Sequence[Mapping[str, Any]]) -> None:
     rows = normalize_colors(colors)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8-sig", newline="") as fh:

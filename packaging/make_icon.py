@@ -1,4 +1,3 @@
-# -*- mode: python ; coding: utf-8 -*-
 """应用图标生成脚本（打包前自动执行）。
 
 图标源文件：assets/app-icon.png（替换自己的图标时改这个文件即可）。

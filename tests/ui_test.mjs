@@ -184,9 +184,9 @@ async function main() {
   await near(await px(page, ox - CELL / 2, oy + gh - 1), [214, 230, 247], 8); // 左条底端帽
   await near(await px(page, ox, oy + CELL / 2), [0, 0, 0], 12); // 图案左边缘黑线
   await near(await px(page, ox + CELL / 2, oy), [0, 0, 0], 12); // 图案上边缘黑线
-  await near(await px(page, ox + CELL, oy - CELL / 2), [184, 192, 200], 20); // 顶条分隔细灰线（1px 居中，采样为 50% 混合）
+  await near(await px(page, ox + CELL, oy - CELL / 2), [154, 154, 154], 12); // 顶条分隔细灰线（整数像素落线，无混合）
   await near(await px(page, ox + 5 * CELL, oy - CELL / 2), [154, 154, 154], 20); // 顶条每 5 格粗灰线
-  await near(await px(page, ox - CELL / 2, oy + CELL), [184, 192, 200], 20); // 左条分隔细灰线（1px 居中，采样为 50% 混合）
+  await near(await px(page, ox - CELL / 2, oy + CELL), [154, 154, 154], 12); // 左条分隔细灰线（整数像素落线，无混合）
   await near(await px(page, ox - CELL / 2, oy + 5 * CELL), [154, 154, 154], 20); // 左条每 5 格粗灰线
   console.log('[OK] 行列号条网格线：外圈端帽无线，条内细灰 / 每 5 格粗灰');
   console.log('[OK] 导入并显示像素网格');

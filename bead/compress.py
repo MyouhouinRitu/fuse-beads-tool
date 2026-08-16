@@ -12,6 +12,11 @@ MIN_TARGET_PIXELS = 100
 HARD_CAP_PIXELS = 30000
 # 中间画布上限：透明占比很高时，需要比目标豆量更大的中间像素量才能补回非透明豆量
 MAX_INTERMEDIATE_PIXELS = 500000
+# 上传图片解压后的像素总量上限：防止 64MB 文件解压成超大位图耗尽内存
+MAX_IMAGE_PIXELS = 50_000_000
+
+# 关闭 Pillow 自带的解压炸弹阈值，由下方显式尺寸校验统一控制（open 后立即检查，不加载像素）
+Image.MAX_IMAGE_PIXELS = None
 
 # 锐化参数（UnsharpMask）
 SHARPEN_RADIUS = 2
@@ -21,6 +26,8 @@ SHARPEN_THRESHOLD = 2
 
 def open_image(data: bytes) -> Image.Image:
     img = Image.open(io.BytesIO(data))
+    if img.width * img.height > MAX_IMAGE_PIXELS:
+        raise ValueError("图片像素过大，无法处理")
     img = ImageOps.exif_transpose(img)
     if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
         # 保留透明通道：透明区域交给前端映射为空位（浅灰 X），不再压成白底
@@ -73,7 +80,7 @@ def compress(
         fix = math.sqrt(target / (nw * nh))
         nw = max(1, math.floor(nw * fix))
         nh = max(1, math.floor(nh * fix))
-    img = img.resize((nw, nh), Image.BOX)
+    img = img.resize((nw, nh), Image.Resampling.BOX)
     if sharpen:
         img = img.filter(
             ImageFilter.UnsharpMask(

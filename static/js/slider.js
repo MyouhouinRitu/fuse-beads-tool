@@ -2,6 +2,7 @@
 
 import { scheduleAutosave } from './autosave.js';
 import * as canvas from './canvas.js';
+import { mergeGridAsync } from './color-queue.js';
 import * as C from './colors.js';
 import { SLIDER_APPLY_DELAY_MS } from './constants.js';
 import { confirmDialog } from './dialog.js';
@@ -27,10 +28,21 @@ export async function applySlider(n) {
       els.sliderValue.textContent = String(App.sliderN ?? Math.max(2, baseUsed));
       return;
     }
+  }
+  App.project.grid =
+    (await mergeGridAsync(
+      App.baseGrid,
+      App.project.width,
+      App.project.height,
+      App.appliedPalette,
+      App.settings.useLab,
+      n,
+    )) ?? canvas.mergeGrid(App.baseGrid, App.appliedPalette, App.settings.useLab, n);
+  if (hasHistory || App.editedSinceSlider) {
+    // 合并完成后再清空，避免历史已清但画布仍是旧状态的不一致窗口
     clearHistoryRecords();
     historyUI.renderHistoryUI();
   }
-  App.project.grid = canvas.mergeGrid(App.baseGrid, App.appliedPalette, App.settings.useLab, n);
   App.sliderN = n;
   App.editedSinceSlider = false;
   setProjectDirty(true);

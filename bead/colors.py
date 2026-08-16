@@ -35,10 +35,10 @@ def rgb_to_lab(rgb: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     fx = np.where(x / xn > 0.008856, np.cbrt(x / xn), 7.787 * (x / xn) + 16 / 116)
     fy = np.where(y / yn > 0.008856, np.cbrt(y / yn), 7.787 * (y / yn) + 16 / 116)
     fz = np.where(z / zn > 0.008856, np.cbrt(z / zn), 7.787 * (z / zn) + 16 / 116)
-    l = 116 * fy - 16
+    l_val = 116 * fy - 16
     a = 500 * (fx - fy)
     bb = 200 * (fy - fz)
-    out = np.stack([l, a, bb], axis=-1)
+    out = np.stack([l_val, a, bb], axis=-1)
     return out[0] if single else out
 
 

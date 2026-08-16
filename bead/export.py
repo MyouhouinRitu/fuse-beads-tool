@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -17,8 +18,6 @@ DEFAULT_QUALITY = 95                 # 导出 JPG 默认质量
 # 图例布局
 LEGEND_ENTRY_W = 7.0                 # 图例每项预估宽度（格）
 LEGEND_PAD_RATIO = 0.9               # 图例左右留白（格）
-LEGEND_ROW_HEIGHT_CELLS = 2.0        # 图例每行高度（格）
-LEGEND_ROW_GAP = 8                   # 图例行间距（像素）
 LEGEND_BOTTOM_GAP_RATIO = 0.6        # 图例下方留白（格）
 LEGEND_TOP_OFFSET_RATIO = 0.6        # 图例起始纵偏移（格）
 LEGEND_FONT_RATIO = 0.9              # 图例字体大小（格）
@@ -92,14 +91,14 @@ def build_palette_map(palette: list[dict]) -> dict[int, str]:
     return {int(c["index"]): str(c["hex"]) for c in palette}
 
 
-def _font(cell: int, scale: float) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+def _font(cell: int, scale: float) -> ImageFont.FreeTypeFont:
     size = max(FONT_MIN, int(cell * scale))
     for name in FONT_CANDIDATES:
         try:
             return ImageFont.truetype(name, size)
         except Exception:
             continue
-    return ImageFont.load_default()
+    return cast(ImageFont.FreeTypeFont, ImageFont.load_default())
 
 
 def _contrast_text(rgb: tuple[int, int, int]) -> str:
@@ -164,7 +163,6 @@ def render_pattern(
     edge_numbers: bool = False,
     col_offset: int = 0,
     row_offset: int = 0,
-    page_label: str | None = None,
 ) -> Image.Image:
     legend = sorted(legend or [], key=lambda e: (-e.get("count", 0), e.get("code", "")))
     edge = cell if edge_numbers else 0
@@ -197,7 +195,7 @@ def render_pattern(
     cell_index = np.where(grid_arr < 0, max_idx + 1, np.minimum(grid_arr, max_idx + 1))
     cell_colors = rgb_lut[cell_index]
     cell_img = Image.fromarray(cell_colors, "RGB").resize(
-        (width * cell, height * cell), Image.NEAREST
+        (width * cell, height * cell), Image.Resampling.NEAREST
     )
     img.paste(cell_img, (ox, oy))
     if hatch:
@@ -331,7 +329,6 @@ def render_pattern(
         font = _font(cell, LEGEND_FONT_RATIO)
         pad = int(cell * LEGEND_PAD_RATIO)
         entry_w = cell * LEGEND_ENTRY_W
-        per_row = max(1, int((grid_w - 2 * pad) // entry_w))
         sw = legend_sw
         row_h = legend_row_h
         # 图例横向与外部白边对齐（与前端预览一致，不受行列号条影响）
@@ -354,17 +351,5 @@ def render_pattern(
                 font=font,
             )
             x += entry_w
-
-    # 页码标签：绝对定位在右上角留白区域，不参与布局占位
-    if page_label and outer_pad > 0:
-        label_size = max(24, int(outer_pad * 2.5))
-        label_font = _font(cell, label_size / cell)
-        draw.text(
-            (total_w - outer_pad * 0.15, outer_pad * 0.05),
-            page_label,
-            fill="#000000",
-            font=label_font,
-            anchor="ra",
-        )
 
     return img

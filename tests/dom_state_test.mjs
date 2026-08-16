@@ -436,6 +436,29 @@ import {
   console.log('[OK] 自动保存载荷：schema / 视口 / 编辑状态 / 撤销栈 / 原图引用');
 }
 
+// ---------------- 6.7 历史编码缓存：引用未变时复用，元数据变化时重新编码 ----------------
+{
+  seedProject();
+  const { buildStatePayload } = await import('../static/js/autosave.js');
+  const { createTransaction } = await import('../static/js/history.js');
+  createTransaction(App.history, {
+    grid: Array.from(App.project.grid),
+    width: App.project.width,
+    height: App.project.height,
+    paletteName: 'cfg',
+    palette: App.appliedPalette.map((c) => ({ ...c })),
+    paletteHash: '0'.repeat(64),
+    maxColors: App.maxColors,
+  });
+  const encoded1 = buildStatePayload().history.items[0].snapshot.gridBase64;
+  const encoded2 = buildStatePayload().history.items[0].snapshot.gridBase64;
+  assert.equal(encoded2, encoded1, '历史未变化时重复构建应复用编码缓存');
+  App.history.items[0].snapshot.paletteName = 'other';
+  const encoded3 = buildStatePayload().history.items[0];
+  assert.equal(encoded3.snapshot.paletteName, 'other', '快照元数据变化后应重新编码');
+  console.log('[OK] 历史编码缓存：复用 / 失效');
+}
+
 // ---------------- 6.8 项目文档载荷：只包含文档数据，不包含运行态 ----------------
 {
   seedProject();
@@ -656,6 +679,38 @@ import {
   console.log('[OK] PDF 预览异步流程：分页按钮 / 页面绘制 / 失败提示');
 }
 
+// ---------------- 22b. PDF 预览竞态：慢的旧响应不覆盖最新预览 ----------------
+{
+  seedProject();
+  const exportDialog = await import('../static/js/export-dialog.js');
+  const pageA = {
+    page: 'A',
+    paper: 'A4',
+    landscape: false,
+    width: 100,
+    height: 80,
+    dataUrl: 'data:image/png;base64,ZmFrZQ==',
+  };
+  const pageB = { ...pageA, page: 'B' };
+  const pageC = { ...pageA, page: 'C' };
+  testState.pdfPreviewQueue = [
+    { delay: 250, resp: { pages: [pageA] } }, // 慢的旧响应：1 页
+    { delay: 30, resp: { pages: [pageB, pageC] } }, // 快的新响应：2 页
+  ];
+  hooks.openExportDialog(); // 默认 jpg 预览，不触发 PDF 请求
+  elsMap['dlg-format'].value = 'pdf-multi-a4';
+  await exportDialog.renderExportPreview(); // 请求 1（慢）在 120ms 后发出
+  await new Promise((r) => setTimeout(r, 140));
+  await exportDialog.renderExportPreview(); // 请求 2（快）在 120ms 后发出
+  await new Promise((r) => setTimeout(r, 350)); // 等两个响应都返回
+  assert.equal(elsMap['dlg-pdf-pages'].children.length, 2, '应显示最新预览的分页（2 页）');
+  assert.equal(elsMap['dlg-pdf-pages'].children[0].textContent, 'B');
+  assert.equal(elsMap['dlg-pdf-pages'].children[1].textContent, 'C');
+  exportDialog.closeExportDialog();
+  testState.pdfPreviewQueue = [];
+  console.log('[OK] PDF 预览竞态：慢的旧响应被丢弃，最新响应生效');
+}
+
 // ---------------- 23. 恢复损坏 history / 撤销栈：过滤非法项、画布不受影响 ----------------
 {
   seedProject();
@@ -701,6 +756,50 @@ import {
   assert.equal(App.undoStack.length, 1, '撤销栈应过滤非法项');
   assert.equal(App.redoStack.length, 0, '重做栈应过滤非法项');
   console.log('[OK] 恢复损坏 history / 撤销栈：过滤非法项、画布不受影响');
+}
+
+// ---------------- 23b. 恢复损坏项目载荷：尺寸 / 网格校验 + 越界变更忽略 ----------------
+{
+  seedProject();
+  const before = App.project;
+  testState.stateResponse = {
+    settings: {},
+    project: { width: 2, height: 2, grid: [0, 1] },
+    undo: { undoStack: [], redoStack: [] },
+    history: { items: [], currentId: null, nextId: 1 },
+    original: null,
+  };
+  await hooks.restoreState();
+  assert.equal(App.project, before, '网格长度与尺寸不符时不应恢复项目');
+  assert.ok(elsMap.toast.textContent.includes('状态恢复失败'), '损坏项目应提示恢复失败');
+
+  testState.stateResponse = {
+    settings: {},
+    project: { width: 2, height: 2, grid: [0, -2, 0, 1] },
+    undo: { undoStack: [], redoStack: [] },
+    history: { items: [], currentId: null, nextId: 1 },
+    original: null,
+  };
+  await hooks.restoreState();
+  assert.equal(App.project, before, '非法网格值不应恢复');
+
+  const { applyProjectDocument } = await import('../static/js/restore.js');
+  const beforeDoc = App.project;
+  await applyProjectDocument({ project: { width: 2, height: 2, grid: [0, 1, 0] } });
+  assert.equal(App.project, beforeDoc, '损坏项目文档不应打开');
+  assert.ok(elsMap.toast.textContent.includes('项目文件数据无效'), '损坏项目文档应提示无效');
+
+  const { applyGridChanges } = await import('../static/js/mutations.js');
+  seedProject();
+  const gridBefore = Array.from(App.project.grid);
+  const applied = applyGridChanges([
+    { x: -1, y: 0, to: 1 },
+    { x: 0, y: 99, to: 1 },
+    { x: 0, y: 0, to: -2 },
+  ]);
+  assert.deepEqual(Array.from(App.project.grid), gridBefore, '越界/非法变更不应写入网格');
+  assert.equal(applied.length, 0, '越界/非法变更不应产生实际记录');
+  console.log('[OK] 恢复损坏项目载荷：尺寸/网格校验 + 越界变更忽略');
 }
 
 // ---------------- 23. 自动保存写串行化：慢写入期间的新保存排队补写，避免旧写覆盖新状态 ----------------

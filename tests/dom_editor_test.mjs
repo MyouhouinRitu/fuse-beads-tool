@@ -88,8 +88,15 @@ import {
   const baseCount = drawLog.strokes.length;
   interactionState.hoverCell = { x: 0, y: 0 }; // grid[0] = 白色
   hooks.renderAll();
-  const added = drawLog.strokes.length - baseCount;
-  assert.ok(added >= 3, `橡皮 hover 应绘制边框 + 两条对角线，实际增加 ${added} 条线`);
+  const hoverStrokes = drawLog.strokes.slice(baseCount);
+  assert.ok(
+    hoverStrokes.some((s) => s.rect && s.style.startsWith('rgba(')),
+    '橡皮 hover 应绘制边框',
+  );
+  assert.ok(
+    hoverStrokes.some((s) => !s.rect && s.style.startsWith('rgba(')),
+    '橡皮 hover 应绘制两条对角线（同一路径）',
+  );
   App.project.grid[0] = -1; // 变空位
   interactionState.hoverCell = { x: 0, y: 0 };
   drawLog.strokes = [];
@@ -456,15 +463,17 @@ import {
   const fillsBefore = drawLog.fills.length;
   hooks.paintStamp({ x: 1, y: 1 });
   const stampFills = drawLog.fills.slice(fillsBefore);
+  // 增量重绘还会补画网格线（fillRect），这里只看格子底色填充，判断是否只画了脏格
+  const stampCellFills = stampFills.filter((f) => f.w === App.screenCell && f.h === App.screenCell);
   assert.equal(App.project.grid[4], 2, '笔划中应已写入网格');
   assert.equal(App.undoStack.length, 0, '笔划中不应提交撤销步');
   assert.equal(App.saveTimer, null, '笔划中不应调度自动保存');
   assert.equal(
-    stampFills.filter((f) => Math.round(f.x) === 56 && Math.round(f.y) === 56).length,
+    stampCellFills.filter((f) => Math.round(f.x) === 56 && Math.round(f.y) === 56).length,
     1,
     '笔划中应只增量重绘目标格',
   );
-  assert.ok(stampFills.length <= 1, '笔划中不应触发全量底图重建');
+  assert.ok(stampCellFills.length <= 1, '笔划中不应触发全量底图重建');
 
   // 笔划结束：统一记一步、全量刷新并调度自动保存
   const mu = windowListeners.pointerup[0];

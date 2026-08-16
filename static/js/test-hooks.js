@@ -1,6 +1,6 @@
 // 自动化测试挂钩（稳定契约）。
 //
-// 本模块是测试（tests/dom_behavior_test.mjs、tests/ui_test.mjs、
+// 本模块是测试（tests/ui_test.mjs、
 // tests/render_consistency_test.mjs）与内部实现之间的唯一契约面：
 // - 只有 main.js 调用 installTestHooks 装配；
 // - 仅在 URL 带 ?test=1 或预设 __FUSE_TEST__ 全局标记时暴露，

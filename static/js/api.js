@@ -57,7 +57,11 @@ export const openProjectUpload = (file) => {
   fd.append('file', file);
   return request('/api/project/open-upload', { method: 'POST', body: fd });
 };
-export const exportImage = (payload) => request('/api/export', json(payload));
+export const exportImage = async (payload) => {
+  const res = await fetch('/api/export', json(payload));
+  if (!res.ok) throw await responseError(res);
+  return res.blob();
+};
 export const exportPdfPreview = (payload) => request('/api/export-preview', json(payload));
 export const getState = () => request('/api/state');
 export const putState = (state) => request('/api/state', json(state, 'PUT'));

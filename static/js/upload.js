@@ -3,6 +3,7 @@
 import * as api from './api.js';
 import { scheduleAutosave } from './autosave.js';
 import { resetProjectEditingState } from './canvas.js';
+import { computeInitialMappingAsync } from './color-queue.js';
 import * as C from './colors.js';
 import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
@@ -47,7 +48,7 @@ export async function processUpload() {
     if (oldOriginalId && oldOriginalId !== App.originalId) {
       api.deleteOriginal(oldOriginalId).catch(() => {});
     }
-    applyMapping();
+    await applyMapping();
     // 上传成功后才清空旧快照，避免失败时误丢历史记录
     historyUI.clearAll({ silent: true });
     setProjectDirty(true);
@@ -58,11 +59,17 @@ export async function processUpload() {
   }
 }
 
-function applyMapping() {
+async function applyMapping() {
   if (!App.compressed) return;
   const isNew = !App.project;
   const { rgba, width, height } = App.compressed;
-  const { grid } = C.computeInitialMapping(rgba, width, height, App.palette, App.settings.useLab);
+  const { grid } = await computeInitialMappingAsync(
+    rgba,
+    width,
+    height,
+    App.palette,
+    App.settings.useLab,
+  );
   App.project = { width, height, grid };
   App.baseGrid = grid.slice();
   // 重新压缩/导入后，当前色板配置成为已应用色板（画布与编辑工具随之更新）

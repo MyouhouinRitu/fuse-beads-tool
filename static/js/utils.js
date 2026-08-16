@@ -116,6 +116,18 @@ export function downloadUrl(url, filename) {
   a.remove();
 }
 
+// 二进制导出下载：Blob → object URL → 触发下载，随后释放 URL
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // 颜色条目的通用文案：色号 / 完整标题
 export function codeOf(c) {
   return (c && (c.code || String(c.index))) || '';

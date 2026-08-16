@@ -1,8 +1,11 @@
 # UI 控件契约审计表
 
-> 基线版本：0.5.0（弹窗体系、色板配置弹窗、编辑工具侧栏、快照改名、P0/P1/P2 界面统一等改动，2026-08）
+> 基线版本：0.5.4（弹窗体系、色板配置弹窗、编辑工具侧栏、快照改名、P0/P1/P2 界面统一等改动，2026-08）
 >
 > 目的：梳理当前界面各组件的实际行为与目标契约，作为后续统一按钮、菜单、弹窗、表单、异步反馈与无障碍行为的实施基线。
+>
+> 0.5.4 维护说明：本表已按当前代码重新核对；0.5.2 起全部 select 已统一外观，
+> 0.5.0 起弹窗滚动锁定统一由 focus.js 管理，相关条目状态已同步。
 >
 > 状态图例：✅ 已完成；🟡 部分完成；⬜ 待办
 
@@ -35,8 +38,8 @@
 
 | 控件 | 当前行为 | 差异 / 问题 | 目标契约 | 状态 |
 | --- | --- | --- | --- | --- |
-| `#popup-dialog`（确认 / 输入） | popup.js 管理；Promise；Escape / 遮罩取消；Enter 确认；焦点圈定与还原；测试钩子 `__popupAutoConfirm` | 无背景滚动锁定 | Dialog 契约 + Enter 确认 | ✅ |
-| `#palette-dialog`（色板配置） | 工具栏「色板配置」按钮打开；focus.js 管理；Escape / 遮罩 / 关闭按钮关闭；含固定表头颜色表；16 进制输入完整显示 | 无背景滚动锁定 | Dialog 契约 | 🟡 |
+| `#popup-dialog`（确认 / 输入） | popup.js 管理；Promise；Escape / 遮罩取消；Enter 确认；焦点圈定与还原；背景滚动锁定；测试钩子 `__popupAutoConfirm` | 已实现 | Dialog 契约 + Enter 确认 | ✅ |
+| `#palette-dialog`（色板配置） | 工具栏「色板配置」按钮打开；focus.js 管理；Escape / 遮罩 / 关闭按钮关闭；背景滚动锁定；含固定表头颜色表；16 进制输入完整显示 | 已实现 | Dialog 契约 | ✅ |
 | `#doc-dialog`（文档） | focus.js 管理；Escape 关闭；点击遮罩关闭；已补 role / aria-modal / aria-labelledby | 已实现 | Dialog 契约 | ✅ |
 | `#export-dialog`（导出） | focus.js 管理；Escape 关闭并重置；busy 遮罩 + 进度条；点击遮罩关闭；已补 ARIA | 重置逻辑仅在此实现（样板） | Dialog 契约 | ✅ |
 | `#login-mask`（登录） | focus.js 管理；Escape 仅清错误；Enter 提交；已补 ARIA；withPending 防重复提交 | 已实现（强制弹窗例外） | Dialog 契约 + withPending | ✅ |
@@ -47,10 +50,10 @@
 
 | 控件 | 当前行为 | 差异 / 问题 | 目标契约 | 状态 |
 | --- | --- | --- | --- | --- |
-| `#sel-distance`（颜色距离） | 自绘箭头，与目标像素量共用外观 | 与其它 select 不一致 | 所有 select 共用同一套外观：统一箭头、内边距、圆角与 focus 环 | 🟡 |
-| `#empty-style`（透明色） | 原生 select，仅调整宽度 | 无自绘箭头，外观与 `sel-distance` 不一致 | 同上 | ⬜ |
-| `#config-select`（色板配置） | 原生 select，未定制样式 | 浏览器默认外观 | 同上 | ⬜ |
-| `#dlg-format` / `#dlg-empty-style` | 原生 select | 默认外观 | 同上 | ⬜ |
+| `#sel-distance`（颜色距离） | 自绘箭头，与其它 select 共用外观 | 已实现 | 所有 select 共用同一套外观：统一箭头、内边距、圆角与 focus 环 | ✅ |
+| `#empty-style`（透明色） | 统一样式（appearance none + 自绘箭头） | 已实现 | 同上 | ✅ |
+| `#config-select`（色板配置） | 统一样式 | 已实现 | 同上 | ✅ |
+| `#dlg-format` / `#dlg-empty-style` | 统一样式 | 已实现 | 同上 | ✅ |
 
 ## 4. 按钮体系
 
@@ -59,7 +62,7 @@
 | default / `.primary` / `.danger` | 全局基础样式；disabled 统一 0.45 透明度；统一 `:focus-visible` 环 | 已实现 | 统一 variant + size + disabled + focus-visible 令牌 | ✅ |
 | `.tool`（画笔 / 取色 / 橡皮 / 裁剪 / 魔棒） | `.active` 高亮；再次点击回到选择模式；`aria-pressed` 与 active 同步 | 已实现 | Toggle 按钮契约 | ✅ |
 | `.tool-mini`（自动裁剪 / 应用等） | 使用 `--btn-pad-sm` 与 `--radius-sm` 令牌 | 已归入 size=sm 变体 | size=sm 变体 | ✅ |
-| `.add-btn` / `.panel-expand` / `.dropdown-item` / `.del` / `.color-header` | 各自手写 padding / radius / hover | 同一页面存在多种按钮风格 | 统一为 variant × size；特殊布局样式收敛到令牌 | ⬜ |
+| `.add-btn` / `.panel-expand` / `.dropdown-item` / `.del` / `.color-header` | 基础按钮已令牌化（padding / radius / hover）；这些特殊类仍使用局部值 | 仍有多种局部按钮风格 | 统一为 variant × size；特殊布局样式收敛到令牌 | 🟡 |
 | `.tab` / `.panel-toggle` | 已随侧栏改版移除 | 不再属于契约 | 删除相关条目 | ✅ |
 | `#btn-theme` | 文案切换夜间 / 日间；`aria-pressed` 同步 | 已实现 | Toggle 按钮契约 | ✅ |
 
@@ -75,7 +78,7 @@
 
 | 控件 | 当前行为 | 差异 / 问题 | 目标契约 | 状态 |
 | --- | --- | --- | --- | --- |
-| number 输入（目标像素量 / 每格大小 / 外边距） | 有 min / max，change 时收敛越界值 | focus 环与按钮不统一；无非法值提示 | 统一输入类 focus 环；非法值给 `aria-invalid` + 行内提示 | ⬜ |
+| number 输入（目标像素量 / 每格大小 / 外边距） | 有 min / max，change 时收敛越界值；focus 环已统一 | 无非法值提示 | 统一输入类 focus 环；非法值给 `aria-invalid` + 行内提示 | ⬜ |
 | text / password（色号 / 名称 / hex / Token） | 基础样式 | 仅登录有行内错误，色表无校验反馈 | 表单错误契约：行内错误 + `aria-live` | ⬜ |
 | 颜色表 16 进制输入 | 宽度 84px，完整显示 `#RRGGBB` | 已修复优先级覆盖问题 | 保持「完整显示」契约，测试断言 ≥80px | ✅ |
 | checkbox（`.chk`） | accent-color 统一 | 无突出问题 | 保持，规范 label 绑定 | ✅ |
@@ -115,7 +118,9 @@
 | 颜色 | 基础变量 + surface-hover / surface-active / focus-ring / input-bg / btn-bg / border-strong / border-soft / danger-border / workspace-bg 令牌；主要硬编码已收敛 | 仅剩余极少量专用色（toast 成功/失败、滚动条等） | 迁移到令牌，暗色主题只改变量 | ✅ |
 | 圆角 / 间距 | radius-xs / sm / md / lg 令牌已定义并用于按钮、弹窗、下拉、颜色行等 | 已收敛主要圆角；间距仍以局部值为主 | 定义 radius 与 spacing 刻度 | 🟡 |
 
-## 11. 落地顺序（修订版）
+## 11. 落地记录（修订版）
+
+> 以下为 0.5.x 已完成的落地项；后续维护若改动相关组件，需同步更新本表与对应契约测试。
 
 1. **修订审计表**（本文档）：以当前代码为基线，标记已完成项。✅
 2. **P0 行为契约**：popup 补 Enter 确认；菜单 / 组合框键盘与焦点还原；面板头改 button + ARIA；quick-picker 焦点还原。✅

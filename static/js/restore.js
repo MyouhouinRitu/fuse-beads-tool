@@ -25,6 +25,7 @@ import { renderFullNow } from './render-queue.js';
 import { App, setDirty, setProjectDirty } from './state.js';
 import * as toolState from './tool-state.js';
 import { clampInt, fileNameStem, toast } from './utils.js';
+import { validateProjectPayload } from './validate.js';
 import * as view from './view.js';
 
 function applySettingsToControls() {
@@ -59,6 +60,8 @@ function applySettingsToControls() {
 // 恢复项目快照（画布、基副本、色板配置与已应用色板）
 async function restoreProjectState(st) {
   if (!st.project) return;
+  const projectError = validateProjectPayload(st.project);
+  if (projectError) return { ok: false, error: projectError };
   // v2 状态载荷使用 base64 紧凑编码，v1 为数组；两者都兼容
   const grid =
     Array.isArray(st.project.grid) || st.project.grid instanceof Int16Array
@@ -109,6 +112,7 @@ async function restoreProjectState(st) {
   }
   els.configSelect.value = App.configName || '';
   palette.renderColorTable();
+  return { ok: true };
 }
 
 const RESTORABLE_TOOLS = new Set([
@@ -226,7 +230,10 @@ export async function restoreState() {
   }
   if (st.settings) Object.assign(App.settings, st.settings);
   applySettingsToControls();
-  await restoreProjectState(st);
+  const projectRestored = await restoreProjectState(st);
+  if (projectRestored && !projectRestored.ok) {
+    toast(`状态恢复失败：${projectRestored.error}`, { type: 'error' });
+  }
 
   App.history = sanitizeHistory(st.history);
   App.undoStack = sanitizeUndoStack(st.undo?.undoStack);
@@ -276,6 +283,11 @@ export async function applyProjectDocument(doc, path = null) {
         type: 'error',
       },
     );
+    return;
+  }
+  const projectError = validateProjectPayload(doc.project);
+  if (projectError) {
+    toast(`项目文件数据无效：${projectError}`, { type: 'error' });
     return;
   }
   // 打开项目后运行态全部重置，文档状态以文件为准

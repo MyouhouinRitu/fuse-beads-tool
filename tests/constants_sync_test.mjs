@@ -107,8 +107,6 @@ const SHARED = {
   EXPORT_QUALITY: 'DEFAULT_QUALITY',
   LEGEND_ENTRY_W: 'LEGEND_ENTRY_W',
   LEGEND_PAD_RATIO: 'LEGEND_PAD_RATIO',
-  LEGEND_ROW_HEIGHT_CELLS: 'LEGEND_ROW_HEIGHT_CELLS',
-  LEGEND_ROW_GAP: 'LEGEND_ROW_GAP',
   LEGEND_BOTTOM_GAP_RATIO: 'LEGEND_BOTTOM_GAP_RATIO',
   LEGEND_TOP_OFFSET_RATIO: 'LEGEND_TOP_OFFSET_RATIO',
   LEGEND_FONT_RATIO: 'LEGEND_FONT_RATIO',
@@ -194,13 +192,13 @@ for (const e of EXCEPTIONS) {
   assert.deepEqual(py, K.EMPTY_STYLES, 'EMPTY_STYLES 应与后端保持一致');
 }
 
-// app.py 与 constants.js 的默认目标像素量
+// bead/web/common.py / compress.py / 模板表单 与 constants.js 的目标像素量约束
 {
-  const appText = read('app.py');
+  const appText = read('bead/web/common.py');
   assert.equal(
     pyConst(appText, 'DEFAULT_TARGET_PIXELS'),
     K.DEFAULT_TARGET_PIXELS,
-    'app.py DEFAULT_TARGET_PIXELS 应与 constants.js 保持一致',
+    'bead/web/common.py DEFAULT_TARGET_PIXELS 应与 constants.js 保持一致',
   );
   const compressText = read('bead/compress.py');
   assert.equal(
@@ -213,10 +211,37 @@ for (const e of EXCEPTIONS) {
     K.TARGET_PIXELS_MAX,
     'bead/compress.py HARD_CAP_PIXELS 应与 constants.js TARGET_PIXELS_MAX 保持一致',
   );
+  const htmlInput = read('templates/index.html').match(
+    /<input type="number" id="target-pixels"[^>]*>/,
+  );
+  assert.ok(htmlInput, 'index.html 应包含 #target-pixels 输入框');
+  const attr = (name) => htmlInput[0].match(new RegExp(`${name}="([^"]*)"`))?.[1];
+  assert.equal(
+    attr('min'),
+    String(K.TARGET_PIXELS_MIN),
+    'index.html #target-pixels min 应与 TARGET_PIXELS_MIN 保持一致',
+  );
+  assert.equal(
+    attr('max'),
+    String(K.TARGET_PIXELS_MAX),
+    'index.html #target-pixels max 应与 TARGET_PIXELS_MAX 保持一致',
+  );
+  assert.equal(
+    attr('step'),
+    String(K.TARGET_PIXELS_STEP),
+    'index.html #target-pixels step 应与 TARGET_PIXELS_STEP 保持一致',
+  );
+  assert.equal(
+    attr('value'),
+    String(K.DEFAULT_TARGET_PIXELS),
+    'index.html #target-pixels value 应与 DEFAULT_TARGET_PIXELS 保持一致',
+  );
 }
 
 console.log('[OK] 渲染参数与 bead/export.py 一致（图例 / 网格线 / 色号 / 空位样式 / 导出默认值）');
-console.log('[OK] app.py / compress.py 与 constants.js 的目标像素量一致');
+console.log(
+  '[OK] bead/web/common.py / compress.py / index.html 与 constants.js 的目标像素量约束一致',
+);
 
 // ---------------- 版本号（package.json ↔ bead/version.py）----------------
 {

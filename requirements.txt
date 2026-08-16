@@ -1,5 +1,5 @@
 flask>=2.2
-pillow>=9.0
+pillow>=9.1
 numpy>=1.23
 waitress>=2.1
 pystray>=0.19

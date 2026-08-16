@@ -30,7 +30,7 @@ def in_container() -> bool:
     if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
         return True
     try:
-        with open("/proc/1/cgroup", "r", encoding="utf-8", errors="ignore") as fh:
+        with open("/proc/1/cgroup", encoding="utf-8", errors="ignore") as fh:
             return any(k in fh.read() for k in ("docker", "containerd", "kubepods"))
     except OSError:
         return False
@@ -103,7 +103,8 @@ def start_tray(url: str, resource_dir: str, base_dir: str) -> object | None:
         webbrowser.open(url)
 
     def _quit(icon=None, item=None) -> None:
-        icon.stop()
+        if icon is not None:
+            icon.stop()
         os._exit(0)
 
     # pystray(Windows) 单击左键会触发默认菜单项，且没有原生双击事件。

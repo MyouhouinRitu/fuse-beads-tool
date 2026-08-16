@@ -1,6 +1,6 @@
 {
   "name": "fuse-beads-tool",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "private": true,
   "type": "module",
   "description": "拼豆（Perler / Fuse Beads）图案制作工具前端",
@@ -17,7 +17,9 @@
     "test:playwright": "npm run test:ui && npm run test:render && npm run test:auth",
     "test:backend": "python tests/smoke_test.py",
     "test:all": "npm test && npm run test:backend && npm run test:playwright",
-    "check": "npm run lint && npm run typecheck && npm test"
+    "check": "npm run lint && npm run typecheck && npm run lint:backend && npm run typecheck:backend && npm test",
+    "lint:backend": "python -m ruff check .",
+    "typecheck:backend": "python -m pyright"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

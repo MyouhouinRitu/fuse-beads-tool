@@ -158,6 +158,34 @@ const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
   console.log('[OK] 确认弹窗：空值校验 / aria-invalid / Enter 提交');
 }
 
+// ---------------- 5b. 弹窗队列：并发 confirm 不互相覆盖 ----------------
+{
+  const savedAuto = globalThis.__popupAutoConfirm;
+  globalThis.__popupAutoConfirm = undefined;
+  try {
+    const { cancelPopup, confirmDialog } = await import('../static/js/popup.js');
+    const p1 = confirmDialog('第一个确认');
+    const p2 = confirmDialog('第二个确认');
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(elsMap['popup-message'].textContent, '第一个确认', '应先显示第一个弹窗');
+    assert.ok(!elsMap['popup-dialog'].classList.contains('hidden'), '第一个弹窗应打开');
+    cancelPopup();
+    assert.equal(await p1, null, '第一个弹窗取消应 resolve null');
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(
+      elsMap['popup-message'].textContent,
+      '第二个确认',
+      '关闭后应自动打开队列中的下一个',
+    );
+    elsMap['popup-ok'].emit('click');
+    assert.equal(await p2, true, '第二个弹窗确认应 resolve true');
+    assert.ok(elsMap['popup-dialog'].classList.contains('hidden'), '全部关闭后弹窗应隐藏');
+  } finally {
+    globalThis.__popupAutoConfirm = savedAuto;
+  }
+  console.log('[OK] 弹窗队列：并发 confirm 排队依次打开，不覆盖 Promise');
+}
+
 // ---------------- 6. withPending 契约 ----------------
 {
   const { withPending } = await import('../static/js/utils.js');

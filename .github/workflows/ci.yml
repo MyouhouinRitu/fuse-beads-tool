@@ -17,10 +17,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements-dev.txt
       - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run lint:backend
+      - run: npm run typecheck:backend
       - run: npm test
         env:
           PYTHON: python

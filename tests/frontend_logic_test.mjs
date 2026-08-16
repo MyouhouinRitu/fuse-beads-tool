@@ -364,4 +364,24 @@ import {
   console.log('[OK] 撤销/重做栈清洗：损坏步骤丢弃、结构型快照保留');
 }
 
+// ---- 颜色计算异步封装：无 Worker 时降级为同步实现且结果一致 ----
+{
+  const { computeInitialMappingAsync, mergeGridAsync } = await import(
+    '../static/js/color-queue.js'
+  );
+  const palette = [
+    { index: 0, code: 'R', name: '', hex: '#FF0000' },
+    { index: 1, code: 'B', name: '', hex: '#0000FF' },
+    { index: 2, code: 'G', name: '', hex: '#00FF00' },
+  ];
+  const rgba = new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 255, 0, 255, 0, 255, 0, 0, 0, 0]);
+  const asyncMap = await computeInitialMappingAsync(rgba, 2, 2, palette, false);
+  const syncMap = C.computeInitialMapping(rgba, 2, 2, palette, false);
+  assert.deepEqual(Array.from(asyncMap.grid), Array.from(syncMap.grid), '异步映射应与同步一致');
+  assert.deepEqual(asyncMap.counts, syncMap.counts, '异步映射计数应与同步一致');
+  const merged = await mergeGridAsync(Int16Array.from([0, 1, 2, -1]), 2, 2, palette, false, 1);
+  assert.equal(merged, null, '无 Worker 环境应返回 null 由调用方走同步降级');
+  console.log('[OK] 颜色计算异步封装：无 Worker 降级同步且结果一致');
+}
+
 console.log('\n前端逻辑测试全部通过');

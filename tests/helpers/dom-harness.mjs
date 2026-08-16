@@ -1,5 +1,5 @@
 // DOM 桩行为测试：加载真实 main.js，验证色板即时更新、扁平事务、撤销/重做、滑块清空。
-// 运行：node tests/dom_behavior_test.mjs
+// 运行：node tests/dom_state_test.mjs 等 DOM 桩测试（见 package.json 的 test 脚本）
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -349,6 +349,8 @@ globalThis.Image = class {
 let stateResponse = {};
 let pdfPreviewResponse = { pages: [] };
 let pdfPreviewFail = false;
+let pdfPreviewQueue = [];
+let pdfPreviewDelayMs = 0;
 let statePutDelayMs = 0;
 const configs = [
   { name: 'cfg', colorCount: 3 },
@@ -400,7 +402,11 @@ globalThis.fetch = async (url, options = {}) => {
         json: async () => ({ error: 'PDF 预览生成失败：boom' }),
       };
     }
-    return json(pdfPreviewResponse);
+    const item = pdfPreviewQueue.shift();
+    const resp = item ? item.resp : pdfPreviewResponse;
+    const delay = item && item.delay != null ? item.delay : pdfPreviewDelayMs;
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    return json(resp);
   }
   if (u.startsWith('/api/originals/') && options.method === 'DELETE') {
     return json({ ok: true });
@@ -409,7 +415,7 @@ globalThis.fetch = async (url, options = {}) => {
     return { ok: true, status: 200, blob: async () => new Blob(['fake']) };
   }
   if (u === '/api/export') {
-    return json({ dataUrl: 'data:image/jpeg;base64,ZmFrZQ==' });
+    return { ok: true, status: 200, blob: async () => new Blob(['fake-export']) };
   }
   if (u.includes('/static/docs/right-drag-gesture-fix.md')) {
     return {
@@ -506,6 +512,18 @@ export const testState = {
   },
   set pdfPreviewFail(v) {
     pdfPreviewFail = v;
+  },
+  get pdfPreviewQueue() {
+    return pdfPreviewQueue;
+  },
+  set pdfPreviewQueue(v) {
+    pdfPreviewQueue = v;
+  },
+  get pdfPreviewDelayMs() {
+    return pdfPreviewDelayMs;
+  },
+  set pdfPreviewDelayMs(v) {
+    pdfPreviewDelayMs = v;
   },
   get statePutDelayMs() {
     return statePutDelayMs;

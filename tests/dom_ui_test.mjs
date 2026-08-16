@@ -1,6 +1,7 @@
 // DOM 行为测试（dom_ui_test.mjs 分组）：依赖 tests/helpers/dom-harness.mjs 的共享桩。
 
 import assert from 'node:assert/strict';
+import * as K from '../static/js/constants.js';
 import {
   App,
   canvasRectForCells,
@@ -412,34 +413,35 @@ import {
   App.project = { width: 12, height: 12, grid: new Int16Array(144).fill(1) };
   App.baseGrid = App.project.grid.slice();
   App.zoom = 1;
-  drawLog.strokes = [];
+  drawLog.fills = [];
   drawLog.texts = [];
   hooks.renderAll();
   const baseCell = App.screenCell;
+  const dashLen = Math.max(3, Math.round(baseCell * K.GRID_DASH_RATIO)) + 1; // PIL 相位：实段 = dash + 1 像素
   const gray = (arr) => arr.filter((s) => s.style && s.style.toLowerCase() === '#9a9a9a');
-  const isDash = (s) => s.dash && s.dash.length > 0;
-  const thinGray = (arr) => arr.filter((s) => s.lineWidth === 1 && !isDash(s));
-  assert.ok(thinGray(gray(drawLog.strokes)).length > 0, '正常缩放应绘制灰色细实线');
+  const isDashFill = (f) => f.w === dashLen || f.h === dashLen;
+  const thinGray = (arr) => arr.filter((f) => (f.w === 1 || f.h === 1) && !isDashFill(f));
+  assert.ok(thinGray(gray(drawLog.fills)).length > 0, '正常缩放应绘制灰色细实线');
   assert.ok(
-    gray(drawLog.strokes).some((s) => isDash(s)),
+    gray(drawLog.fills).some((f) => isDashFill(f)),
     '正常缩放应绘制每 5 格虚线',
   );
 
   App.zoom = Math.max(0.05, 7 / baseCell); // 格屏宽 ≈ 7：细线与色号隐藏，粗线保留
-  drawLog.strokes = [];
+  drawLog.fills = [];
   drawLog.texts = [];
   hooks.renderAll();
-  assert.equal(thinGray(gray(drawLog.strokes)).length, 0, '格屏宽 < 8 时细线应隐藏');
+  assert.equal(thinGray(gray(drawLog.fills)).length, 0, '格屏宽 < 8 时细线应隐藏');
   assert.ok(
-    gray(drawLog.strokes).some((s) => isDash(s)),
+    gray(drawLog.fills).some((f) => isDashFill(f)),
     '格屏宽 < 8 时每 5 格虚线仍应保留',
   );
   assert.ok(!drawLog.texts.some((t) => /^0/.test(String(t.text))), '格屏宽 < 8 时色号应隐藏');
 
   App.zoom = Math.max(0.05, 3 / baseCell); // 格屏宽 ≈ 3：粗虚线/实线也隐藏
-  drawLog.strokes = [];
+  drawLog.fills = [];
   hooks.renderAll();
-  assert.equal(gray(drawLog.strokes).length, 0, '格屏宽 < 4 时粗线也应隐藏');
+  assert.equal(gray(drawLog.fills).length, 0, '格屏宽 < 4 时粗线也应隐藏');
   App.zoom = 1;
   console.log('[OK] 缩放细节阈值：细线/色号与粗虚线/实线分层隐藏');
 }

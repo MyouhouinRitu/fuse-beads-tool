@@ -5,8 +5,9 @@ import { els } from './els.js';
 import { hideDialog, showDialog } from './focus.js';
 
 let state = null;
+const queue = [];
 
-function openPopup({ title, message, okText, cancelText, input, fallback = '', resolve }) {
+function showRequest({ title, message, okText, cancelText, input, fallback = '', resolve }) {
   els.popupTitle.textContent = title;
   els.popupMessage.textContent = message;
   els.popupOk.textContent = okText;
@@ -21,12 +22,18 @@ function openPopup({ title, message, okText, cancelText, input, fallback = '', r
   else els.popupOk.focus();
 }
 
+function openNext() {
+  if (state || !queue.length) return;
+  showRequest(queue.shift());
+}
+
 function finish(result) {
   if (!state) return;
   const { resolve } = state;
   state = null;
   hideDialog(els.popupDialog);
   resolve(result);
+  openNext();
 }
 
 export function isPopupOpen() {
@@ -62,7 +69,7 @@ export function confirmDialog(message, options = {}) {
     return Promise.resolve(!!globalThis.__popupAutoConfirm);
   }
   return new Promise((resolve) => {
-    openPopup({
+    queue.push({
       title: options.title || '确认',
       message,
       okText: options.okText || '确定',
@@ -70,6 +77,7 @@ export function confirmDialog(message, options = {}) {
       input: false,
       resolve,
     });
+    openNext();
   });
 }
 
@@ -78,7 +86,7 @@ export function promptDialog(message, fallback = '', options = {}) {
     return Promise.resolve(null);
   }
   return new Promise((resolve) => {
-    openPopup({
+    queue.push({
       title: options.title || '输入',
       message,
       okText: options.okText || '确定',
@@ -87,6 +95,7 @@ export function promptDialog(message, fallback = '', options = {}) {
       fallback,
       resolve,
     });
+    openNext();
   });
 }
 

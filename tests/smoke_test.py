@@ -12,8 +12,8 @@ import sys
 import tempfile
 import time
 import urllib.error
-import urllib.request
 import urllib.parse
+import urllib.request
 import zlib
 from datetime import datetime
 
@@ -23,16 +23,17 @@ BASE = "http://127.0.0.1:5001"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from bead import project_file as pj
+from app import create_app
 from bead import pdf_export as pdfx
-from app import (
+from bead import project_file as pj
+from bead.web import assets as web_assets
+from bead.web.auth import (
     LOGIN_MAX_ATTEMPTS,
     _clear_login_failures,
     _login_rate_limited,
     _record_login_failure,
-    create_app,
-    safe_name,
 )
+from bead.web.common import safe_name
 
 
 def test_filename_helpers():
@@ -116,6 +117,26 @@ def test_app_factory_isolation():
     assert cli1.get("/api/state").get_json()["owner"] == "one"
     assert cli2.get("/api/state").get_json() == {}
     print("[OK] 应用工厂隔离：两个数据目录互不串扰")
+
+
+def test_originals_gc():
+    # 启动清理：只保留当前 state.json 引用的原图，其余按内容哈希文件删除
+    data_dir = tempfile.mkdtemp(prefix="fuse_gc_")
+    app = create_app(data_dir)
+    cfg = app.config["BEAD_CONFIG"]
+    os.makedirs(cfg.original_dir, exist_ok=True)
+    keep = "a" * 64
+    stale = "b" * 64
+    with open(os.path.join(cfg.original_dir, keep), "wb") as fh:
+        fh.write(b"keep")
+    with open(os.path.join(cfg.original_dir, stale), "wb") as fh:
+        fh.write(b"stale")
+    with open(cfg.state_file, "w", encoding="utf-8") as fh:
+        json.dump({"original": {"id": keep}}, fh)
+    web_assets.gc_originals(cfg)
+    assert os.path.exists(os.path.join(cfg.original_dir, keep)), "当前引用的原图应保留"
+    assert not os.path.exists(os.path.join(cfg.original_dir, stale)), "未引用的原图应被清理"
+    print("[OK] 原图 GC：保留当前引用，清理未引用文件")
 
 
 def test_auth_gate_with_token():
@@ -256,10 +277,15 @@ def main():
         else:
             raise RuntimeError("服务启动超时")
 
+        s, page = req("GET", "/", raw=True)
+        assert s == 200 and b"<title>" in page, "首页模板应可渲染"
+        print("[OK] 首页模板可渲染（GET /）")
+
         test_filename_helpers()
         test_project_file_guards()
         test_login_rate_limit()
         test_app_factory_isolation()
+        test_originals_gc()
         test_auth_gate_with_token()
 
         s, j = req("GET", "/api/configs")
@@ -275,6 +301,10 @@ def main():
         s, j = req("GET", "/api/configs/" + urllib.parse.quote("不存在的配置"))
         assert s == 404 and j["error"] == "配置不存在"
         print("[OK] 读取不存在的配置返回 404")
+
+        s, j = req("GET", "/api/not-exist")
+        assert s == 404 and isinstance(j.get("error"), str), "未知 API 应返回 JSON 404"
+        print("[OK] 未知 API 返回 JSON 404")
 
         cfg_name = f"测试配置_{int(time.time())}"
         s, j = req("POST", "/api/configs", {
@@ -312,6 +342,17 @@ def main():
         for name in ("_CON", "_NUL", cfg_r2):
             assert req("DELETE", "/api/configs/" + urllib.parse.quote(name))[0] == 200
         print("[OK] 配置重命名冲突 400 / 保留名自动加前缀")
+
+        # 配置名带 .csv 后缀：应规范化为不含扩展名的名称，避免 name.csv.csv
+        cfg_dot = f"带点_{int(time.time())}.csv"
+        s, j = req("POST", "/api/configs", {"name": cfg_dot, "colors": one_color})
+        assert j["ok"] and j["name"] == cfg_dot[:-4], f"配置名应去掉 .csv，实际 {j.get('name')}"
+        dot_stem = cfg_dot[:-4]
+        assert os.path.exists(os.path.join(data_dir, "configs", dot_stem + ".csv"))
+        s, j = req("GET", "/api/configs/" + urllib.parse.quote(dot_stem))
+        assert s == 200 and j["name"] == dot_stem
+        assert req("DELETE", "/api/configs/" + urllib.parse.quote(dot_stem))[0] == 200
+        print("[OK] 配置名 .csv 后缀规范化（不生成 .csv.csv）")
 
         s, raw = req("GET", "/api/configs/" + urllib.parse.quote(cfg_name) + "/export", raw=True)
         assert b"\xff\x00\x00" in raw.upper() or b"FF0000" in raw.upper()
@@ -359,7 +400,8 @@ def main():
         assert timg.mode == "RGBA", "透明 PNG 应保留 alpha 通道"
         alpha = timg.getchannel("A")
         assert alpha.getextrema() == (0, 255), "返回图像应同时包含透明与不透明像素"
-        opaque = sum(1 for v in alpha.getdata() if v >= 128)
+        hist = alpha.histogram()
+        opaque = sum(hist[128:])
         assert abs(opaque - 30000) <= 8000, (
             f"透明图压缩后非空豆量应接近目标 30000，实际 {opaque}"
         )
@@ -367,14 +409,14 @@ def main():
 
         grid = [-1] * (j["width"] * j["height"])
         palette = [{"index": 0, "hex": "#FF0000"}, {"index": 1, "hex": "#0000FF"}]
-        s, j = req("POST", "/api/export", {
+        s, raw = req("POST", "/api/export", {
             "width": j["width"],
             "height": j["height"],
             "grid": grid,
             "palette": palette,
             "options": {"cellSize": 8, "gridLines": True, "margins": True, "format": "jpg"},
-        })
-        assert j["dataUrl"].startswith("data:image/jpeg;base64,")
+        }, raw=True)
+        assert s == 200 and raw[:3] == b"\xff\xd8\xff", "导出 JPG 应返回 JPEG 二进制流"
         print("[OK] 导出 JPG")
 
         # 非法导出输入：非法网格返回 400 JSON；非法数值选项回退默认值
@@ -386,14 +428,14 @@ def main():
             "options": {"format": "jpg"},
         })
         assert s == 400 and j["error"] == "网格数据无效"
-        s, j = req("POST", "/api/export", {
+        s, raw = req("POST", "/api/export", {
             "width": 2,
             "height": 2,
             "grid": [0, 0, 0, 0],
             "palette": [{"index": 0, "hex": "#FF0000"}],
             "options": {"format": "jpg", "cellSize": "abc", "outerPad": "x", "quality": "bad"},
-        })
-        assert s == 200 and j["dataUrl"].startswith("data:image/jpeg;base64,")
+        }, raw=True)
+        assert s == 200 and raw[:3] == b"\xff\xd8\xff", "非法数值选项应回退默认并返回 JPEG 二进制流"
         print("[OK] 导出非法输入：非法网格 400 / 非法数值选项回退默认")
 
         s, j = req("POST", "/api/export-preview", {
@@ -407,7 +449,7 @@ def main():
         print("[OK] 导出预览非法网格返回 400")
 
         for pdf_fmt in ("pdf-a4", "pdf-multi-a4", "pdf-a3-a4"):
-            s, j = req("POST", "/api/export", {
+            s, raw = req("POST", "/api/export", {
                 "width": 70,
                 "height": 75,
                 "grid": [0] * (70 * 75),
@@ -415,10 +457,8 @@ def main():
                 "legend": [{"hex": "#FF0000", "code": "R", "count": 5250}],
                 "options": {"cellSize": 8, "gridLines": True, "edgeNumbers": True,
                             "showCodes": True, "legend": True, "format": pdf_fmt},
-            })
-            assert j["dataUrl"].startswith("data:application/pdf;base64,")
-            raw_pdf = base64.b64decode(j["dataUrl"].split(",", 1)[1])
-            assert raw_pdf[:4] == b"%PDF"
+            }, raw=True)
+            assert s == 200 and raw[:4] == b"%PDF", f"{pdf_fmt} 应返回 PDF 二进制流"
         print("[OK] 导出 PDF（A4单页 / A4多页 / A3或A4）")
 
         s, j = req("POST", "/api/export-preview", {
@@ -463,6 +503,14 @@ def main():
         s, j = req("PUT", "/api/state", [1, 2, 3])
         assert s == 400 and j["error"] == "状态数据无效"
         print("[OK] 状态写入：非对象载荷返回 400")
+
+        # 损坏的状态文件：读取应返回空态并先备份原文件
+        with open(os.path.join(data_dir, "state.json"), "w", encoding="utf-8") as fh:
+            fh.write("{broken json")
+        s, j = req("GET", "/api/state")
+        assert s == 200 and j == {}, "损坏状态文件应返回空态"
+        assert os.path.exists(os.path.join(data_dir, "state.json.corrupt")), "损坏文件应被备份"
+        print("[OK] 损坏状态文件：备份后返回空态")
 
         project_doc = {
             "schemaVersion": 1,
@@ -515,10 +563,31 @@ def main():
         assert s == 400 and j["error"] == "没有可保存的项目"
         print("[OK] 项目保存缺画布返回 400")
 
+        bad_doc = {
+            "project": {"width": 2, "height": 2, "grid": [0, 1]},
+        }
+        s, j = req("POST", "/api/project/save", {"document": bad_doc})
+        assert s == 400 and "网格" in j["error"], f"项目保存应校验网格，实际 {j}"
+        print("[OK] 项目保存：网格长度不符返回 JSON 400")
+
         s, j = upload_project_bytes(raw)
         assert s == 200 and j["document"]["project"]["width"] == 2
         assert j["document"]["viewport"]["zoom"] == 1.25
         print("[OK] 项目文件上传打开")
+
+        bad_doc_bytes = build_raw_project(
+            [
+                ("meta", pj.meta_json(), 0),
+                (
+                    "state",
+                    json.dumps({"project": {"width": 2, "height": 2, "grid": [0, 1]}}).encode(),
+                    0,
+                ),
+            ]
+        )
+        s, j = upload_project_bytes(bad_doc_bytes)
+        assert s == 400 and "网格" in j["error"], f"损坏项目文档应返回 JSON 400，实际 {j}"
+        print("[OK] 项目文件上传：文档级网格校验返回 JSON 400")
 
         s, j = upload_project_bytes(b"garbage bytes")
         assert s == 400 and "失败" in j["error"]

@@ -218,8 +218,9 @@ async function main() {
   compare('无网格线', Buffer.from(frontA.b64, 'base64'), rgbaA, 40, 0.005);
 
   // B：网格线 / 行列号条规范的结构性采样。
-  // canvas 的 1px 线居中绘制、PIL 按整数像素落线，栅格化约定不同，
-  // 无法逐像素对比；改为在两端同一逻辑点位采样并分别断言
+  // 前端 drawGridLines 已改为与 PIL 相同的整数像素 fillRect 落线规则
+  // （奇数线宽居中、偶数线宽右偏、虚线逐段相位一致），
+  // 因此采样点应接近逐像素一致；仍保留小容差以容忍边缘/舍入差异。
   // （浅蓝端帽 / 细灰 / 每 5 格粗灰 / 虚线间隔 / 每 10 格实线 / 边缘黑线）。
   const w2 = 14,
     h2 = 10,
@@ -273,7 +274,7 @@ async function main() {
   console.log('[数据] 前端采样:', JSON.stringify(frontB));
   console.log('[数据] 后端采样:', JSON.stringify(backB));
   const near = (v, exp, tol = 12) => v.every((c, i) => Math.abs(c - exp[i]) <= tol);
-  const nearGray = (v, tol = 60) => near(v, [154, 154, 154], tol);
+  const nearGray = (v, tol = 8) => near(v, [154, 154, 154], tol);
   const assertBoth = (name, check, msg) => {
     assert.ok(check(frontB[name]), `前端 ${msg}（实际 ${frontB[name]}）`);
     assert.ok(check(backB[name]), `后端 ${msg}（实际 ${backB[name]}）`);
@@ -283,13 +284,13 @@ async function main() {
   assertBoth('top_bar_right_endcap', (v) => near(v, lightBlue), '顶条右端帽应为浅蓝');
   assertBoth('left_bar_top_endcap', (v) => near(v, lightBlue), '左条顶端帽应为浅蓝');
   assertBoth('left_bar_bottom_endcap', (v) => near(v, lightBlue), '左条底端帽应为浅蓝');
-  assertBoth('pattern_left_edge', (v) => near(v, [0, 0, 0], 20), '图案左边缘应为黑线');
-  assertBoth('pattern_top_edge', (v) => near(v, [0, 0, 0], 20), '图案上边缘应为黑线');
+  assertBoth('pattern_left_edge', (v) => near(v, [0, 0, 0], 12), '图案左边缘应为黑线');
+  assertBoth('pattern_top_edge', (v) => near(v, [0, 0, 0], 12), '图案上边缘应为黑线');
   assertBoth('top_bar_sep_1', nearGray, '顶条分隔应为细灰线');
   assertBoth('top_bar_sep_5', nearGray, '顶条每 5 格应为粗灰实线');
   assertBoth('pattern_5_dash_on', nearGray, '图案每 5 格虚线应有点段');
   assertBoth('pattern_5_dash_gap', (v) => v[0] > 180, '图案每 5 格虚线应有间隔');
-  assertBoth('pattern_10_solid', (v) => near(v, [154, 154, 154], 30), '图案每 10 格应为粗灰实线');
+  assertBoth('pattern_10_solid', (v) => near(v, [154, 154, 154], 12), '图案每 10 格应为粗灰实线');
   assertBoth('pattern_thin_1', nearGray, '图案格内应为细灰线');
   console.log('[OK] 两端网格线 / 行列号条规范一致：端帽、分隔线、边界、虚线、实线');
 

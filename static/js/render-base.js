@@ -132,37 +132,78 @@ export function drawGridLines(
     if (screenCell < GRID_FINE_MIN_SCREEN_CELL) return null;
     return { lw: thin, color: GRID_LINE_COLOR, dashed: false };
   };
-  // 相同样式的实线合并成一条路径批量绘制；虚线逐段绘制，保证每段虚线段相位一致
-  const strokeSeg = (map, x1, y1, x2, y2, s) => {
+  // 网格线统一用整数像素 fillRect 绘制，与 PIL draw.line 的覆盖规则保持一致：
+  // - 奇数线宽居中、偶数线宽右偏：left/top = 坐标 - ((lw-1) >> 1)，长度 = lw；
+  // - 线段端点按两端含入（长度 = |端点差| + 1）；
+  // - 虚线按 PIL 的逐段相位绘制（dash+1 像素实、dash-1 像素空），不用 setLineDash。
+  // 这样前端工作区与后端导出的网格线落在同一批整数像素上，避免 1px 线 50% 混合。
+  const rectForLine = (x1, y1, x2, y2, lw) => {
+    if (y1 === y2) {
+      return {
+        x: Math.min(x1, x2) - ((lw - 1) >> 1),
+        y: y1 - ((lw - 1) >> 1),
+        w: Math.abs(x2 - x1) + 1,
+        h: lw,
+      };
+    }
+    return {
+      x: x1 - ((lw - 1) >> 1),
+      y: Math.min(y1, y2) - ((lw - 1) >> 1),
+      w: lw,
+      h: Math.abs(y2 - y1) + 1,
+    };
+  };
+  const pushRect = (map, rect, color) => {
+    let group = map.get(color);
+    if (!group) {
+      group = [];
+      map.set(color, group);
+    }
+    group.push(rect);
+  };
+  const lineSeg = (map, x1, y1, x2, y2, s) => {
     if (s.dashed) {
-      ctx.strokeStyle = s.color;
-      ctx.lineWidth = s.lw;
-      ctx.setLineDash([dash, dash]);
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
+      if (y1 === y2) {
+        const xa = Math.min(x1, x2);
+        const xb = Math.max(x1, x2);
+        for (let x = xa; x < xb; x += dash * 2) {
+          const end = Math.min(x + dash, xb);
+          pushRect(
+            map,
+            {
+              x: x - ((s.lw - 1) >> 1),
+              y: y1 - ((s.lw - 1) >> 1),
+              w: end - x + 1,
+              h: s.lw,
+            },
+            s.color,
+          );
+        }
+      } else {
+        const ya = Math.min(y1, y2);
+        const yb = Math.max(y1, y2);
+        for (let y = ya; y < yb; y += dash * 2) {
+          const end = Math.min(y + dash, yb);
+          pushRect(
+            map,
+            {
+              x: x1 - ((s.lw - 1) >> 1),
+              y: y - ((s.lw - 1) >> 1),
+              w: s.lw,
+              h: end - y + 1,
+            },
+            s.color,
+          );
+        }
+      }
       return;
     }
-    const key = `${s.lw}|${s.color}`;
-    let g = map.get(key);
-    if (!g) {
-      g = { lw: s.lw, color: s.color, segs: [] };
-      map.set(key, g);
-    }
-    g.segs.push(x1, y1, x2, y2);
+    pushRect(map, rectForLine(x1, y1, x2, y2, s.lw), s.color);
   };
-  const flushGroups = (map) => {
-    for (const g of map.values()) {
-      ctx.strokeStyle = g.color;
-      ctx.lineWidth = g.lw;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      for (let i = 0; i < g.segs.length; i += 4) {
-        ctx.moveTo(g.segs[i], g.segs[i + 1]);
-        ctx.lineTo(g.segs[i + 2], g.segs[i + 3]);
-      }
-      ctx.stroke();
+  const flushRects = (map) => {
+    for (const [color, rects] of map) {
+      ctx.fillStyle = color;
+      for (const rect of rects) ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
   };
   const vGroups = new Map();
@@ -179,18 +220,17 @@ export function drawGridLines(
     const s = patternStyle(kp, width);
     const se = edgeStyle(kp, width);
     if (!s && !se) continue;
-    let x = x0 + k * cell;
-    if (!edgeCells && (k === 0 || k === width)) x += (k === 0 ? s.lw : -s.lw) / 2; // 无行列号时边缘防裁剪
+    const x = x0 + k * cell;
     if (edgeCells) {
-      if (kp !== 0 && kp !== width && se) strokeSeg(vGroups, x, y0, x, y0 + cell, se); // 顶部行列号条（两端帽不画）
-      if (s) strokeSeg(vGroups, x, y0 + cell, x, y0 + cell + height * cell, s); // 图案
+      if (kp !== 0 && kp !== width && se) lineSeg(vGroups, x, y0, x, y0 + cell, se); // 顶部行列号条（两端帽不画）
+      if (s) lineSeg(vGroups, x, y0 + cell, x, y0 + cell + height * cell, s); // 图案
       if (kp !== 0 && kp !== width && se)
-        strokeSeg(vGroups, x, y0 + cell + height * cell, x, y0 + spanH, se); // 底部行列号条（两端帽不画）
+        lineSeg(vGroups, x, y0 + cell + height * cell, x, y0 + spanH, se); // 底部行列号条（两端帽不画）
     } else if (s) {
-      strokeSeg(vGroups, x, y0, x, y0 + spanH, s);
+      lineSeg(vGroups, x, y0, x, y0 + spanH, s);
     }
   }
-  flushGroups(vGroups); // 竖直实线先画，水平线后画压在上方（与旧实现逐段绘制顺序一致）
+  flushRects(vGroups); // 竖直实线先画，水平线后画压在上方（与旧实现逐段绘制顺序一致）
   const hkMin = viewport ? Math.max(0, viewport.y0 - 1 + edgeCells) : 0;
   const hkMax = viewport
     ? Math.min(height + 2 * edgeCells, viewport.y1 + 1 + edgeCells)
@@ -201,18 +241,17 @@ export function drawGridLines(
     const s = patternStyle(kp, height);
     const se = edgeStyle(kp, height);
     if (!s && !se) continue;
-    let y = y0 + k * cell;
-    if (!edgeCells && (k === 0 || k === height)) y += (k === 0 ? s.lw : -s.lw) / 2; // 无行列号时边缘防裁剪
+    const y = y0 + k * cell;
     if (edgeCells) {
-      if (kp !== 0 && kp !== height && se) strokeSeg(hGroups, x0, y, x0 + cell, y, se); // 左侧行列号条（两端帽不画）
-      if (s) strokeSeg(hGroups, x0 + cell, y, x0 + cell + width * cell, y, s); // 图案
+      if (kp !== 0 && kp !== height && se) lineSeg(hGroups, x0, y, x0 + cell, y, se); // 左侧行列号条（两端帽不画）
+      if (s) lineSeg(hGroups, x0 + cell, y, x0 + cell + width * cell, y, s); // 图案
       if (kp !== 0 && kp !== height && se)
-        strokeSeg(hGroups, x0 + cell + width * cell, y, x0 + spanW, y, se); // 右侧行列号条（两端帽不画）
+        lineSeg(hGroups, x0 + cell + width * cell, y, x0 + spanW, y, se); // 右侧行列号条（两端帽不画）
     } else if (s) {
-      strokeSeg(hGroups, x0, y, x0 + spanW, y, s);
+      lineSeg(hGroups, x0, y, x0 + spanW, y, s);
     }
   }
-  flushGroups(hGroups);
+  flushRects(hGroups);
   ctx.restore();
 }
 
