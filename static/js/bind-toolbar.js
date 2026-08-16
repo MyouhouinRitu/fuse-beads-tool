@@ -3,12 +3,12 @@
 import * as api from './api.js';
 import * as auth from './auth.js';
 import * as compare from './compare.js';
-import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import * as exportDialog from './export-dialog.js';
 import * as historyUI from './history-ui.js';
 import * as markdown from './markdown.js';
 import * as menu from './menu.js';
+import { confirmDialog } from './popup.js';
 import { openProjectViaDialog, saveProjectFile } from './project-file.js';
 import { applyProjectDocument } from './restore.js';
 import { App, setProjectDirty } from './state.js';

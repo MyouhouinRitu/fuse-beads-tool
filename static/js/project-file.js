@@ -2,8 +2,8 @@
 
 import * as api from './api.js';
 import { buildProjectDocument } from './autosave.js';
-import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
+import { confirmDialog } from './popup.js';
 import { App, setDirty, setProjectDirty } from './state.js';
 import { downloadUrl, fileNameStem, toast } from './utils.js';
 

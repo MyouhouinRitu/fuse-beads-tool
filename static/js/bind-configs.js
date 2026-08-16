@@ -1,9 +1,9 @@
 // 调色板配置管理：选择 / 新建 / 导入 / 导出 / 重命名 / 删除 / 添加颜色。
 
 import * as api from './api.js';
-import { confirmDialog, promptDialog } from './dialog.js';
 import { els } from './els.js';
 import * as palette from './palette.js';
+import { confirmDialog, promptDialog } from './popup.js';
 import { App, setProjectDirty } from './state.js';
 import { downloadUrl, toast, withPending } from './utils.js';
 

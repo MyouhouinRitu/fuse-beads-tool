@@ -1,8 +1,14 @@
 // DOM 元素引用：与 templates/index.html 中的 id 一一对应。
 // 所有模块统一从这里取元素，避免散落的 document.getElementById。
 
-/** @returns {any} */
-export const $ = (id) => document.getElementById(id);
+/**
+ * 统一 DOM 查询入口（仅 els.js 内部使用）：默认返回 HTMLElement，
+ * 具体元素类型由各键上的类型注解约束（泛型 T 由上下文推断），避免 any 逃生口。
+ * @template {HTMLElement} [T=HTMLElement]
+ * @param {string} id
+ * @returns {T}
+ */
+export const $ = (id) => /** @type {T} */ (document.getElementById(id));
 
 export const els = {
   toast: $('toast'),

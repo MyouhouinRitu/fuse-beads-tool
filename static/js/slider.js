@@ -5,9 +5,9 @@ import * as canvas from './canvas.js';
 import { mergeGridAsync } from './color-queue.js';
 import * as C from './colors.js';
 import { SLIDER_APPLY_DELAY_MS } from './constants.js';
-import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import * as historyUI from './history-ui.js';
+import { confirmDialog } from './popup.js';
 import { renderFullNow } from './render-queue.js';
 import { App, clearHistoryRecords, hasPendingRecords, setProjectDirty } from './state.js';
 

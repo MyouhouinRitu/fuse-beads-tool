@@ -4,7 +4,6 @@ import * as api from './api.js';
 import { scheduleAutosave } from './autosave.js';
 import { resetProjectEditingState } from './canvas.js';
 import * as C from './colors.js';
-import { confirmDialog } from './dialog.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
 import {
@@ -15,6 +14,7 @@ import {
 } from './history.js';
 import { interactionState } from './interaction.js';
 import { ensurePaletteConfig, renderColorTable } from './palette.js';
+import { confirmDialog } from './popup.js';
 import { renderFullNow } from './render-queue.js';
 import { App, clearHistoryRecords, hasPendingRecords, setDirty, setProjectDirty } from './state.js';
 import { toast } from './utils.js';
