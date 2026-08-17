@@ -1244,6 +1244,63 @@ img.save(${JSON.stringify(LARGE_IMG)})
     console.log('[OK] 大图网格/原图比例同步换算');
   }
 
+  // 12.5 水平镜像：勾选后仅导入/重新压缩时生效，原图与拼豆图同时翻转
+  {
+    const readGrid = () => page.evaluate(() => Array.from(window.__app.project.grid));
+    const readOrigLeft = () =>
+      page.evaluate(() => {
+        const cv = document.querySelector('#canvas-original');
+        const ctx = cv.getContext('2d');
+        const d = ctx.getImageData(0, Math.floor(cv.height / 2), 1, 1).data;
+        return [d[0], d[1], d[2]];
+      });
+    const gBefore = await readGrid();
+    const w = await page.evaluate(() => window.__app.project.width);
+    const origLeftBefore = await readOrigLeft();
+    assert.ok(origLeftBefore[0] > 180, '前置：原图左侧应为红色带');
+
+    // 仅勾选不应立即改变拼豆图与原图
+    await page.check('#chk-mirror');
+    await page.waitForTimeout(300);
+    assert.deepEqual(await readGrid(), gBefore, '勾选镜像后未重新压缩前不应改变拼豆图');
+    assert.deepEqual(
+      await readOrigLeft(),
+      origLeftBefore,
+      '勾选镜像后未重新压缩前不应改变原图显示',
+    );
+
+    // 重新压缩后：拼豆图水平翻转，原图显示也水平翻转
+    await page.click('#btn-recompress');
+    await acceptPopupIfVisible(page);
+    await page.waitForTimeout(1400);
+    const gMirror = await readGrid();
+    assert.equal(gMirror.length, gBefore.length, '镜像后网格大小应不变');
+    for (let y = 0; y < gMirror.length / w; y++) {
+      for (let x = 0; x < w; x++) {
+        assert.equal(
+          gMirror[y * w + x],
+          gBefore[y * w + (w - 1 - x)],
+          `镜像后第 ${y} 行第 ${x} 格应等于原第 ${y} 行第 ${w - 1 - x} 格`,
+        );
+      }
+    }
+    const origLeftMirror = await readOrigLeft();
+    assert.ok(origLeftMirror[2] > 180, `重新压缩后原图左侧应为蓝色带，实际 ${origLeftMirror}`);
+    assert.ok(
+      await page.evaluate(() => window.__app.settings.mirror),
+      '镜像设置应写入 App.settings',
+    );
+
+    // 取消勾选并重新压缩：恢复原方向
+    await page.uncheck('#chk-mirror');
+    await page.click('#btn-recompress');
+    await acceptPopupIfVisible(page);
+    await page.waitForTimeout(1400);
+    assert.deepEqual(await readGrid(), gBefore, '取消镜像并重新压缩后应恢复原拼豆图');
+    assert.deepEqual(await readOrigLeft(), origLeftBefore, '取消镜像并重新压缩后应恢复原图显示');
+    console.log('[OK] 水平镜像');
+  }
+
   // 截图留档
   const shot = path.join(TMP, 'ui_screenshot.png');
   fs.mkdirSync(path.dirname(shot), { recursive: true });

@@ -68,7 +68,10 @@ def compress(
     sharpen: bool = False,
     hard_cap: int = HARD_CAP_PIXELS,
     intermediate_cap: int = MAX_INTERMEDIATE_PIXELS,
+    mirror: bool = False,
 ) -> Image.Image:
+    if mirror:
+        img = ImageOps.mirror(img)
     w, h = img.size
     target = max(MIN_TARGET_PIXELS, min(int(target_pixels), hard_cap))
     target = adjust_target_for_transparency(img, target, intermediate_cap)

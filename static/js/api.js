@@ -35,12 +35,13 @@ export const importConfig = (file) => {
   fd.append('file', file);
   return request('/api/configs/import', { method: 'POST', body: fd });
 };
-export const uploadImage = (file, targetPixels, sharpen, originalId = null) => {
+export const uploadImage = (file, targetPixels, sharpen, originalId = null, mirror = false) => {
   const fd = new FormData();
   if (file) fd.append('image', file);
   if (originalId) fd.append('originalId', originalId);
   fd.append('targetPixels', String(targetPixels));
   fd.append('sharpen', sharpen ? '1' : '0');
+  fd.append('mirror', mirror ? '1' : '0');
   return request('/api/upload', { method: 'POST', body: fd });
 };
 export const getOriginalBlob = async (originalId) => {

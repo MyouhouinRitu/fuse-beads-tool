@@ -122,7 +122,20 @@ function drawOriginalImage() {
   if (cv.height !== h) cv.height = h;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(img, 0, 0, w, h);
+  if (App.settings.mirror) {
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, 0, 0, w, h);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, 0, 0, w, h);
+  }
+}
+
+// 重新压缩/导入后按当前镜像设置重绘对比原图
+export function redrawOriginalImage() {
+  drawOriginalImage();
 }
 
 export function setCompareEnabled(on, { silent = false } = {}) {

@@ -38,6 +38,7 @@ function applySettingsToControls() {
   els.sameColorChk.checked = !!App.settings.sameColorSelect;
   els.targetPixels.value = String(App.settings.targetPixels);
   els.chkSharpen.checked = App.settings.sharpen;
+  els.chkMirror.checked = !!App.settings.mirror;
   els.chkCodes.checked = App.settings.showCodes;
   els.selDistance.value = App.settings.useLab ? 'lab' : 'rgb';
   els.emptyStyle.value = ['default', 'black', 'white'].includes(App.settings.emptyStyle)

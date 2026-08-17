@@ -46,6 +46,7 @@ export const App = {
     targetPixels: DEFAULT_TARGET_PIXELS,
     useLab: true,
     sharpen: true,
+    mirror: false,
     showCodes: true,
     emptyStyle: 'default',
     compare: false,

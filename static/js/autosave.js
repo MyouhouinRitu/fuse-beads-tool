@@ -123,6 +123,7 @@ export function buildProjectDocument() {
       targetPixels: getTargetPixels(),
       useLab: App.settings.useLab,
       sharpen: App.settings.sharpen,
+      mirror: App.settings.mirror,
       showCodes: App.settings.showCodes,
       emptyStyle: App.settings.emptyStyle,
       compare: App.settings.compare,

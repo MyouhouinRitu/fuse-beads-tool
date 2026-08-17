@@ -28,6 +28,11 @@ export function bindSettings() {
     setProjectDirty(true);
     scheduleAutosave();
   });
+  els.chkMirror.addEventListener('change', () => {
+    App.settings.mirror = els.chkMirror.checked;
+    setProjectDirty(true);
+    scheduleAutosave();
+  });
   els.targetPixels.addEventListener('input', () => {
     setProjectDirty(true);
     scheduleAutosave();

@@ -32,6 +32,8 @@ export const els = {
   /** @type {HTMLButtonElement} */
   btnConfig: $('btn-config'),
   /** @type {HTMLInputElement} */
+  chkMirror: $('chk-mirror'),
+  /** @type {HTMLInputElement} */
   chkSharpen: $('chk-sharpen'),
   /** @type {HTMLInputElement} */
   chkCodes: $('chk-codes'),

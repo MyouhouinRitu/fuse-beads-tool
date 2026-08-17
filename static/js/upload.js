@@ -5,6 +5,7 @@ import { scheduleAutosave } from './autosave.js';
 import { resetProjectEditingState } from './canvas.js';
 import { computeInitialMappingAsync } from './color-queue.js';
 import * as C from './colors.js';
+import { redrawOriginalImage } from './compare.js';
 import { els } from './els.js';
 import * as historyUI from './history-ui.js';
 import { confirmDialog } from './popup.js';
@@ -26,6 +27,7 @@ export async function processUpload() {
       target,
       els.chkSharpen.checked,
       App.originalId,
+      els.chkMirror.checked,
     );
     const img = new Image();
     img.src = `data:image/png;base64,${res.pngBase64}`;
@@ -44,6 +46,8 @@ export async function processUpload() {
     App.originalName = res.originalName || null;
     App.originalSha256 = res.originalSha256 || null;
     App.originalSize = res.originalSize || null;
+    // 重新压缩/导入后按当前镜像设置重绘对比原图
+    redrawOriginalImage();
     App.projectName = fileNameStem(App.originalName || res.originalName || '') || '未命名';
     if (oldOriginalId && oldOriginalId !== App.originalId) {
       api.deleteOriginal(oldOriginalId).catch(() => {});
