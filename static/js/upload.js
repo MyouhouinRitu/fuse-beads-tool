@@ -43,7 +43,15 @@ export async function processUpload() {
     const rgba = octx.getImageData(0, 0, res.width, res.height).data;
     App.compressed = { rgba, width: res.width, height: res.height };
     App.originalId = res.originalId || null;
-    App.originalName = res.originalName || null;
+    // 本次上传未带真实文件（如从项目/状态恢复的 Blob 或仅按 originalId 重压）时，
+    // 后端无法得知原图文件名，保留已有名称，避免被 "blob"/占位名覆盖。
+    const hadRealFile =
+      !!App.originalFile &&
+      typeof App.originalFile.name === 'string' &&
+      App.originalFile.name !== '';
+    App.originalName = hadRealFile
+      ? res.originalName || null
+      : App.originalName || res.originalName || null;
     App.originalSha256 = res.originalSha256 || null;
     App.originalSize = res.originalSize || null;
     // 重新压缩/导入后按当前镜像设置重绘对比原图

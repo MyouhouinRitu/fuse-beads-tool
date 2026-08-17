@@ -1301,6 +1301,84 @@ img.save(${JSON.stringify(LARGE_IMG)})
     console.log('[OK] 水平镜像');
   }
 
+  // 13. 打开项目：只弹一次确认；重新压缩后保留原图名（回归：不再变成 blob）
+  {
+    const projImg = path.join(TMP, 'proj_test.png');
+    execFileSync(process.env.PYTHON || 'python', [
+      '-c',
+      `
+from PIL import Image
+img = Image.new('RGB', (24, 24))
+for y in range(24):
+    for x in range(24):
+        img.putpixel((x, y), (200, 60, 60) if x < 12 else (60, 60, 200))
+img.save(${JSON.stringify(projImg)})
+`,
+    ]);
+    await page.setInputFiles('#file-input', projImg);
+    await page.waitForFunction(
+      () =>
+        (document.querySelector('#project-name-label')?.textContent || '').includes('proj_test'),
+      null,
+      { timeout: 10000 },
+    );
+
+    const [dlOpen] = await Promise.all([
+      page.waitForEvent('download', { timeout: 10000 }),
+      page.click('#btn-save-project'),
+    ]);
+    const openName = dlOpen.suggestedFilename();
+    assert.ok(openName.includes('proj_test'), `首次保存文件名应含原图名，实际 ${openName}`);
+    const projPath = await dlOpen.path();
+
+    await page.evaluate(() => {
+      window.__app.projectDirty = true;
+      window.__popupShown = 0;
+      const t = document.querySelector('#popup-dialog');
+      new MutationObserver(() => {
+        if (!t.classList.contains('hidden')) window.__popupShown += 1;
+      }).observe(t, { attributes: true, attributeFilter: ['class'] });
+    });
+
+    await page.click('#btn-open-project');
+    await page.waitForSelector('#popup-dialog:not(.hidden)', { timeout: 5000 });
+    const chooserP = page.waitForEvent('filechooser', { timeout: 5000 });
+    await page.click('#popup-ok');
+    const chooser = await chooserP;
+    await chooser.setFiles(projPath);
+    await page.waitForTimeout(400);
+    assert.equal(
+      await page.evaluate(() => window.__popupShown),
+      1,
+      '打开项目应只在选择文件前弹一次确认',
+    );
+    await page.waitForFunction(
+      () => (document.querySelector('#toast')?.textContent || '').includes('已打开项目'),
+      null,
+      { timeout: 10000 },
+    );
+    assert.ok(
+      (await page.textContent('#project-name-label')).includes('proj_test'),
+      '打开后项目名应保留原图名',
+    );
+
+    await page.click('#btn-recompress');
+    await page.waitForTimeout(1200);
+    assert.ok(
+      (await page.textContent('#project-name-label')).includes('proj_test'),
+      '重新压缩后项目名不应变成 blob',
+    );
+    const [dlReopen] = await Promise.all([
+      page.waitForEvent('download', { timeout: 10000 }),
+      page.click('#btn-save-project'),
+    ]);
+    const reopenName = dlReopen.suggestedFilename();
+    assert.ok(
+      reopenName.includes('proj_test') && !reopenName.includes('blob'),
+      `重新压缩后保存文件名应保留原图名，实际 ${reopenName}`,
+    );
+    console.log('[OK] 打开项目：单次确认 + 重新压缩后保留原图名');
+  }
   // 截图留档
   const shot = path.join(TMP, 'ui_screenshot.png');
   fs.mkdirSync(path.dirname(shot), { recursive: true });

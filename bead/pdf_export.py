@@ -11,7 +11,9 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
 
 from bead.export import (
+    LEGEND_FONT_RATIO,
     _font,
+    _legend_total_needs_extra_row,
     build_palette_map,
     legend_height,
     render_pattern,
@@ -111,7 +113,7 @@ def _fits(
     cell: int,
     width: int,
     height: int,
-    legend_count: int,
+    legend: list[dict],
     page_w: int,
     page_h: int,
     margin: int,
@@ -121,7 +123,14 @@ def _fits(
     edge = cell if edge_numbers else 0
     grid_w = width * cell
     grid_h = height * cell
-    legend_h = legend_height(legend_count, grid_w, cell) if show_legend else 0
+    legend_h = 0
+    if show_legend:
+        legend_font = _font(cell, LEGEND_FONT_RATIO) if legend else None
+        extra_row = bool(
+            legend_font
+            and _legend_total_needs_extra_row(legend, grid_w, cell, legend_font)
+        )
+        legend_h = legend_height(len(legend), grid_w, cell, extra_row=extra_row)
     total_w = grid_w + 2 * edge + 2 * margin
     total_h = grid_h + 2 * edge + 2 * margin + legend_h
     return total_w <= page_w and total_h <= page_h
@@ -130,7 +139,7 @@ def _fits(
 def _max_cell(
     width: int,
     height: int,
-    legend_count: int,
+    legend: list[dict],
     page_w: int,
     page_h: int,
     margin: int,
@@ -140,7 +149,7 @@ def _max_cell(
     lo, hi = 1, max(2, max(page_w, page_h) // 2)
     while lo < hi:
         mid = (lo + hi + 1) // 2
-        if _fits(mid, width, height, legend_count, page_w, page_h, margin, edge_numbers, show_legend):
+        if _fits(mid, width, height, legend, page_w, page_h, margin, edge_numbers, show_legend):
             lo = mid
         else:
             hi = mid - 1
@@ -173,7 +182,7 @@ def _render_page(
     cell = _max_cell(
         width,
         height,
-        len(legend),
+        legend,
         page_w,
         page_h,
         margin,

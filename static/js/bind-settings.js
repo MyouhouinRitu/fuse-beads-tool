@@ -51,7 +51,10 @@ export function bindSettings() {
     hintDistanceDeferred();
   });
 
-  els.colorSlider.addEventListener('input', () => scheduleSliderApply());
+  els.colorSlider.addEventListener('input', () => {
+    els.sliderValue.textContent = els.colorSlider.value;
+    scheduleSliderApply();
+  });
   els.emptyStyle.addEventListener('change', () => {
     App.settings.emptyStyle = els.emptyStyle.value;
     canvas.rebuildCanvas();

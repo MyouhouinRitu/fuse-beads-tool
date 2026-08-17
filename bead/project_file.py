@@ -8,6 +8,7 @@ Layout:
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -139,6 +140,17 @@ def parse_project_file(data: bytes) -> dict[str, bytes]:
     return {e["name"]: raw for e, raw in zip(entries, payloads)}
 
 
+def decode_grid_base64(b64: str) -> list[int]:
+    """解码前端 grid-codec.js 的小端 Int16Array base64 网格；损坏时抛 ValueError。"""
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("项目网格数据无法解码") from exc
+    if not raw or len(raw) % 2 != 0:
+        raise ValueError("项目网格数据无法解码")
+    return list(struct.unpack(f"<{len(raw) // 2}h", raw))
+
+
 def validate_project_document(doc: dict) -> None:
     """校验项目文档的领域载荷：尺寸 / 网格长度 / 网格值域。
 
@@ -158,11 +170,24 @@ def validate_project_document(doc: dict) -> None:
     ):
         raise ValueError("项目尺寸无效")
     grid = project.get("grid")
-    if not isinstance(grid, list) or len(grid) != width * height:
-        raise ValueError("项目网格数据无效")
-    for v in grid:
-        if not isinstance(v, int) or v < -1:
+    grid_base64 = project.get("gridBase64")
+    if isinstance(grid, list):
+        if len(grid) != width * height:
+            raise ValueError("项目网格数据无效")
+        for v in grid:
+            if not isinstance(v, int) or v < -1:
+                raise ValueError("项目网格包含非法值")
+    elif isinstance(grid_base64, str):
+        try:
+            values = decode_grid_base64(grid_base64)
+        except ValueError as exc:
+            raise ValueError("项目网格数据无法解码") from exc
+        if len(values) != width * height:
+            raise ValueError("项目网格数据无效")
+        if any(v < -1 for v in values):
             raise ValueError("项目网格包含非法值")
+    else:
+        raise ValueError("项目网格数据无效")
 
 
 def safe_filename(name: str, fallback: str = "未命名") -> str:

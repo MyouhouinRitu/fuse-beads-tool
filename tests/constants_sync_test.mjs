@@ -144,13 +144,6 @@ for (const [jsName, pyName] of Object.entries(SHARED)) {
 // 有意保留的差异：行为/实现不同，锁定当前值防止意外漂移
 const EXCEPTIONS = [
   {
-    jsName: 'LEGEND_TEXT_DESCENT',
-    js: 3,
-    pyName: 'LEGEND_TEXT_DESCENT',
-    py: 2,
-    reason: 'JS 用 alphabetic 基线、PIL 用 mm 锚点，垂直定位公式不同',
-  },
-  {
     jsName: 'LEGEND_FONT_MIN',
     js: 12,
     pyName: 'FONT_MIN',

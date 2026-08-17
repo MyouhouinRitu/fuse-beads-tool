@@ -25,7 +25,6 @@ import {
   LEGEND_SWATCH_MIN,
   LEGEND_SWATCH_RATIO,
   LEGEND_TEXT_COLOR,
-  LEGEND_TEXT_DESCENT,
   LEGEND_TEXT_GAP,
   LEGEND_TOP_OFFSET_RATIO,
   OUTER_PAD,
@@ -40,6 +39,31 @@ function legendRows(count, gridW, cell) {
   return Math.max(1, Math.ceil(count / perRow));
 }
 
+// 图例文字垂直居中：文本包围盒中心与色块中心对齐（与 PIL 侧 _legend_text_top 对应）
+function legendTextTop(sw, ctx, text) {
+  const m = ctx.measureText(text);
+  const ascent = m.actualBoundingBoxAscent || 0;
+  const descent = m.actualBoundingBoxDescent || 0;
+  return (sw - (ascent + descent)) / 2 + ascent;
+}
+
+// 总豆量文本放不下图例最后一行时，需要额外一行（与 PIL 侧 _legend_total_needs_extra_row 对应）
+function legendTotalNeedsExtraRow(ctx, legend, gridW, cell, outerPad) {
+  if (!legend?.length) return false;
+  const font = Math.max(LEGEND_FONT_MIN, Math.round(cell * LEGEND_FONT_RATIO));
+  ctx.font = `${font}px Consolas, "Microsoft YaHei", monospace`;
+  const pad = cell * LEGEND_PAD_RATIO;
+  const entryW = cell * LEGEND_ENTRY_W;
+  const maxX = outerPad + gridW - pad;
+  let x = outerPad + pad;
+  for (const _e of legend) {
+    if (x + entryW > maxX && x > outerPad + pad) x = outerPad + pad;
+    x += entryW;
+  }
+  const total = legend.reduce((s, e) => s + (Number(e.count) || 0), 0);
+  return x + ctx.measureText(`总豆量：${total}`).width > maxX;
+}
+
 export function canvasMetrics(
   width,
   height,
@@ -47,6 +71,7 @@ export function canvasMetrics(
   legendCount = 0,
   outerPad = OUTER_PAD,
   edge = 0,
+  legendExtraRow = false,
 ) {
   // edge：四周行列号条的像素宽度（工作区为 1 格，导出为 0）
   const gridW = width * cell;
@@ -55,7 +80,9 @@ export function canvasMetrics(
   const font = Math.max(LEGEND_FONT_MIN, Math.round(cell * LEGEND_FONT_RATIO));
   const sw = Math.max(LEGEND_SWATCH_MIN, Math.round(cell * LEGEND_SWATCH_RATIO));
   const rowH = Math.max(sw + LEGEND_ROW_EXTRA_H, font + LEGEND_ROW_FONT_EXTRA);
-  const legendH = rows ? rows * rowH + cell * LEGEND_BOTTOM_GAP_RATIO : 0;
+  const legendH = rows
+    ? (rows + (legendExtraRow ? 1 : 0)) * rowH + cell * LEGEND_BOTTOM_GAP_RATIO
+    : 0;
   return {
     w: gridW + 2 * edge + 2 * outerPad,
     h: gridH + 2 * edge + 2 * outerPad + legendH,
@@ -64,7 +91,7 @@ export function canvasMetrics(
     originX: outerPad + edge,
     originY: outerPad + edge,
     edge,
-    legendRows: rows,
+    legendRows: rows + (legendExtraRow ? 1 : 0),
   };
 }
 
@@ -368,9 +395,18 @@ function drawLegend(ctx, legend, cell, gridW, baseY, outerPad = OUTER_PAD) {
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, sw - 1, sw - 1);
     ctx.fillStyle = LEGEND_TEXT_COLOR;
-    ctx.fillText(`${e.code} × ${e.count}`, x + sw + LEGEND_TEXT_GAP, y + sw - LEGEND_TEXT_DESCENT);
+    const text = `${e.code} × ${e.count}`;
+    ctx.fillText(text, x + sw + LEGEND_TEXT_GAP, y + legendTextTop(sw, ctx, text));
     x += entryW;
   }
+
+  // 总豆量：优先写在最后一行的最右侧，放不下则新起一行
+  const total = legend.reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const totalText = `总豆量：${total}`;
+  const totalW = ctx.measureText(totalText).width;
+  const rowY = x + totalW <= maxX ? y : y + rowH;
+  ctx.fillStyle = LEGEND_TEXT_COLOR;
+  ctx.fillText(totalText, maxX - totalW, rowY + legendTextTop(sw, ctx, totalText));
 }
 
 // 四方向（上下左右）连通分组：isMember(index) 判定索引是否属于目标集合
@@ -485,6 +521,11 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   // 视口渲染（放大镜等）：只画窗口范围；坐标为扩展坐标（图案格 0..w-1，行列号条 -1 / w），
   // 窗口原点对齐画布原点；不传则渲染整幅图案
   const viewport = opts.viewport || null;
+  // 总豆量可能独占一行：提前测量以撑高画布（与后端导出保持一致）
+  let legendExtraRow = false;
+  if (legend.length && opts.showLegend !== false && !viewport) {
+    legendExtraRow = legendTotalNeedsExtraRow(ctx, legend, width * cell, cell, outerPad);
+  }
   let vw, vh, ox, oy;
   let metrics = null;
   if (viewport) {
@@ -493,7 +534,7 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
     ox = -viewport.x0 * cell;
     oy = -viewport.y0 * cell;
   } else {
-    metrics = canvasMetrics(width, height, cell, legend.length, outerPad, edge);
+    metrics = canvasMetrics(width, height, cell, legend.length, outerPad, edge, legendExtraRow);
     vw = metrics.w;
     vh = metrics.h;
     ox = metrics.originX;

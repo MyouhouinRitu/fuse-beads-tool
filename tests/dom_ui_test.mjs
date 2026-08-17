@@ -557,3 +557,38 @@ import {
   assert.ok(App.saveTimer != null, '适应窗口（视图变化）应调度自动保存');
   console.log('[OK] 缩放按钮 / 适应窗口触发自动保存');
 }
+
+// ---------------- 32. 颜色数量滑块：数字即时更新，重算仍防抖 ----------------
+{
+  seedProject();
+  hooks.renderAll();
+  const slider = elsMap['color-slider'];
+  const label = elsMap['slider-value'];
+  slider.value = '5';
+  slider.emit('input');
+  assert.equal(label.textContent, '5', '拖动滑块时右侧数字应立即更新');
+  assert.equal(App.sliderN, 2, '数字即时更新不应触发立即重算（防抖仍生效）');
+  console.log('[OK] 颜色数量滑块：数字即时更新且重算防抖');
+}
+
+// ---------------- 33. 打开项目：仅在选择文件前弹一次确认 ----------------
+{
+  seedProject();
+  App.projectDirty = true;
+  const prevAutoConfirm = globalThis.__popupAutoConfirm;
+  delete globalThis.__popupAutoConfirm; // 走真实弹窗队列，便于断言只弹一次
+  try {
+    const popup = elsMap['popup-dialog'];
+    elsMap['btn-open-project'].emit('click');
+    assert.ok(!popup.classList.contains('hidden'), '打开项目前应先弹出确认提示');
+    elsMap['popup-ok'].emit('click');
+    assert.ok(popup.classList.contains('hidden'), '确认后应关闭提示');
+    await new Promise((r) => setTimeout(r, 0)); // 等待打开流程微任务完成，按钮恢复可用
+    elsMap['project-file-input'].files = [{}];
+    elsMap['project-file-input'].emit('change');
+    assert.ok(popup.classList.contains('hidden'), '选择文件后不应再次弹出确认提示');
+    console.log('[OK] 打开项目：仅在选择文件前弹一次确认');
+  } finally {
+    globalThis.__popupAutoConfirm = prevAutoConfirm;
+  }
+}

@@ -121,6 +121,9 @@ class El {
       el = el.parentNode;
     }
   }
+  click() {
+    this.emit('click');
+  }
   focus() {}
   blur() {}
   closest(sel) {

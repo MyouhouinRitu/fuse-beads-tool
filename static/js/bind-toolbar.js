@@ -39,11 +39,7 @@ export function bindToolbar() {
     const f = els.projectFileInput.files[0];
     els.projectFileInput.value = '';
     if (!f) return;
-    if (
-      App.projectDirty &&
-      !(await confirmDialog('当前项目有未保存的更改，打开新项目将覆盖。是否继续？'))
-    )
-      return;
+    // 确认提示由 openProjectViaDialog 在打开文件对话框前统一弹出，这里不再重复
     await withPending(els.btnOpenProject, async () => {
       try {
         const res = await api.openProjectUpload(f);

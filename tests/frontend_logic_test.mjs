@@ -384,4 +384,34 @@ import {
   console.log('[OK] 颜色计算异步封装：无 Worker 降级同步且结果一致');
 }
 
+// ---- uploadImage：无文件名的 Blob 不上传为 image（避免被浏览器命名为 "blob"） ----
+{
+  const { uploadImage } = await import('../static/js/api.js');
+  let seenBody = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, options = {}) => {
+    seenBody = options.body;
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  try {
+    const realFile = new File(['x'], 'photo.png', { type: 'image/png' });
+    await uploadImage(realFile, 4000, false, 'a'.repeat(64), false);
+    assert.ok(seenBody instanceof FormData, '上传应使用 FormData');
+    assert.ok(seenBody.get('image') instanceof File, '真实文件应作为 image 上传');
+    assert.equal(seenBody.get('image').name, 'photo.png');
+    assert.equal(seenBody.get('originalId'), 'a'.repeat(64));
+
+    const nameLessBlob = new Blob(['x'], { type: 'image/png' });
+    await uploadImage(nameLessBlob, 4000, false, 'a'.repeat(64), false);
+    assert.equal(seenBody.get('image'), null, '无文件名的 Blob 不应作为 image 上传');
+    assert.equal(
+      seenBody.get('originalId'),
+      'a'.repeat(64),
+      '应保留 originalId 由后端读取已存原图',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  console.log('[OK] uploadImage：无文件名 Blob 不上传 image，避免 originalName 变成 blob');
+}
 console.log('\n前端逻辑测试全部通过');

@@ -18,7 +18,7 @@ else:
     RESOURCE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     BASE_DIR = RESOURCE_DIR
 
-DEFAULT_CONFIG_NAME = "mard-221-alfonse-doudou"
+DEFAULT_CONFIG_NAME = "mard-221-github"
 
 # ---------------- 常量配置 ----------------
 DEFAULT_PORT = 5000

@@ -139,7 +139,6 @@ export const LEGEND_SWATCH_MIN = 8; // 图例色块下限
 export const LEGEND_ROW_EXTRA_H = 10; // 图例行高在色块外追加的高度
 export const LEGEND_ROW_FONT_EXTRA = 20; // 图例行高在字体外追加的高度
 export const LEGEND_TEXT_GAP = 8; // 色块与文字间距
-export const LEGEND_TEXT_DESCENT = 3; // 文字基线偏移（PIL 侧为 2，见 sync 测试例外表）
 export const LEGEND_SWATCH_BORDER = '#999999';
 export const LEGEND_TEXT_COLOR = '#333333';
 // 网格线

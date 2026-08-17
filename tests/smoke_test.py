@@ -250,6 +250,39 @@ def make_test_image(path):
     img.save(path, "PNG")
 
 
+def test_legend_total_and_vertical_center():
+    from bead.export import (
+        LEGEND_FONT_RATIO,
+        _font,
+        _legend_metrics,
+        _legend_text_top,
+        _legend_total_needs_extra_row,
+        legend_height,
+    )
+
+    legend = [
+        {"hex": "#E23B3B", "code": "R1", "count": 3},
+        {"hex": "#3B7AE2", "code": "B2", "count": 2},
+        {"hex": "#2E7D32", "code": "G3", "count": 1},
+    ]
+    cell = 28
+    font = _font(cell, LEGEND_FONT_RATIO)
+    # 窄图：总豆量放不下最后一行，需要额外一行
+    assert _legend_total_needs_extra_row(legend, 2 * cell, cell, font)
+    _font_size, _sw, row_h = _legend_metrics(cell)
+    assert legend_height(len(legend), 2 * cell, cell, extra_row=True) - legend_height(
+        len(legend), 2 * cell, cell
+    ) == row_h
+    # 宽图：总豆量放得下最后一行，不额外加行
+    assert not _legend_total_needs_extra_row(legend, 40 * cell, cell, font)
+    # 垂直居中：文本包围盒中心应与色块中心重合（容差 0.5px）
+    text = "R1 × 3"
+    top = _legend_text_top(8, font, text)
+    _left, t, _right, b = font.getbbox(text)
+    center = top + t + (b - t) / 2
+    assert abs(center - 4) <= 0.5, center
+    print("[OK] 图例总豆量：额外行判定 / 高度 / 垂直居中")
+
 def make_mirror_test_image(path):
     """120x80 三色竖条（左红/中绿/右蓝），用于镜像的确定性验证。"""
     img = Image.new("RGB", (120, 80), (0, 0, 0))
@@ -300,6 +333,7 @@ def main():
         test_app_factory_isolation()
         test_originals_gc()
         test_auth_gate_with_token()
+        test_legend_total_and_vertical_center()
 
         s, j = req("GET", "/api/configs")
         assert s == 200 and j["configs"], "配置列表为空"
@@ -585,6 +619,24 @@ def main():
         raw = base64.b64decode(j["dataBase64"])
         assert pj.parse_project_file(raw)["state"]
         print("[OK] 项目文件生成（浏览器下载）")
+        # v2 紧凑网格：前端 autosave 实际发送 gridBase64（小端 Int16Array），保存/打开都应通过
+        grid_b64 = base64.b64encode(struct.pack("<4h", 0, 1, 0, 1)).decode("ascii")
+        b64_doc = dict(project_doc)
+        b64_doc["project"] = {**project_doc["project"], "grid": None, "gridBase64": grid_b64}
+        s, j = req("POST", "/api/project/save", {"document": b64_doc})
+        assert s == 200 and j["mode"] == "download", f"gridBase64 项目保存应成功，实际 {s} {j}"
+        b64_raw = base64.b64decode(j["dataBase64"])
+        s, j = upload_project_bytes(b64_raw)
+        assert s == 200 and j["document"]["project"]["gridBase64"] == grid_b64, (
+            f"gridBase64 项目文件上传打开应成功，实际 {s} {j}"
+        )
+        print("[OK] 项目保存/打开：gridBase64 紧凑网格")
+
+        bad_b64_doc = dict(project_doc)
+        bad_b64_doc["project"] = {**project_doc["project"], "grid": None, "gridBase64": "%%%bad%%%"}
+        s, j = req("POST", "/api/project/save", {"document": bad_b64_doc})
+        assert s == 400 and "网格" in j["error"], f"损坏的 gridBase64 应返回 400，实际 {j}"
+        print("[OK] 项目保存：损坏的 gridBase64 返回 JSON 400")
 
         s, j = req("POST", "/api/project/save", {"document": {"settings": {}}})
         assert s == 400 and j["error"] == "没有可保存的项目"

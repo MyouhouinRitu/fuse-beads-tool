@@ -27,7 +27,6 @@ LEGEND_SWATCH_MIN = 8
 LEGEND_ROW_EXTRA_H = 10              # 图例行高在色块外追加的高度
 LEGEND_ROW_FONT_EXTRA = 20           # 图例行高在字体外追加的高度
 LEGEND_TEXT_GAP = 8                  # 色块与文字间距
-LEGEND_TEXT_DESCENT = 2              # 文字基线微调
 LEGEND_SWATCH_BORDER = "#999999"
 LEGEND_TEXT_COLOR = "#333333"
 
@@ -77,13 +76,42 @@ def _legend_metrics(cell: int) -> tuple[int, int, int]:
     return font_size, sw, row_h
 
 
-def legend_height(count: int, grid_w: int, cell: int) -> int:
+def legend_height(
+    count: int, grid_w: int, cell: int, extra_row: bool = False
+) -> int:
     """图例总高（像素）：行数 × 行高 + 底部留白，供渲染与 PDF 适配共用。"""
     rows = _legend_rows(count, grid_w, cell)
     if not rows:
         return 0
+    if extra_row:
+        rows += 1
     _font_size, _sw, row_h = _legend_metrics(cell)
     return rows * row_h + int(cell * LEGEND_BOTTOM_GAP_RATIO)
+
+
+def _legend_text_top(sw: int, font: ImageFont.FreeTypeFont, text: str) -> int:
+    """图例文字垂直居中：文本包围盒中心与色块中心对齐，返回 PIL 顶边 y。"""
+    _left, top, _right, bottom = font.getbbox(text)
+    return int((sw - (bottom - top)) // 2 - top)
+
+
+def _legend_total_needs_extra_row(
+    legend: list[dict], grid_w: int, cell: int, font: ImageFont.FreeTypeFont
+) -> bool:
+    """总豆量文本放不下图例最后一行时，需要额外一行。"""
+    if not legend:
+        return False
+    pad = int(cell * LEGEND_PAD_RATIO)
+    entry_w = cell * LEGEND_ENTRY_W
+    max_x = grid_w - pad
+    x = pad
+    for _ in legend:
+        if x + entry_w > max_x and x > pad:
+            x = pad
+        x += entry_w
+    total_text = f"总豆量：{sum(e.get('count', 0) for e in legend)}"
+    _left, _top, right, _bottom = font.getbbox(total_text)
+    return x + (right - _left) > max_x
 
 
 def build_palette_map(palette: list[dict]) -> dict[int, str]:
@@ -171,7 +199,15 @@ def render_pattern(
     grid_w = width * cell
     grid_h = height * cell
     legend_font_size, legend_sw, legend_row_h = _legend_metrics(cell)
-    legend_h = legend_height(len(legend), grid_w, cell) if show_legend else 0
+    legend_font = _font(cell, LEGEND_FONT_RATIO) if (show_legend and legend) else None
+    extra_legend_row = bool(
+        legend_font and _legend_total_needs_extra_row(legend, grid_w, cell, legend_font)
+    )
+    legend_h = (
+        legend_height(len(legend), grid_w, cell, extra_row=extra_legend_row)
+        if show_legend
+        else 0
+    )
     total_w = grid_w + 2 * edge + 2 * outer_pad
     total_h = grid_h + 2 * edge + 2 * outer_pad + legend_h
 
@@ -326,7 +362,8 @@ def render_pattern(
 
     # 色号图例（按豆数量从多到少排序，约 2 倍字号）
     if legend and show_legend:
-        font = _font(cell, LEGEND_FONT_RATIO)
+        font = legend_font
+        assert font is not None
         pad = int(cell * LEGEND_PAD_RATIO)
         entry_w = cell * LEGEND_ENTRY_W
         sw = legend_sw
@@ -344,12 +381,25 @@ def render_pattern(
                 fill=e.get("hex", "#FFFFFF"),
                 outline=LEGEND_SWATCH_BORDER,
             )
+            text = f"{e.get('code', '')} × {e.get('count', 0)}"
             draw.text(
-                (x + sw + LEGEND_TEXT_GAP, y + (sw - font.size) // 2 + LEGEND_TEXT_DESCENT),
-                f"{e.get('code', '')} × {e.get('count', 0)}",
+                (x + sw + LEGEND_TEXT_GAP, y + _legend_text_top(sw, font, text)),
+                text,
                 fill=LEGEND_TEXT_COLOR,
                 font=font,
             )
             x += entry_w
+
+        # 总豆量：优先写在最后一行的最右侧，放不下则新起一行
+        total_text = f"总豆量：{sum(e.get('count', 0) for e in legend)}"
+        _left, _top, right, _bottom = font.getbbox(total_text)
+        total_w = right - _left
+        row_y = y if x + total_w <= max_x else y + row_h
+        draw.text(
+            (max_x - total_w, row_y + _legend_text_top(sw, font, total_text)),
+            total_text,
+            fill=LEGEND_TEXT_COLOR,
+            font=font,
+        )
 
     return img
