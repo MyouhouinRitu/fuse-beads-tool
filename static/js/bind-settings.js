@@ -11,7 +11,7 @@ import {
 } from './constants.js';
 import { els } from './els.js';
 import { scheduleCanvasRender } from './render-queue.js';
-import { scheduleSliderApply } from './slider.js';
+import { resetSliderSession, scheduleSliderApply } from './slider.js';
 import { App, setProjectDirty } from './state.js';
 import * as toolState from './tool-state.js';
 import { clampInt, getTargetPixels, hintDistanceDeferred } from './utils.js';
@@ -25,11 +25,6 @@ export function bindSettings() {
   });
   els.chkSharpen.addEventListener('change', () => {
     App.settings.sharpen = els.chkSharpen.checked;
-    setProjectDirty(true);
-    scheduleAutosave();
-  });
-  els.chkMirror.addEventListener('change', () => {
-    App.settings.mirror = els.chkMirror.checked;
     setProjectDirty(true);
     scheduleAutosave();
   });
@@ -55,6 +50,9 @@ export function bindSettings() {
     els.sliderValue.textContent = els.colorSlider.value;
     scheduleSliderApply();
   });
+  // 新一次拖动 / 键盘调整开始时复位「已取消」状态，避免上一次取消影响本次操作
+  els.colorSlider.addEventListener('pointerdown', resetSliderSession);
+  els.colorSlider.addEventListener('keydown', resetSliderSession);
   els.emptyStyle.addEventListener('change', () => {
     App.settings.emptyStyle = els.emptyStyle.value;
     canvas.rebuildCanvas();

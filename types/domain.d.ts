@@ -25,6 +25,8 @@ type FuseSnapshot = {
   palette?: FusePaletteColor[];
   paletteHash?: string;
   maxColors?: number;
+  // 保存快照时的对比原图镜像状态，切换快照时同步还原原图显示方向
+  mirror?: { horizontal: boolean; vertical: boolean };
 };
 
 type FuseHistoryItem = {
@@ -55,4 +57,6 @@ type FuseStep =
       type: string;
       before: FuseSnapshot;
       after: FuseSnapshot;
+      mirrorBefore?: { horizontal: boolean; vertical: boolean };
+      mirrorAfter?: { horizontal: boolean; vertical: boolean };
     };

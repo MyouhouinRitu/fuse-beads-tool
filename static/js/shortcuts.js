@@ -63,6 +63,13 @@ function handleEscape(e, ctx) {
     e.preventDefault();
     return true;
   }
+  // 镜像模式：勾选框聚焦时也响应 ESC（需求：ESC 放弃预览并返回选择模式）
+  if (App.tool === TOOLS.MIRROR) {
+    toolState.setTool(TOOLS.SELECT);
+    blurActive();
+    e.preventDefault();
+    return true;
+  }
   if (ctx.inField) return false; // 输入框内不处理工具/选区 Escape
   if (!els.quickPicker.classList.contains('hidden')) {
     quickPicker.closeQuickPicker();
@@ -172,6 +179,14 @@ const SHORTCUTS = [
     run: (e) => {
       e.preventDefault();
       colorList.switchToolShortcut(TOOLS.WAND);
+      return true;
+    },
+  },
+  {
+    test: (e, ctx) => !ctx.mod && !dragState.active && e.key.toLowerCase() === 'g',
+    run: (e) => {
+      e.preventDefault();
+      colorList.switchToolShortcut(TOOLS.MIRROR);
       return true;
     },
   },

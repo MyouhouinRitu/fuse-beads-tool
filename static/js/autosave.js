@@ -109,6 +109,7 @@ export function buildStatePayload() {
       redoStack: App.redoStack,
     },
     history: encodeHistoryForState(App.history),
+    originalMirror: { ...App.originalMirror },
     original: buildOriginalPayload(),
   };
 }
@@ -123,7 +124,6 @@ export function buildProjectDocument() {
       targetPixels: getTargetPixels(),
       useLab: App.settings.useLab,
       sharpen: App.settings.sharpen,
-      mirror: App.settings.mirror,
       showCodes: App.settings.showCodes,
       emptyStyle: App.settings.emptyStyle,
       compare: App.settings.compare,
@@ -134,6 +134,7 @@ export function buildProjectDocument() {
     },
     project: buildProjectPayload(),
     history: App.history,
+    originalMirror: { ...App.originalMirror },
     original: buildOriginalPayload(),
   };
 }

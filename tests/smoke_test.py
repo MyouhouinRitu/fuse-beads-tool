@@ -172,7 +172,7 @@ def req(method, path, data=None, raw=False):
         return e.code, json.loads(e.read().decode())
 
 
-def upload(path, target_pixels, sharpen, original_id=None, mirror=False):
+def upload(path, target_pixels, sharpen, original_id=None):
     content = b""
     if path:
         with open(path, "rb") as fh:
@@ -182,7 +182,6 @@ def upload(path, target_pixels, sharpen, original_id=None, mirror=False):
     for name, value in (
         ("targetPixels", str(target_pixels)),
         ("sharpen", "1" if sharpen else "0"),
-        ("mirror", "1" if mirror else "0"),
     ):
         parts.append(
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode()
@@ -282,15 +281,6 @@ def test_legend_total_and_vertical_center():
     center = top + t + (b - t) / 2
     assert abs(center - 4) <= 0.5, center
     print("[OK] 图例总豆量：额外行判定 / 高度 / 垂直居中")
-
-def make_mirror_test_image(path):
-    """120x80 三色竖条（左红/中绿/右蓝），用于镜像的确定性验证。"""
-    img = Image.new("RGB", (120, 80), (0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, 39, 79), fill=(255, 0, 0))
-    d.rectangle((40, 0, 79, 79), fill=(0, 255, 0))
-    d.rectangle((80, 0, 119, 79), fill=(0, 0, 255))
-    img.save(path)
 
 def make_transparent_image(path):
     img = Image.new("RGBA", (800, 600), (0, 0, 0, 0))
@@ -438,20 +428,6 @@ def main():
         s, j = upload(None, 30000, False, original_id=original_id)
         assert s == 200 and j["originalId"] == original_id
         print("[OK] 按原图引用重新压缩")
-        # 水平镜像：无缩放三色条图，mirror=1 的输出应与原输出完全左右翻转一致
-        mirror_path = os.path.join(tmp, "mirror_test.png")
-        make_mirror_test_image(mirror_path)
-        s, j0 = upload(mirror_path, 9600, False)
-        assert s == 200, f"普通上传应成功，实际 {s}"
-        plain_img = Image.open(io.BytesIO(base64.b64decode(j0["pngBase64"])))
-        assert plain_img.size == (120, 80), f"无缩放输出尺寸应为 120x80，实际 {plain_img.size}"
-        s, j1 = upload(mirror_path, 9600, False, mirror=True)
-        assert s == 200, f"镜像上传应成功，实际 {s}"
-        mimg = Image.open(io.BytesIO(base64.b64decode(j1["pngBase64"])))
-        assert list(mimg.get_flattened_data()) == list(plain_img.transpose(Image.FLIP_LEFT_RIGHT).get_flattened_data()), "镜像输出应等于原输出水平翻转"
-        assert mimg.getpixel((0, 40)) == (0, 0, 255), "镜像后左侧应为蓝色"
-        assert mimg.getpixel((119, 40)) == (255, 0, 0), "镜像后右侧应为红色"
-        print("[OK] 水平镜像：输出与原图水平翻转一致")
 
         transp_path = os.path.join(tmp, "transparent.png")
         make_transparent_image(transp_path)

@@ -1,4 +1,4 @@
-// 使用问题修复文档：下拉菜单、极简 Markdown 渲染与文档弹窗。
+// 常见问题说明与帮助文档：下拉菜单、极简 Markdown 渲染与文档弹窗。
 
 import { els } from './els.js';
 import { hideDialog, showDialog } from './focus.js';

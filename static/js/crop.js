@@ -235,6 +235,7 @@ export function applyCrop() {
     paletteName: App.configName,
     palette: App.appliedPalette.map((c) => ({ ...c })),
     maxColors: App.maxColors,
+    mirror: { horizontal: App.originalMirror.horizontal, vertical: App.originalMirror.vertical },
   };
   const item = createTransaction(App.history, snapshot);
   item.label = `裁剪前${before.width}×${before.height}`;

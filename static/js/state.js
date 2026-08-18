@@ -25,6 +25,7 @@ export const App = {
   originalImage: null, // 用于「对比原图」的原图 HTMLImageElement
   originalUrl: null, // 原图 object URL
   originalId: null, // 后端 data/originals 中保存的原图引用（sha256）
+  originalMirror: { horizontal: false, vertical: false }, // 对比原图显示的镜像状态（与拼豆图方向保持一致）
   originalName: null,
   originalSha256: null,
   originalSize: null,
@@ -46,7 +47,6 @@ export const App = {
     targetPixels: DEFAULT_TARGET_PIXELS,
     useLab: true,
     sharpen: true,
-    mirror: false,
     showCodes: true,
     emptyStyle: 'default',
     compare: false,

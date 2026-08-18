@@ -35,7 +35,7 @@ export const importConfig = (file) => {
   fd.append('file', file);
   return request('/api/configs/import', { method: 'POST', body: fd });
 };
-export const uploadImage = (file, targetPixels, sharpen, originalId = null, mirror = false) => {
+export const uploadImage = (file, targetPixels, sharpen, originalId = null) => {
   const fd = new FormData();
   // 从项目/状态恢复的原图是无文件名的 Blob；直接 append 会被浏览器默认命名为 "blob"，
   // 导致后端把 originalName 记成 "blob"。此时只传 originalId，由后端读取已存原图。
@@ -43,7 +43,6 @@ export const uploadImage = (file, targetPixels, sharpen, originalId = null, mirr
   if (originalId) fd.append('originalId', originalId);
   fd.append('targetPixels', String(targetPixels));
   fd.append('sharpen', sharpen ? '1' : '0');
-  fd.append('mirror', mirror ? '1' : '0');
   return request('/api/upload', { method: 'POST', body: fd });
 };
 export const getOriginalBlob = async (originalId) => {

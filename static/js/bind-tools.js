@@ -6,7 +6,9 @@ import { TOOLS } from './constants.js';
 import * as crop from './crop.js';
 import { els } from './els.js';
 import * as highlight from './highlight.js';
+import * as historyUI from './history-ui.js';
 import { interactionState } from './interaction.js';
+import * as mirror from './mirror.js';
 import { scheduleCanvasRender } from './render-queue.js';
 import { App } from './state.js';
 import * as toolState from './tool-state.js';
@@ -19,12 +21,21 @@ export function bindTools() {
     ['toolPicker', TOOLS.PICKER],
     ['toolCrop', TOOLS.CROP],
     ['toolWand', TOOLS.WAND],
+    ['toolMirror', TOOLS.MIRROR],
   ]) {
     els[btnKey].addEventListener('click', () => {
       if (tool === TOOLS.BRUSH && !colorList.ensureBrushColor()) return;
       toolState.setTool(App.tool === tool ? TOOLS.SELECT : tool);
     });
   }
+  // 镜像模式：勾选水平 / 垂直即时预览；点击「应用」才提交并退出镜像模式
+  els.mirrorH.addEventListener('change', () => mirror.toggleMirror('horizontal'));
+  els.mirrorV.addEventListener('change', () => mirror.toggleMirror('vertical'));
+  els.btnApplyMirror.addEventListener('click', () => {
+    mirror.applyMirror();
+    historyUI.renderHistoryUI(); // 应用后同步撤销 / 重做按钮状态
+    toolState.setTool(TOOLS.SELECT);
+  });
   els.btnAutoCrop.addEventListener('click', crop.autoCrop);
   els.btnApplyCrop.addEventListener('click', crop.applyCrop);
   els.selectHighlightBtn.addEventListener('click', () => {

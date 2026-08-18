@@ -4,6 +4,7 @@ import * as api from './api.js';
 import { scheduleAutosave } from './autosave.js';
 import { resetProjectEditingState } from './canvas.js';
 import * as C from './colors.js';
+import { redrawOriginalImage } from './compare.js';
 import { els } from './els.js';
 import { paletteHash } from './hash.js';
 import {
@@ -38,6 +39,7 @@ export function saveTransaction() {
     palette: App.appliedPalette.map((c) => ({ ...c })),
     paletteHash: paletteHash(App.appliedPalette),
     maxColors: App.maxColors,
+    mirror: { horizontal: App.originalMirror.horizontal, vertical: App.originalMirror.vertical },
   };
   const item = createTransaction(App.history, snapshot);
   setProjectDirty(true);
@@ -59,6 +61,9 @@ export async function switchHistoryItem(id) {
   App.editedSinceSlider = false;
   App.history.currentId = id;
   App.history.baselineId = id;
+  // 快照记录了当时的镜像状态：切换后对比原图显示方向同步还原
+  App.originalMirror.horizontal = !!snap.mirror?.horizontal;
+  App.originalMirror.vertical = !!snap.mirror?.vertical;
   setProjectDirty(true);
   // 切换到其它事务后，以该事务快照中的色板作为已应用色板渲染画布
   App.appliedPalette = (snap.palette || []).map((c) => ({ ...c }));
@@ -93,6 +98,7 @@ export async function switchHistoryItem(id) {
     App.palette = [];
   }
   renderFullNow();
+  redrawOriginalImage(); // 原图显示方向随快照同步
   renderHistoryUI();
   toast(`已切换到快照 #${id}`);
   scheduleAutosave();

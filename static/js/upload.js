@@ -6,11 +6,13 @@ import { resetProjectEditingState } from './canvas.js';
 import { computeInitialMappingAsync } from './color-queue.js';
 import * as C from './colors.js';
 import { redrawOriginalImage } from './compare.js';
+import { TOOLS } from './constants.js';
 import { els } from './els.js';
 import * as historyUI from './history-ui.js';
 import { confirmDialog } from './popup.js';
 import { renderFullNow } from './render-queue.js';
 import { App, clearHistoryRecords, hasPendingRecords, setProjectDirty } from './state.js';
+import * as toolState from './tool-state.js';
 import { fileNameStem, getTargetPixels, toast } from './utils.js';
 import { fitViewportToCanvas } from './view.js';
 
@@ -27,7 +29,6 @@ export async function processUpload() {
       target,
       els.chkSharpen.checked,
       App.originalId,
-      els.chkMirror.checked,
     );
     const img = new Image();
     img.src = `data:image/png;base64,${res.pngBase64}`;
@@ -54,8 +55,6 @@ export async function processUpload() {
       : App.originalName || res.originalName || null;
     App.originalSha256 = res.originalSha256 || null;
     App.originalSize = res.originalSize || null;
-    // 重新压缩/导入后按当前镜像设置重绘对比原图
-    redrawOriginalImage();
     App.projectName = fileNameStem(App.originalName || res.originalName || '') || '未命名';
     if (oldOriginalId && oldOriginalId !== App.originalId) {
       api.deleteOriginal(oldOriginalId).catch(() => {});
@@ -84,6 +83,10 @@ async function applyMapping() {
   );
   App.project = { width, height, grid };
   App.baseGrid = grid.slice();
+  // 新网格由原图重新生成，方向已重置，对比原图显示同步复位
+  App.originalMirror.horizontal = false;
+  App.originalMirror.vertical = false;
+  redrawOriginalImage();
   // 重新压缩/导入后，当前色板配置成为已应用色板（画布与编辑工具随之更新）
   App.appliedPalette = App.palette.map((c) => ({ ...c }));
   // 网格被替换，九宫格目标格索引可能失效
@@ -91,6 +94,7 @@ async function applyMapping() {
   App.maxColors = Math.max(2, C.countUsedColors(grid, width, height));
   App.sliderN = null;
   App.editedSinceSlider = false;
+  toolState.setTool(TOOLS.SELECT); // 导入 / 重新压缩后回到选择模式
   renderFullNow();
   if (isNew) fitViewportToCanvas();
   scheduleAutosave();

@@ -613,6 +613,9 @@ button.panel-head:hover {
   display: flex;
   gap: 6px;
 }
+.tool-row + .tool-row {
+  margin-top: 6px; /* 两行编辑工具之间的间距 */
+}
 .tool {
   flex: 1;
 }

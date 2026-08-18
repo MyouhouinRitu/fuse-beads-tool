@@ -35,6 +35,7 @@ export const TOOLS = {
   PICKER: 'picker',
   CROP: 'crop',
   WAND: 'wand',
+  MIRROR: 'mirror',
 };
 
 // ---------- 魔棒 ----------

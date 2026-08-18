@@ -14,6 +14,7 @@ import {
   MAX_SNAPSHOTS,
   MAX_UNDO_STEPS,
   maxSnapshotsFor,
+  recordMirrorStep,
   recordStep,
   recordStructuralStep,
   redoStep,
@@ -327,6 +328,77 @@ import {
   console.log('[OK] 结构型步骤：裁剪撤销/重做与增量叠加');
 }
 
+// ---- 镜像步骤：与增量步骤共存（不独占撤销栈），撤销/重做恢复网格与原图镜像状态 ----
+{
+  const undoStack = [];
+  const redoStack = [];
+  const before = {
+    width: 2,
+    height: 2,
+    grid: Int16Array.from([0, 1, 2, 3]),
+    baseGrid: Int16Array.from([0, 1, 2, 3]),
+  };
+  const after = {
+    width: 2,
+    height: 2,
+    grid: Int16Array.from([3, 2, 1, 0]),
+    baseGrid: Int16Array.from([3, 2, 1, 0]),
+  };
+  // 先有一笔增量编辑，再应用镜像：镜像不应清空之前的增量步骤
+  recordStep(undoStack, redoStack, [{ x: 0, y: 0, from: 0, to: 9 }]);
+  recordMirrorStep(
+    undoStack,
+    redoStack,
+    before,
+    after,
+    { horizontal: false, vertical: false },
+    { horizontal: true, vertical: true },
+  );
+  assert.equal(undoStack.length, 2, '镜像步骤应叠加在增量步骤之后，不清空撤销栈');
+  assert.ok(undoStack[1].structural && undoStack[1].type === 'mirror', '步骤应标记为结构型镜像');
+  assert.deepEqual(
+    undoStack[1].mirrorBefore,
+    { horizontal: false, vertical: false },
+    '镜像步骤应携带 before 原图状态',
+  );
+  assert.deepEqual(
+    undoStack[1].mirrorAfter,
+    { horizontal: true, vertical: true },
+    '镜像步骤应携带 after 原图状态',
+  );
+
+  const holder = { width: 0, height: 0, grid: null, baseGrid: null };
+  const mirrorStep = undoStep(undoStack, redoStack);
+  applyStructuralStep(holder, mirrorStep, 'undo');
+  assert.deepEqual(Array.from(holder.grid), [0, 1, 2, 3], '撤销镜像应恢复网格');
+  const incStep = undoStep(undoStack, redoStack);
+  assert.ok(incStep && !incStep.structural, '镜像撤销后可继续撤销之前的增量步骤');
+  assert.equal(incStep.changes[0].to, 9, '增量步骤内容应保留');
+
+  // 重做：先增量后镜像
+  const incRedo = redoStep(undoStack, redoStack);
+  applyStepToGrid(holder.grid, 2, incRedo.changes, 'redo');
+  assert.equal(holder.grid[0], 9, '重做增量应恢复编辑');
+  const mirrorRedo = redoStep(undoStack, redoStack);
+  applyStructuralStep(holder, mirrorRedo, 'redo');
+  assert.deepEqual(Array.from(holder.grid), [3, 2, 1, 0], '重做镜像应恢复翻转网格');
+
+  // 清洗后仍保留 mirrorBefore / mirrorAfter
+  const cleaned = sanitizeUndoStack([mirrorRedo]);
+  assert.equal(cleaned.length, 1, '清洗后应保留镜像步骤');
+  assert.equal(cleaned[0].type, 'mirror', '清洗后类型应为 mirror');
+  assert.deepEqual(
+    cleaned[0].mirrorBefore,
+    { horizontal: false, vertical: false },
+    '清洗应保留 before 原图状态',
+  );
+  assert.deepEqual(
+    cleaned[0].mirrorAfter,
+    { horizontal: true, vertical: true },
+    '清洗应保留 after 原图状态',
+  );
+  console.log('[OK] 镜像步骤：与增量共存 / 撤销重做 / 清洗保留原图状态');
+}
 // ---- 恢复用撤销/重做栈清洗：丢弃损坏步骤、保留结构型快照 ----
 {
   const raw = [
@@ -395,14 +467,14 @@ import {
   };
   try {
     const realFile = new File(['x'], 'photo.png', { type: 'image/png' });
-    await uploadImage(realFile, 4000, false, 'a'.repeat(64), false);
+    await uploadImage(realFile, 4000, false, 'a'.repeat(64));
     assert.ok(seenBody instanceof FormData, '上传应使用 FormData');
     assert.ok(seenBody.get('image') instanceof File, '真实文件应作为 image 上传');
     assert.equal(seenBody.get('image').name, 'photo.png');
     assert.equal(seenBody.get('originalId'), 'a'.repeat(64));
 
     const nameLessBlob = new Blob(['x'], { type: 'image/png' });
-    await uploadImage(nameLessBlob, 4000, false, 'a'.repeat(64), false);
+    await uploadImage(nameLessBlob, 4000, false, 'a'.repeat(64));
     assert.equal(seenBody.get('image'), null, '无文件名的 Blob 不应作为 image 上传');
     assert.equal(
       seenBody.get('originalId'),

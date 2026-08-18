@@ -122,10 +122,13 @@ function drawOriginalImage() {
   if (cv.height !== h) cv.height = h;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, w, h);
-  if (App.settings.mirror) {
+  const mh = App.originalMirror.horizontal;
+  const mv = App.originalMirror.vertical;
+  if (mh || mv) {
+    // 原图显示与拼豆图方向保持一致：水平/垂直镜像在绘制时翻转
     ctx.save();
-    ctx.translate(w, 0);
-    ctx.scale(-1, 1);
+    ctx.translate(mh ? w : 0, mv ? h : 0);
+    ctx.scale(mh ? -1 : 1, mv ? -1 : 1);
     ctx.drawImage(img, 0, 0, w, h);
     ctx.restore();
   } else {

@@ -2,6 +2,7 @@
 
 import { scheduleAutosave } from './autosave.js';
 import { clearProjectEditingState } from './canvas.js';
+import { redrawOriginalImage } from './compare.js';
 import { applyStructuralStep, redoStep, undoStep } from './history.js';
 import { renderHistoryUI } from './history-ui.js';
 import { applyGridChanges } from './mutations.js';
@@ -12,7 +13,18 @@ import { fitViewportToCanvas } from './view.js';
 
 // 应用一步撤销/重做（兼容普通增量步骤与结构性步骤）
 function applyUndoRedoStep(step, mode) {
-  if (step.structural) {
+  if (step.structural && step.type === 'mirror') {
+    // 镜像：尺寸不变，还原网格/基副本并同步对比原图显示方向（不重置滑块状态、不重适应窗口）
+    const holder = { width: 0, height: 0, grid: null, baseGrid: null };
+    applyStructuralStep(holder, step, mode);
+    App.project = { width: holder.width, height: holder.height, grid: holder.grid };
+    App.baseGrid = holder.baseGrid;
+    const ms = mode === 'undo' ? step.mirrorBefore : step.mirrorAfter;
+    App.originalMirror.horizontal = !!ms?.horizontal;
+    App.originalMirror.vertical = !!ms?.vertical;
+    redrawOriginalImage();
+    clearProjectEditingState();
+  } else if (step.structural) {
     const holder = { width: 0, height: 0, grid: null, baseGrid: null };
     applyStructuralStep(holder, step, mode);
     App.project = { width: holder.width, height: holder.height, grid: holder.grid };

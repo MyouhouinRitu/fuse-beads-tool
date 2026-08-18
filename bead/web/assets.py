@@ -100,7 +100,6 @@ def api_upload():
 
     target = opt_int(request.form.get("targetPixels"), DEFAULT_TARGET_PIXELS)
     sharpen = opt_bool(request.form.get("sharpen"), False)
-    mirror = opt_bool(request.form.get("mirror"), False)
     try:
         img = comp.open_image(raw)
     except ValueError as e:
@@ -110,7 +109,7 @@ def api_upload():
     # 校验图片成功后再落盘，避免无效上传留下孤儿原图文件
     sha256 = store_original(raw)
     try:
-        img = comp.compress(img, target, sharpen=sharpen, mirror=mirror)
+        img = comp.compress(img, target, sharpen=sharpen)
         b64 = base64.b64encode(comp.to_png_base64(img)).decode("ascii")
     except Exception:
         return err("图片处理失败，请尝试更小的图片", 500)

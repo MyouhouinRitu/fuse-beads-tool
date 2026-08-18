@@ -29,7 +29,14 @@ const css = fs.readFileSync(path.resolve('static/css/style.css'), 'utf8');
     assert.ok(html.includes(`aria-expanded="true"`), `${head} 应有 aria-expanded`);
     assert.ok(html.includes(`aria-controls=`), `${head} 应有 aria-controls`);
   }
-  for (const tool of ['tool-brush', 'tool-picker', 'tool-eraser', 'tool-crop', 'tool-wand']) {
+  for (const tool of [
+    'tool-brush',
+    'tool-picker',
+    'tool-eraser',
+    'tool-crop',
+    'tool-wand',
+    'tool-mirror',
+  ]) {
     assert.ok(html.includes(`id="${tool}"`), `${tool} 应存在`);
     assert.ok(html.includes(`aria-pressed="false"`), `${tool} 应有 aria-pressed`);
   }

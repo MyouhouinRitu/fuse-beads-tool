@@ -10,6 +10,11 @@ import { App, setDirty } from './state.js';
 // 网格内容修订号：画布显示数据缓存据此失效（格子原地修改时引用不变）
 export let gridRevision = 0;
 
+// 网格被原地整体变换（镜像预览等）后标记显示数据失效；不记录 dirty / 撤销，调用方负责还原
+export function touchGrid() {
+  gridRevision++;
+}
+
 /**
  * 写入一批格子变更并统一标记编辑状态。
  * @param {Array<{x: number, y: number, to: number, from?: number}>} changes

@@ -266,6 +266,7 @@ import {
   assert.equal(App.history.items.length, 0, '确认后应清空全部事务');
   assert.equal(App.undoStack.length, 0, '确认后应清空撤销记录');
   assert.equal(App.redoStack.length, 0, '确认后应清空重做记录');
+  assert.equal(App.tool, 'select', '修改颜色数量后应回到选择模式');
   console.log('[OK] 滑块调整：有事务/记录时警告并清空');
 }
 

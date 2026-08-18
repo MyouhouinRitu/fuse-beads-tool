@@ -20,6 +20,7 @@ import { decodeInt16Grid } from './grid-codec.js';
 import { sanitizeHistory, sanitizeUndoStack } from './history.js';
 import * as historyUI from './history-ui.js';
 import { interactionState } from './interaction.js';
+import * as mirror from './mirror.js';
 import * as palette from './palette.js';
 import { renderFullNow } from './render-queue.js';
 import { App, setDirty, setProjectDirty } from './state.js';
@@ -38,7 +39,6 @@ function applySettingsToControls() {
   els.sameColorChk.checked = !!App.settings.sameColorSelect;
   els.targetPixels.value = String(App.settings.targetPixels);
   els.chkSharpen.checked = App.settings.sharpen;
-  els.chkMirror.checked = !!App.settings.mirror;
   els.chkCodes.checked = App.settings.showCodes;
   els.selDistance.value = App.settings.useLab ? 'lab' : 'rgb';
   els.emptyStyle.value = ['default', 'black', 'white'].includes(App.settings.emptyStyle)
@@ -172,6 +172,12 @@ function restoreViewport(vp) {
   return true;
 }
 
+// 对比原图显示的镜像状态：随状态 / 项目文档持久化，保证原图与拼豆图方向一致
+function restoreOriginalMirror(raw) {
+  App.originalMirror.horizontal = !!raw?.horizontal;
+  App.originalMirror.vertical = !!raw?.vertical;
+}
+
 function restoreOriginalMeta(original) {
   App.originalId = original?.id ? String(original.id) : null;
   App.originalName = original?.name ? String(original.name) : null;
@@ -230,6 +236,7 @@ export async function restoreState() {
     return;
   }
   if (st.settings) Object.assign(App.settings, st.settings);
+  restoreOriginalMirror(st.originalMirror);
   applySettingsToControls();
   const projectRestored = await restoreProjectState(st);
   if (projectRestored && !projectRestored.ok) {
@@ -313,8 +320,10 @@ export async function applyProjectDocument(doc, path = null) {
   App.originalImage = null;
   App.originalUrl = null;
   App.tool = TOOLS.SELECT;
+  mirror.resetMirror(); // 打开项目后丢弃未应用的镜像预览
 
   if (doc.settings) Object.assign(App.settings, doc.settings);
+  restoreOriginalMirror(doc.originalMirror);
   applySettingsToControls();
   await restoreProjectState({ project: doc.project, settings: doc.settings });
 

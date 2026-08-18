@@ -27,6 +27,14 @@
       <div class="brand">拼豆工具</div>
       <span id="project-name-label" class="brand-sub"></span>
       <span class="spacer"></span>
+      <span class="hint">右键拖拽平移 · 滚轮缩放 · 快捷键说明见「常见问题说明与帮助 → 快捷键说明」</span>
+      <div class="dropdown" id="fix-dropdown">
+        <button type="button" id="btn-fix-menu" title="查看常见使用问题和修复说明" aria-haspopup="menu" aria-expanded="false" aria-controls="fix-menu">常见问题说明与帮助</button>
+        <div id="fix-menu" class="dropdown-menu hidden" role="menu">
+          <button type="button" id="fix-item-shortcuts" class="dropdown-item" role="menuitem">快捷键说明</button>
+          <button type="button" id="fix-item-gesture" class="dropdown-item" role="menuitem">右键在界面上只画线不拖拽</button>
+        </div>
+      </div>
       <button type="button" id="btn-theme" title="切换日间 / 夜间模式" aria-pressed="false">🌙 夜间模式</button>
     </div>
     <div class="tb-row">
@@ -41,7 +49,6 @@
           <div id="target-pixels-menu" class="dropdown-menu target-pixels-menu hidden" role="menu"></div>
         </span>
       </label>
-      <label class="chk"><input type="checkbox" id="chk-mirror">水平镜像</label>
       <label class="chk"><input type="checkbox" id="chk-sharpen" checked>锐化</label>
       <label class="field">颜色距离
         <select id="sel-distance">
@@ -51,15 +58,13 @@
       </label>
       <button type="button" id="btn-config" title="打开色板配置">色板配置</button>
       <button type="button" id="btn-recompress" title="按当前设置重新压缩并重新生成图案">重新压缩</button>
-      <span class="spacer"></span>
-      <div class="dropdown" id="fix-dropdown">
-        <button type="button" id="btn-fix-menu" title="查看常见使用问题和修复说明" aria-haspopup="menu" aria-expanded="false" aria-controls="fix-menu">常见问题说明与帮助</button>
-        <div id="fix-menu" class="dropdown-menu hidden" role="menu">
-          <button type="button" id="fix-item-shortcuts" class="dropdown-item" role="menuitem">快捷键说明</button>
-          <button type="button" id="fix-item-gesture" class="dropdown-item" role="menuitem">右键在界面上只画线不拖拽</button>
-        </div>
-      </div>
       <span class="tb-divider"></span>
+      <label class="field slider-field">颜色数量
+        <input type="range" id="color-slider" min="2" max="2" value="2" disabled>
+        <span id="slider-value">2</span>
+      </label>
+      <span id="used-colors" class="muted"></span>
+      <span class="spacer"></span>
       <button type="button" id="btn-undo" disabled title="撤销上一步修改（Ctrl+Z）">撤销</button>
       <button type="button" id="btn-redo" disabled title="重做已撤销的修改（Ctrl+Shift+Z / Ctrl+Y）">重做</button>
       <span id="undo-info" class="muted" title="当前单步记录数量（最多 20 步）">撤销步数：0/20</span>
@@ -68,15 +73,6 @@
       <button type="button" id="btn-export" class="primary">导出图片</button>
       <button type="button" id="btn-save-project" disabled title="保存项目（Ctrl+Shift+S）">保存项目</button>
       <button type="button" id="btn-logout" class="hidden" title="退出登录">退出登录</button>
-    </div>
-    <div class="tb-row">
-      <label class="field slider-field">颜色数量
-        <input type="range" id="color-slider" min="2" max="2" value="2" disabled>
-        <span id="slider-value">2</span>
-      </label>
-      <span id="used-colors" class="muted"></span>
-      <span class="spacer"></span>
-      <span class="hint">右键拖拽平移 · 滚轮缩放 · 快捷键说明见「常见问题说明与帮助 → 快捷键说明」</span>
     </div>
   </header>
 
@@ -96,8 +92,11 @@
               <button type="button" id="tool-brush" class="tool" title="用当前颜色涂色（ESC 返回选择模式）" aria-pressed="false">画笔</button>
               <button type="button" id="tool-picker" class="tool" title="点击像素取色（ESC 返回选择模式）" aria-pressed="false">取色</button>
               <button type="button" id="tool-eraser" class="tool" title="擦除格子（空位）" aria-pressed="false">橡皮</button>
+            </div>
+            <div class="tool-row">
               <button type="button" id="tool-crop" class="tool" title="裁剪图案（R 键；ESC 返回选择模式）" aria-pressed="false">裁剪</button>
               <button type="button" id="tool-wand" class="tool" title="点击选中四向相连的相似颜色（T 键；容差可调）" aria-pressed="false">魔棒</button>
+              <button type="button" id="tool-mirror" class="tool" title="水平 / 垂直镜像图案（G 键；ESC 返回选择模式；勾选后即时预览，点击「应用」才实际生效）" aria-pressed="false">镜像</button>
             </div>
             <div class="mode-line">
               当前模式：<span id="mode-label" class="mode-label">选择模式</span>
@@ -111,6 +110,11 @@
               <span id="crop-controls" class="selection-controls hidden">
                 <button id="btn-auto-crop" type="button" class="tool-mini" title="自动收缩到非空格的包围盒">自动裁剪</button>
                 <button id="btn-apply-crop" type="button" class="primary tool-mini" title="应用裁剪并退出裁剪模式">应用</button>
+              </span>
+              <span id="mirror-controls" class="selection-controls hidden">
+                <label class="chk" title="勾选后即时预览水平镜像，点击「应用」才实际生效"><input type="checkbox" id="mirror-h">水平</label>
+                <label class="chk" title="勾选后即时预览垂直镜像，点击「应用」才实际生效"><input type="checkbox" id="mirror-v">垂直</label>
+                <button id="btn-apply-mirror" type="button" class="primary tool-mini" title="应用镜像并退出镜像模式">应用</button>
               </span>
               <label class="field brush-size-field hidden" id="brush-size-wrap"
                 title="画笔 / 橡皮的矩形边长 = 2 × 数值 − 1（仅画笔与橡皮模式显示）">
@@ -219,7 +223,7 @@
 
   <div id="doc-dialog" class="dialog-mask hidden">
     <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="doc-title">
-      <h3 id="doc-title">使用问题修复</h3>
+      <h3 id="doc-title">常见问题说明与帮助</h3>
       <div class="dialog-body">
         <div id="doc-content" class="doc-content"></div>
       </div>

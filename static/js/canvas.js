@@ -13,6 +13,7 @@ import {
 } from './constants.js';
 import { els } from './els.js';
 import { interactionState } from './interaction.js';
+import * as mirror from './mirror.js';
 import { gridRevision } from './mutations.js';
 import { closeQuickPicker } from './quick-picker.js';
 import {
@@ -358,6 +359,7 @@ export function clearProjectEditingState() {
 // 项目内容重建后统一重置编辑状态：选区/拖选预览/色号高亮/九宫格与单步记录，并视为无未保存修改
 export function resetProjectEditingState() {
   clearProjectEditingState();
+  mirror.resetMirror(); // 项目整体重建后丢弃未应用的镜像预览
   App.undoStack = [];
   App.redoStack = [];
   setDirty(false);

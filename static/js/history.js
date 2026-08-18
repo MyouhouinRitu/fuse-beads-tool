@@ -96,7 +96,12 @@ function sanitizeSnapshot(s) {
     Array.isArray(s.baseGrid) && s.baseGrid.length === width * height
       ? norm(s.baseGrid)
       : grid.slice();
-  return { width, height, grid, baseGrid };
+  // 快照记录当时的对比原图镜像状态，切换快照时同步还原原图显示方向
+  const mirror = {
+    horizontal: !!s.mirror?.horizontal,
+    vertical: !!s.mirror?.vertical,
+  };
+  return { width, height, grid, baseGrid, mirror };
 }
 
 // 恢复单步撤销/重做栈：丢弃结构损坏、坐标/快照不完整的步骤，并限制在 MAX_UNDO_STEPS 内
@@ -110,12 +115,20 @@ export function sanitizeUndoStack(raw) {
       const before = sanitizeSnapshot(item.before);
       const after = sanitizeSnapshot(item.after);
       if (!before || !after) continue;
-      out.push({
-        structural: true,
-        type: String(item.type || 'crop'),
-        before,
-        after,
-      });
+      const type = String(item.type || 'crop');
+      const step = { structural: true, type, before, after };
+      if (type === 'mirror') {
+        // 镜像步骤额外携带对比原图显示状态，撤销/重做时同步还原
+        step.mirrorBefore = {
+          horizontal: !!item.mirrorBefore?.horizontal,
+          vertical: !!item.mirrorBefore?.vertical,
+        };
+        step.mirrorAfter = {
+          horizontal: !!item.mirrorAfter?.horizontal,
+          vertical: !!item.mirrorAfter?.vertical,
+        };
+      }
+      out.push(step);
     } else {
       const changes = [];
       if (Array.isArray(item.changes)) {
@@ -237,6 +250,23 @@ export function recordStructuralStep(undoStack, redoStack, before, after, type =
   undoStack.length = 0;
   redoStack.length = 0;
   undoStack.push(step);
+  return step;
+}
+
+// 记录一步镜像操作：尺寸不变，旧坐标增量步骤仍然有效，因此不清空撤销栈；
+// 附带对比原图显示的镜像状态（撤销/重做时同步还原原图显示方向）。
+export function recordMirrorStep(undoStack, redoStack, before, after, mirrorBefore, mirrorAfter) {
+  const step = {
+    structural: true,
+    type: 'mirror',
+    before: snapshotOf(before),
+    after: snapshotOf(after),
+    mirrorBefore: { horizontal: !!mirrorBefore?.horizontal, vertical: !!mirrorBefore?.vertical },
+    mirrorAfter: { horizontal: !!mirrorAfter?.horizontal, vertical: !!mirrorAfter?.vertical },
+  };
+  undoStack.push(step);
+  cap(undoStack);
+  redoStack.length = 0;
   return step;
 }
 

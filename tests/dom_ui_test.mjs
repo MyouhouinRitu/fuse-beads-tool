@@ -14,7 +14,7 @@ import {
   windowListeners,
 } from './helpers/dom-harness.mjs';
 
-// ---------------- 20. 使用问题修复下拉菜单与文档弹窗 ----------------
+// ---------------- 20. 常见问题说明与帮助下拉菜单与文档弹窗 ----------------
 {
   elsMap['fix-menu'].classList.add('hidden');
   elsMap['btn-fix-menu'].emit('click');
@@ -31,7 +31,7 @@ import {
   assert.ok(elsMap['doc-content'].innerHTML.includes('<li>'), '文档列表应被渲染');
   elsMap['doc-close'].emit('click');
   assert.ok(elsMap['doc-dialog'].classList.contains('hidden'), '点击关闭应隐藏文档弹窗');
-  console.log('[OK] 使用问题修复：下拉菜单与文档弹窗');
+  console.log('[OK] 常见问题说明与帮助：下拉菜单与文档弹窗');
 }
 
 // ---------------- 21. 日间 / 夜间模式切换 ----------------
@@ -81,6 +81,8 @@ import {
   assert.equal(App.tool, 'picker', 'W 应切换到取色');
   kd({ key: 'e', ctrlKey: false, metaKey: false, target: null, preventDefault: prevent });
   assert.equal(App.tool, 'eraser', 'E 应切换到橡皮');
+  kd({ key: 'g', ctrlKey: false, metaKey: false, target: null, preventDefault: prevent });
+  assert.equal(App.tool, 'mirror', 'G 应切换到镜像');
   // 输入框内不触发工具切换
   hooks.setTool('select');
   kd({
@@ -320,6 +322,149 @@ import {
   console.log('[OK] 裁剪工具：进入/移动边/自动裁剪/应用/退出与放大镜');
 }
 
+// ---------------- 24.5 镜像工具：进入 / 即时预览 / 应用 / 撤销重做 / 放弃 ----------------
+{
+  seedProject();
+  App.project.grid = Int16Array.from([0, 1, 2, 3]); // 2x2 四色，便于验证翻转
+  App.baseGrid = Int16Array.from([0, 1, 2, 3]);
+  App.originalMirror.horizontal = false;
+  App.originalMirror.vertical = false;
+  App.dirty = false;
+  App.undoStack = [];
+  App.redoStack = [];
+  const kd = windowListeners.keydown[0];
+  const prevent = () => {};
+
+  hooks.setTool('mirror');
+  assert.equal(App.tool, 'mirror', '应能进入镜像模式');
+  assert.equal(elsMap['mode-label'].textContent, '镜像模式', '模式标签应为「镜像模式」');
+  assert.ok(
+    !elsMap['mirror-controls'].classList.contains('hidden'),
+    '镜像模式应显示水平 / 垂直勾选与应用按钮',
+  );
+  assert.equal(elsMap['mirror-h'].checked, false, '进入镜像模式时水平应未勾选');
+  assert.equal(elsMap['mirror-v'].checked, false, '进入镜像模式时垂直应未勾选');
+
+  // 勾选水平：即时预览翻转，不写撤销、不标记 dirty
+  elsMap['mirror-h'].checked = true;
+  elsMap['mirror-h'].emit('change');
+  assert.deepEqual(Array.from(App.project.grid), [1, 0, 3, 2], '勾选水平后应即时水平翻转');
+  assert.equal(App.originalMirror.horizontal, true, '对比原图水平镜像状态应同步');
+  assert.equal(App.undoStack.length, 0, '预览阶段不应写撤销记录');
+  assert.equal(App.dirty, false, '预览阶段不应标记 dirty');
+
+  // 取消勾选水平：恢复原网格
+  elsMap['mirror-h'].checked = false;
+  elsMap['mirror-h'].emit('change');
+  assert.deepEqual(Array.from(App.project.grid), [0, 1, 2, 3], '取消勾选应恢复原网格');
+  assert.equal(App.originalMirror.horizontal, false, '取消勾选应恢复对比原图水平状态');
+
+  // 勾选垂直：即时预览
+  elsMap['mirror-v'].checked = true;
+  elsMap['mirror-v'].emit('change');
+  assert.deepEqual(Array.from(App.project.grid), [2, 3, 0, 1], '勾选垂直后应即时垂直翻转');
+  assert.equal(App.originalMirror.vertical, true, '对比原图垂直镜像状态应同步');
+
+  // ESC 放弃：恢复原网格与原图镜像状态
+  kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault: prevent });
+  assert.equal(App.tool, 'select', 'ESC 应回到选择模式');
+  assert.deepEqual(Array.from(App.project.grid), [0, 1, 2, 3], '放弃预览应恢复原网格');
+  assert.equal(App.originalMirror.vertical, false, '放弃预览应恢复对比原图镜像状态');
+  assert.equal(App.undoStack.length, 0, '放弃预览不应写撤销记录');
+  assert.ok(elsMap['mirror-controls'].classList.contains('hidden'), '退出镜像模式应隐藏镜像控件');
+
+  // 重新进入并应用水平 + 垂直：旋转 180°，记一步 mirror 撤销
+  hooks.setTool('mirror');
+  elsMap['mirror-h'].checked = true;
+  elsMap['mirror-h'].emit('change');
+  elsMap['mirror-v'].checked = true;
+  elsMap['mirror-v'].emit('change');
+  assert.deepEqual(Array.from(App.project.grid), [3, 2, 1, 0], '水平 + 垂直应等于旋转 180°');
+  elsMap['btn-apply-mirror'].click();
+  assert.equal(App.tool, 'select', '应用后应回到选择模式');
+  assert.equal(App.undoStack.length, 1, '应用应记一步撤销');
+  assert.equal(App.undoStack[0].type, 'mirror', '撤销步骤应为 mirror 类型');
+  assert.equal(App.dirty, true, '应用后应标记 dirty');
+  assert.equal(App.originalMirror.horizontal, true, '应用后对比原图水平镜像状态保留');
+  assert.equal(App.originalMirror.vertical, true, '应用后对比原图垂直镜像状态保留');
+
+  // 已应用的镜像重新进入镜像模式时勾选状态应保持（不因应用/退出而清空）
+  hooks.setTool('mirror');
+  assert.equal(elsMap['mirror-h'].checked, true, '重新进入镜像模式应保持水平勾选');
+  assert.equal(elsMap['mirror-v'].checked, true, '重新进入镜像模式应保持垂直勾选');
+  kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault: prevent });
+  assert.equal(App.tool, 'select', 'ESC 退出镜像模式');
+
+  // 撤销 / 重做：网格与对比原图镜像状态同步还原
+  hooks.doUndo();
+  assert.deepEqual(Array.from(App.project.grid), [0, 1, 2, 3], '撤销应恢复原网格');
+  assert.equal(App.originalMirror.horizontal, false, '撤销应恢复对比原图水平状态');
+  assert.equal(App.originalMirror.vertical, false, '撤销应恢复对比原图垂直状态');
+  // 撤销后镜像状态已复位，重新进入镜像模式勾选应同步为未勾选
+  hooks.setTool('mirror');
+  assert.equal(elsMap['mirror-h'].checked, false, '撤销后重新进入镜像模式水平应未勾选');
+  assert.equal(elsMap['mirror-v'].checked, false, '撤销后重新进入镜像模式垂直应未勾选');
+  kd({ key: 'Escape', ctrlKey: false, metaKey: false, target: null, preventDefault: prevent });
+  hooks.doRedo();
+  assert.deepEqual(Array.from(App.project.grid), [3, 2, 1, 0], '重做应再次应用镜像');
+  assert.equal(App.originalMirror.horizontal, true, '重做应恢复对比原图水平状态');
+  assert.equal(App.originalMirror.vertical, true, '重做应恢复对比原图垂直状态');
+  hooks.doUndo();
+  console.log('[OK] 镜像工具：进入 / 即时预览 / 应用 / 撤销重做 / 放弃');
+}
+// ---------------- 24.6 快照切换：对比原图镜像状态随快照同步恢复 ----------------
+{
+  seedProject();
+  App.project.grid = Int16Array.from([0, 1, 2, 3]); // 2x2 四色
+  App.baseGrid = Int16Array.from([0, 1, 2, 3]);
+  App.originalMirror.horizontal = false;
+  App.originalMirror.vertical = false;
+  App.undoStack = [];
+  App.redoStack = [];
+  App.history = { items: [], currentId: null, nextId: 1, baselineId: null };
+  const { switchHistoryItem } = await import('../static/js/history-ui.js');
+
+  // 应用水平 + 垂直镜像后保存快照：镜像状态应随快照记录
+  hooks.setTool('mirror');
+  elsMap['mirror-h'].checked = true;
+  elsMap['mirror-h'].emit('change');
+  elsMap['mirror-v'].checked = true;
+  elsMap['mirror-v'].emit('change');
+  elsMap['btn-apply-mirror'].click();
+  assert.equal(App.originalMirror.horizontal, true, '应用后水平镜像状态应为 true');
+  assert.equal(App.originalMirror.vertical, true, '应用后垂直镜像状态应为 true');
+  hooks.saveTransaction();
+  const mirroredId = App.history.items[0].id;
+  assert.deepEqual(
+    App.history.items[0].snapshot.mirror,
+    { horizontal: true, vertical: true },
+    '镜像快照应记录镜像状态',
+  );
+
+  // 撤销镜像后再保存快照（未镜像）
+  hooks.doUndo();
+  assert.deepEqual(Array.from(App.project.grid), [0, 1, 2, 3], '撤销后网格应恢复');
+  hooks.saveTransaction();
+  const plainId = App.history.items[1].id;
+  assert.deepEqual(
+    App.history.items[1].snapshot.mirror,
+    { horizontal: false, vertical: false },
+    '未镜像快照应记录 false',
+  );
+
+  // 切换到镜像快照：拼豆图与原图显示方向同步恢复
+  await switchHistoryItem(mirroredId);
+  assert.deepEqual(Array.from(App.project.grid), [3, 2, 1, 0], '切换快照应恢复镜像网格');
+  assert.equal(App.originalMirror.horizontal, true, '切换快照应恢复水平镜像显示');
+  assert.equal(App.originalMirror.vertical, true, '切换快照应恢复垂直镜像显示');
+
+  // 切回未镜像快照：拼豆图与原图显示方向同步复位
+  await switchHistoryItem(plainId);
+  assert.deepEqual(Array.from(App.project.grid), [0, 1, 2, 3], '切换快照应恢复未镜像网格');
+  assert.equal(App.originalMirror.horizontal, false, '切换快照应复位水平镜像显示');
+  assert.equal(App.originalMirror.vertical, false, '切换快照应复位垂直镜像显示');
+  console.log('[OK] 快照切换：对比原图镜像状态随快照同步恢复');
+}
 // ---------------- 25. 魔棒：容差 / 四向连通 / Shift 追加 / 滑块显隐 ----------------
 {
   seedProject();
@@ -571,6 +716,47 @@ import {
   console.log('[OK] 颜色数量滑块：数字即时更新且重算防抖');
 }
 
+// ---------------- 32.5 颜色数量滑块：需确认时立即弹窗、取消回退、确认后回到选择模式 ----------------
+{
+  seedProject();
+  const { resetSliderState } = await import('../static/js/slider.js');
+  resetSliderState(); // 清掉前面用例可能残留的滑块确认状态
+  hooks.saveTransaction(); // 产生事务记录 → 调整滑块需要确认
+  const slider = elsMap['color-slider'];
+  const label = elsMap['slider-value'];
+  const savedAuto = globalThis.__popupAutoConfirm;
+  globalThis.__popupAutoConfirm = undefined; // 走真实弹窗，便于断言弹出时机
+  try {
+    hooks.setTool('brush');
+    slider.value = '5';
+    slider.emit('input');
+    // 确认框应立即出现（不等防抖）
+    assert.ok(!elsMap['popup-dialog'].classList.contains('hidden'), '拖动滑块后应立即弹出确认框');
+    assert.equal(App.tool, 'brush', '确认前工具不应改变');
+    // 取消：滑块回退到当前值，不应用，工具保持
+    elsMap['popup-cancel'].emit('click');
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(slider.value, '2', '取消后滑块应回退到当前值');
+    assert.equal(label.textContent, '2', '取消后右侧数字应回退');
+    assert.equal(App.sliderN, 2, '取消后不应重算');
+    assert.equal(App.tool, 'brush', '取消后工具应保持');
+
+    // 新一次拖动（pointerdown 复位取消状态）并确认：应用（防抖）后回到选择模式
+    slider.emit('pointerdown');
+    slider.value = '5';
+    slider.emit('input');
+    assert.ok(!elsMap['popup-dialog'].classList.contains('hidden'), '再次拖动应立即弹出确认框');
+    elsMap['popup-ok'].emit('click');
+    await new Promise((r) => setTimeout(r, 220)); // 等待防抖后应用
+    assert.equal(App.sliderN, 5, '确认后应应用新的颜色数量');
+    assert.equal(App.tool, 'select', '修改颜色数量后应回到选择模式');
+    // 清理残留防抖状态，避免影响后续用例
+    slider.value = '2';
+  } finally {
+    globalThis.__popupAutoConfirm = savedAuto;
+  }
+  console.log('[OK] 颜色数量滑块：需确认时立即弹窗、取消回退、确认后回到选择模式');
+}
 // ---------------- 33. 打开项目：仅在选择文件前弹一次确认 ----------------
 {
   seedProject();

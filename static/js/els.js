@@ -32,8 +32,6 @@ export const els = {
   /** @type {HTMLButtonElement} */
   btnConfig: $('btn-config'),
   /** @type {HTMLInputElement} */
-  chkMirror: $('chk-mirror'),
-  /** @type {HTMLInputElement} */
   chkSharpen: $('chk-sharpen'),
   /** @type {HTMLInputElement} */
   chkCodes: $('chk-codes'),
@@ -97,6 +95,8 @@ export const els = {
   toolCrop: $('tool-crop'),
   /** @type {HTMLButtonElement} */
   toolWand: $('tool-wand'),
+  /** @type {HTMLButtonElement} */
+  toolMirror: $('tool-mirror'),
   modeLabel: $('mode-label'),
   selectionControls: $('selection-controls'),
   /** @type {HTMLInputElement} */
@@ -104,6 +104,13 @@ export const els = {
   /** @type {HTMLButtonElement} */
   selectHighlightBtn: $('select-highlight'),
   cropControls: $('crop-controls'),
+  mirrorControls: $('mirror-controls'),
+  /** @type {HTMLInputElement} */
+  mirrorH: $('mirror-h'),
+  /** @type {HTMLInputElement} */
+  mirrorV: $('mirror-v'),
+  /** @type {HTMLButtonElement} */
+  btnApplyMirror: $('btn-apply-mirror'),
   /** @type {HTMLButtonElement} */
   btnAutoCrop: $('btn-auto-crop'),
   /** @type {HTMLButtonElement} */

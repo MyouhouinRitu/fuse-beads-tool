@@ -263,8 +263,8 @@ async function main() {
     '导出对话框应包含独立透明色选项与预览',
   );
   assert.ok(
-    layout.hasWandTool && layout.editToolCount === 5,
-    `编辑工具行应包含魔棒且共 5 个工具，实际 ${layout.editToolCount}`,
+    layout.hasWandTool && layout.editToolCount === 6,
+    `编辑工具行应包含魔棒与镜像且共 6 个工具，实际 ${layout.editToolCount}`,
   );
   assert.ok(
     layout.hasOpenProject && layout.hasSaveProject && layout.saveProjectEnabled,
@@ -1244,7 +1244,7 @@ img.save(${JSON.stringify(LARGE_IMG)})
     console.log('[OK] 大图网格/原图比例同步换算');
   }
 
-  // 12.5 水平镜像：勾选后仅导入/重新压缩时生效，原图与拼豆图同时翻转
+  // 12.5 镜像工具：水平/垂直即时预览，应用才生效并纳入撤销重做，ESC 放弃
   {
     const readGrid = () => page.evaluate(() => Array.from(window.__app.project.grid));
     const readOrigLeft = () =>
@@ -1256,51 +1256,226 @@ img.save(${JSON.stringify(LARGE_IMG)})
       });
     const gBefore = await readGrid();
     const w = await page.evaluate(() => window.__app.project.width);
+    const h = await page.evaluate(() => window.__app.project.height);
     const origLeftBefore = await readOrigLeft();
     assert.ok(origLeftBefore[0] > 180, '前置：原图左侧应为红色带');
 
-    // 仅勾选不应立即改变拼豆图与原图
-    await page.check('#chk-mirror');
-    await page.waitForTimeout(300);
-    assert.deepEqual(await readGrid(), gBefore, '勾选镜像后未重新压缩前不应改变拼豆图');
-    assert.deepEqual(
-      await readOrigLeft(),
-      origLeftBefore,
-      '勾选镜像后未重新压缩前不应改变原图显示',
+    // 进入镜像模式：模式标签与控件显示，不改变拼豆图与原图
+    await page.click('#tool-mirror');
+    await page.waitForTimeout(150);
+    assert.equal(await page.textContent('#mode-label'), '镜像模式', '镜像按钮应切换到镜像模式');
+    assert.ok(
+      await page.locator('#mirror-controls').evaluate((el) => !el.classList.contains('hidden')),
+      '镜像模式应显示水平 / 垂直与应用按钮',
+    );
+    assert.deepEqual(await readGrid(), gBefore, '进入镜像模式不应改变拼豆图');
+    assert.deepEqual(await readOrigLeft(), origLeftBefore, '进入镜像模式不应改变原图显示');
+
+    // 勾选水平：即时预览拼豆图与原图同时翻转，且不写撤销记录
+    await page.check('#mirror-h');
+    await page.waitForTimeout(150);
+    const gH = await readGrid();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        assert.equal(
+          gH[y * w + x],
+          gBefore[y * w + (w - 1 - x)],
+          `预览水平镜像后第 ${y} 行第 ${x} 格应等于原第 ${y} 行第 ${w - 1 - x} 格`,
+        );
+      }
+    }
+    const origLeftH = await readOrigLeft();
+    assert.ok(origLeftH[2] > 180, `预览水平镜像后原图左侧应为蓝色带，实际 ${origLeftH}`);
+    assert.equal(
+      await page.evaluate(() => window.__app.undoStack.length),
+      0,
+      '预览阶段不应写撤销记录',
     );
 
-    // 重新压缩后：拼豆图水平翻转，原图显示也水平翻转
-    await page.click('#btn-recompress');
-    await acceptPopupIfVisible(page);
-    await page.waitForTimeout(1400);
+    // 取消勾选水平：恢复原方向
+    await page.uncheck('#mirror-h');
+    await page.waitForTimeout(150);
+    assert.deepEqual(await readGrid(), gBefore, '取消勾选应恢复原拼豆图');
+    assert.deepEqual(await readOrigLeft(), origLeftBefore, '取消勾选应恢复原图显示');
+
+    // 勾选垂直后按 ESC：回到选择模式且不应用任何改动
+    await page.check('#mirror-v');
+    await page.waitForTimeout(150);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    assert.equal(await page.textContent('#mode-label'), '选择模式', 'ESC 应返回选择模式');
+    assert.deepEqual(await readGrid(), gBefore, 'ESC 放弃后应恢复原拼豆图');
+    assert.deepEqual(await readOrigLeft(), origLeftBefore, 'ESC 放弃后应恢复原图显示');
+    assert.equal(
+      await page.evaluate(() => window.__app.undoStack.length),
+      0,
+      'ESC 放弃不应写撤销记录',
+    );
+
+    // 勾选水平并应用：G 键进入镜像模式，拼豆图与原图翻转，记一步 mirror 撤销
+    await page.keyboard.press('g');
+    await page.waitForTimeout(150);
+    assert.equal(await page.textContent('#mode-label'), '镜像模式', 'G 键应切换到镜像模式');
+    await page.check('#mirror-h');
+    await page.waitForTimeout(150);
+    await page.click('#btn-apply-mirror');
+    await page.waitForTimeout(200);
+    assert.equal(await page.textContent('#mode-label'), '选择模式', '应用后应返回选择模式');
     const gMirror = await readGrid();
-    assert.equal(gMirror.length, gBefore.length, '镜像后网格大小应不变');
-    for (let y = 0; y < gMirror.length / w; y++) {
+    for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         assert.equal(
           gMirror[y * w + x],
           gBefore[y * w + (w - 1 - x)],
-          `镜像后第 ${y} 行第 ${x} 格应等于原第 ${y} 行第 ${w - 1 - x} 格`,
+          `应用水平镜像后第 ${y} 行第 ${x} 格应等于原第 ${y} 行第 ${w - 1 - x} 格`,
         );
       }
     }
     const origLeftMirror = await readOrigLeft();
-    assert.ok(origLeftMirror[2] > 180, `重新压缩后原图左侧应为蓝色带，实际 ${origLeftMirror}`);
-    assert.ok(
-      await page.evaluate(() => window.__app.settings.mirror),
-      '镜像设置应写入 App.settings',
+    assert.ok(origLeftMirror[2] > 180, `应用水平镜像后原图左侧应为蓝色带，实际 ${origLeftMirror}`);
+    assert.equal(await page.evaluate(() => window.__app.undoStack.length), 1, '应用应记一步撤销');
+    assert.equal(
+      await page.evaluate(() => window.__app.undoStack[0]?.type),
+      'mirror',
+      '撤销步骤应为 mirror 类型',
     );
 
-    // 取消勾选并重新压缩：恢复原方向
-    await page.uncheck('#chk-mirror');
+    // 已应用的镜像重新进入镜像模式时勾选状态应保持（不因应用/退出而清空）
+    await page.click('#tool-mirror');
+    await page.waitForTimeout(150);
+    assert.equal(await page.isChecked('#mirror-h'), true, '重新进入镜像模式应保持水平勾选');
+    assert.equal(await page.isChecked('#mirror-v'), false, '重新进入镜像模式垂直仍应未勾选');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    assert.equal(await page.textContent('#mode-label'), '选择模式', 'ESC 退出镜像模式');
+
+    // 撤销 / 重做：拼豆图与原图显示同步还原 / 重放
+    await page.click('#btn-undo');
+    await page.waitForTimeout(200);
+    assert.deepEqual(await readGrid(), gBefore, '撤销后应恢复原拼豆图');
+    assert.deepEqual(await readOrigLeft(), origLeftBefore, '撤销后应恢复原图显示');
+    // 撤销后镜像状态复位，重新进入镜像模式勾选应同步为未勾选
+    await page.click('#tool-mirror');
+    await page.waitForTimeout(150);
+    assert.equal(await page.isChecked('#mirror-h'), false, '撤销后重新进入镜像模式水平应未勾选');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    await page.click('#btn-redo');
+    await page.waitForTimeout(200);
+    assert.deepEqual(await readGrid(), gMirror, '重做后应恢复镜像拼豆图');
+    assert.deepEqual(await readOrigLeft(), origLeftMirror, '重做后应恢复镜像原图显示');
+    // 恢复原方向，避免影响后续用例
+    await page.click('#btn-undo');
+    await page.waitForTimeout(200);
+    console.log('[OK] 镜像工具');
+  }
+
+  // 12.6 快照切换：对比原图显示方向随快照同步（镜像后保存快照再切换）
+  {
+    const readGrid = () => page.evaluate(() => Array.from(window.__app.project.grid));
+    const readOrigLeft = () =>
+      page.evaluate(() => {
+        const cv = document.querySelector('#canvas-original');
+        const ctx = cv.getContext('2d');
+        const d = ctx.getImageData(0, Math.floor(cv.height / 2), 1, 1).data;
+        return [d[0], d[1], d[2]];
+      });
+    const gBefore = await readGrid();
+    const origLeftBefore = await readOrigLeft();
+    assert.ok(origLeftBefore[0] > 180, '前置：原图左侧应为红色带');
+
+    // 打开对比原图，应用水平镜像后保存快照
+    await page.check('#chk-compare');
+    await page.waitForTimeout(200);
+    await page.click('#tool-mirror');
+    await page.check('#mirror-h');
+    await page.waitForTimeout(150);
+    await page.click('#btn-apply-mirror');
+    await page.waitForTimeout(200);
+    const gMirror = await readGrid();
+    const origLeftMirror = await readOrigLeft();
+    assert.ok(origLeftMirror[2] > 180, `镜像后原图左侧应为蓝色带，实际 ${origLeftMirror}`);
+    await page.click('#btn-save-state-side');
+    await page.waitForTimeout(250);
+    const snapId = await page.evaluate(
+      () => window.__app.history.items[window.__app.history.items.length - 1].id,
+    );
+    assert.equal(
+      await page.evaluate(
+        (id) => window.__app.history.items.find((i) => i.id === id)?.snapshot?.mirror?.horizontal,
+        snapId,
+      ),
+      true,
+      '快照应记录水平镜像状态',
+    );
+
+    // 撤销镜像：拼豆图与原图显示恢复
+    await page.click('#btn-undo');
+    await page.waitForTimeout(200);
+    assert.deepEqual(await readGrid(), gBefore, '撤销后拼豆图应恢复');
+    assert.deepEqual(await readOrigLeft(), origLeftBefore, '撤销后原图显示应恢复');
+
+    // 切换回镜像快照：拼豆图与原图显示都应恢复为镜像
+    await page.click(`#history-list .history-item[data-id="${snapId}"]`);
+    await page.waitForTimeout(400);
+    assert.deepEqual(await readGrid(), gMirror, '切换快照后拼豆图应为镜像');
+    assert.deepEqual(await readOrigLeft(), origLeftMirror, '切换快照后原图显示应为镜像');
+
+    // 关闭对比原图，避免影响后续用例
+    await page.uncheck('#chk-compare');
+    await page.waitForTimeout(200);
+    console.log('[OK] 快照切换：对比原图随快照同步');
+  }
+  // 12.7 导入 / 重新压缩 / 修改颜色数量后，编辑工具回到选择模式
+  {
+    // 重新压缩 → 选择模式
+    await page.click('#tool-brush');
+    await page.waitForTimeout(100);
+    assert.equal(await page.textContent('#mode-label'), '画笔模式', '前置：应进入画笔模式');
     await page.click('#btn-recompress');
     await acceptPopupIfVisible(page);
     await page.waitForTimeout(1400);
-    assert.deepEqual(await readGrid(), gBefore, '取消镜像并重新压缩后应恢复原拼豆图');
-    assert.deepEqual(await readOrigLeft(), origLeftBefore, '取消镜像并重新压缩后应恢复原图显示');
-    console.log('[OK] 水平镜像');
-  }
+    assert.equal(await page.textContent('#mode-label'), '选择模式', '重新压缩后应回到选择模式');
 
+    // 修改颜色数量 → 选择模式
+    await page.click('#tool-brush');
+    await page.waitForTimeout(100);
+    await page.evaluate(() => {
+      const s = document.querySelector('#color-slider');
+      s.value = String(Math.max(2, Number(s.max) - 1));
+      s.dispatchEvent(new Event('input'));
+    });
+    await page.waitForTimeout(400);
+    assert.equal(await page.textContent('#mode-label'), '选择模式', '修改颜色数量后应回到选择模式');
+
+    // 导入新图片 → 选择模式
+    const selectImg = path.join(TMP, 'select_mode_import.png');
+    execFileSync(process.env.PYTHON || 'python', [
+      '-c',
+      `
+from PIL import Image
+img = Image.new('RGB', (24, 24))
+for y in range(24):
+    for x in range(24):
+        img.putpixel((x, y), (80, 120, 200) if x < 12 else (200, 120, 80))
+img.save(${JSON.stringify(selectImg)})
+`,
+    ]);
+    await page.click('#tool-brush');
+    await page.waitForTimeout(100);
+    await page.setInputFiles('#file-input', selectImg);
+    await page.waitForFunction(
+      () =>
+        (document.querySelector('#project-name-label')?.textContent || '').includes(
+          'select_mode_import',
+        ),
+      null,
+      { timeout: 15000 },
+    );
+    await page.waitForTimeout(400);
+    assert.equal(await page.textContent('#mode-label'), '选择模式', '导入图片后应回到选择模式');
+    console.log('[OK] 导入 / 重新压缩 / 颜色数量后回到选择模式');
+  }
   // 13. 打开项目：只弹一次确认；重新压缩后保留原图名（回归：不再变成 blob）
   {
     const projImg = path.join(TMP, 'proj_test.png');
