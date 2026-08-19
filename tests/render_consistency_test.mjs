@@ -75,7 +75,8 @@ p = json.load(open(sys.argv[1], encoding='utf-8'))
 img = render_pattern(p['w'], p['h'], p['grid'], {int(k): v for k, v in p['palette'].items()},
                      cell=p['cell'], grid_lines=p['gridLines'], outer_pad=0, hatch=True,
                      empty_style='default', codes=None, show_codes=False,
-                     legend=None, show_legend=False, edge_numbers=False)
+                     legend=None, show_legend=False, show_attribution=False,
+                     edge_numbers=False)
 sys.stdout.buffer.write(base64.b64encode(img.tobytes()))
 `;
 
@@ -128,6 +129,8 @@ async function frontendRender(page, spec) {
         codes: [],
         legend: [],
         showLegend: false,
+        attribution: s.attribution === true,
+        background: s.background || undefined,
       });
       const d = octx.getImageData(0, 0, off.width, off.height).data;
       if (s.pts) {
@@ -179,11 +182,23 @@ p = json.load(open(sys.argv[1], encoding='utf-8'))
 img = render_pattern(p['w'], p['h'], p['grid'], {int(k): v for k, v in p['palette'].items()},
                      cell=p['cell'], grid_lines=True, outer_pad=0, hatch=True,
                      empty_style='default', codes=None, show_codes=False,
-                     legend=None, show_legend=False, edge_numbers=True)
+                     legend=None, show_legend=False, show_attribution=False,
+                     edge_numbers=True)
 out = {}
 for name, (x, y) in p['pts'].items():
     out[name] = list(img.getpixel((x, y)))
 print(json.dumps(out, ensure_ascii=False))
+`;
+
+const BACKEND_RENDER_ATTR = `
+import base64, json, sys
+from bead.export import render_pattern
+p = json.load(open(sys.argv[1], encoding='utf-8'))
+img = render_pattern(p['w'], p['h'], p['grid'], {int(k): v for k, v in p['palette'].items()},
+                     cell=p['cell'], grid_lines=False, outer_pad=0, hatch=True,
+                     empty_style='default', codes=None, show_codes=False,
+                     legend=None, show_legend=False, edge_numbers=False)
+sys.stdout.buffer.write(base64.b64encode(img.tobytes()))
 `;
 
 async function main() {
@@ -293,6 +308,43 @@ async function main() {
   assertBoth('pattern_10_solid', (v) => near(v, [154, 154, 154], 12), '图案每 10 格应为粗灰实线');
   assertBoth('pattern_thin_1', nearGray, '图案格内应为细灰线');
   console.log('[OK] 两端网格线 / 行列号条规范一致：端帽、分隔线、边界、虚线、实线');
+
+  // C：导出底部署名（attribution）前后端一致（图案与图例之间、右侧小字）
+  const specC = {
+    w: W,
+    h: H,
+    grid: GRID,
+    palette: PALETTE,
+    cell: 8,
+    gridLines: false,
+    edgeNumbers: false,
+    attribution: true,
+    background: '#ffffff', // 与真实导出预览一致：署名带为白底
+  };
+  const frontC = await frontendRender(page, specC);
+  const specCFile = path.join(TMP, 'attr.json');
+  fs.writeFileSync(
+    specCFile,
+    JSON.stringify({ w: W, h: H, grid: GRID, palette: PALETTE, cell: 8, gridLines: false }),
+  );
+  const backC = Buffer.from(runPython(BACKEND_RENDER_ATTR, [specCFile]).toString(), 'base64');
+  log(`[数据] 前端 C（署名）尺寸 ${frontC.w}×${frontC.h}，字节 ${frontC.b64.length}`);
+  const rgbaC = expandRgba(backC, frontC.w * frontC.h);
+  // 署名文本的字体抗锯齿在 PIL 与 canvas 间无法逐像素一致，放宽像素容差；
+  // 尺寸一致性 + 署名带文本像素存在性共同防止「漏画 / 位置漂移」。
+  compare('导出署名', Buffer.from(frontC.b64, 'base64'), rgbaC, 60, 0.1);
+  {
+    const bandY = frontC.h - 17; // 署名带（attrH=17 @ cell=8）
+    const band = [];
+    for (let i = bandY * frontC.w; i < frontC.h * frontC.w; i++) {
+      const o = i * 4;
+      if (rgbaC[o] < 245 || rgbaC[o + 1] < 245 || rgbaC[o + 2] < 245) band.push(i);
+    }
+    assert.ok(band.length > 50, `后端署名带应包含文本像素（实际 ${band.length}）`);
+    const xs = band.map((i) => i % frontC.w);
+    assert.ok(Math.max(...xs) > frontC.w * 0.6, '署名文本应右对齐（右缘超过画布 60% 处）');
+    console.log(`[数据] 后端署名带文本像素 ${band.length}，右缘 ${Math.max(...xs)}`);
+  }
 
   assert.equal(errors.length, 0, `页面出现 JS 错误: ${errors.join(' | ')}`);
   log('\n双端渲染一致性测试全部通过');

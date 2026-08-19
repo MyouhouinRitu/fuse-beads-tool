@@ -5,6 +5,7 @@
 // - 修改任一侧后需运行该测试确认未漂移。
 
 // ---------- 画布 / 渲染 ----------
+export const APP_VERSION = '0.7.0'; // 应用版本号（与 package.json / bead/version.py 同步，见 constants_sync_test）
 export const CELL = 28; // 每格拼豆在画布上的像素尺寸
 export const CANVAS_EDGE_CELLS = 1; // 画布四周行列号条的格数（图案外侧 1 格）
 export const OUTER_PAD = 20; // 导出时图案外侧纯白边距（像素）
@@ -142,6 +143,14 @@ export const LEGEND_ROW_FONT_EXTRA = 20; // 图例行高在字体外追加的高
 export const LEGEND_TEXT_GAP = 8; // 色块与文字间距
 export const LEGEND_SWATCH_BORDER = '#999999';
 export const LEGEND_TEXT_COLOR = '#333333';
+
+// ---------- 导出底部署名（图案与图例之间、右侧对齐；与 bead/export.py ATTRIBUTION_* 对应） ----------
+export const ATTRIBUTION_TEXT = '由 解音知弦 (SoulString) 研发的拼豆工具生成';
+export const ATTRIBUTION_FONT_RATIO = 0.7; // 署名字号 = 格尺寸 × 该比例（下限见 ATTRIBUTION_FONT_MIN）
+export const ATTRIBUTION_FONT_MIN = 11; // 署名字号下限
+export const ATTRIBUTION_TOP_GAP_RATIO = 0.4; // 署名上方间距（格）
+export const ATTRIBUTION_BOTTOM_GAP_RATIO = 0.4; // 署名下方间距（格）
+export const ATTRIBUTION_TEXT_COLOR = '#8A8A8A'; // 署名文字颜色（弱化的小字）
 // 网格线
 export const GRID_LINE_THIN_RATIO = 0.04; // 细网格线宽（格）
 export const GRID_LINE_THICK_RATIO = 0.1; // 每 5 格加粗线宽（格）

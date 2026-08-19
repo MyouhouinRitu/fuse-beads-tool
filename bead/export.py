@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from bead.colors import is_light_color
+from bead.meta import ATTRIBUTION_TEXT
 
 # ---------------- 渲染常量 ----------------
 # 与 static/js/constants.js 及前端 render.js 对应，改动时需同步。
@@ -29,6 +30,13 @@ LEGEND_ROW_FONT_EXTRA = 20           # 图例行高在字体外追加的高度
 LEGEND_TEXT_GAP = 8                  # 色块与文字间距
 LEGEND_SWATCH_BORDER = "#999999"
 LEGEND_TEXT_COLOR = "#333333"
+
+# 底部署名（图案与图例之间、右侧对齐；与 static/js/constants.js ATTRIBUTION_* 对应）
+ATTRIBUTION_FONT_RATIO = 0.7       # 署名字号（格）
+ATTRIBUTION_FONT_MIN = 11
+ATTRIBUTION_TOP_GAP_RATIO = 0.4    # 署名上方间距（格）
+ATTRIBUTION_BOTTOM_GAP_RATIO = 0.4 # 署名下方间距（格）
+ATTRIBUTION_TEXT_COLOR = "#8A8A8A"
 
 # 网格线
 GRID_LINE_THIN_RATIO = 0.04          # 细网格线宽（格）
@@ -87,6 +95,14 @@ def legend_height(
         rows += 1
     _font_size, _sw, row_h = _legend_metrics(cell)
     return rows * row_h + int(cell * LEGEND_BOTTOM_GAP_RATIO)
+
+
+def attribution_height(cell: int) -> int:
+    """底部署名行高（像素）：顶部间距 + 字号 + 底部间距，渲染与 PDF 适配共用。"""
+    font_size = max(ATTRIBUTION_FONT_MIN, int(cell * ATTRIBUTION_FONT_RATIO))
+    top = int(cell * ATTRIBUTION_TOP_GAP_RATIO)
+    bottom = int(cell * ATTRIBUTION_BOTTOM_GAP_RATIO)
+    return top + font_size + bottom
 
 
 def _legend_text_top(sw: int, font: ImageFont.FreeTypeFont, text: str) -> int:
@@ -188,6 +204,7 @@ def render_pattern(
     codes: list[str] | None = None,
     show_codes: bool = True,
     show_legend: bool = True,
+    show_attribution: bool = True,
     edge_numbers: bool = False,
     col_offset: int = 0,
     row_offset: int = 0,
@@ -208,8 +225,9 @@ def render_pattern(
         if show_legend
         else 0
     )
+    attr_h = attribution_height(cell) if show_attribution else 0
     total_w = grid_w + 2 * edge + 2 * outer_pad
-    total_h = grid_h + 2 * edge + 2 * outer_pad + legend_h
+    total_h = grid_h + 2 * edge + 2 * outer_pad + attr_h + legend_h
 
     img = Image.new("RGB", (total_w, total_h), "white")
     draw = ImageDraw.Draw(img)
@@ -360,6 +378,18 @@ def render_pattern(
                 tw, th = draw.textbbox((0, 0), code, font=font)[2:]
                 draw.text((x0 - tw / 2, y0 - th / 2), code, fill=text, font=font)
 
+    # 底部署名：图案与图例之间、右侧对齐（右缘与图例一致）
+    if show_attribution:
+        attr_font = _font(cell, ATTRIBUTION_FONT_RATIO)
+        max_x = outer_pad + grid_w - int(cell * LEGEND_PAD_RATIO)
+        draw.text(
+            (max_x, oy + grid_h + edge + attr_h // 2),
+            ATTRIBUTION_TEXT,
+            fill=ATTRIBUTION_TEXT_COLOR,
+            font=attr_font,
+            anchor="rm",
+        )
+
     # 色号图例（按豆数量从多到少排序，约 2 倍字号）
     if legend and show_legend:
         font = legend_font
@@ -371,7 +401,7 @@ def render_pattern(
         # 图例横向与外部白边对齐（与前端预览一致，不受行列号条影响）
         max_x = outer_pad + grid_w - pad
         x = outer_pad + pad
-        y = oy + grid_h + edge + int(cell * LEGEND_TOP_OFFSET_RATIO)
+        y = oy + grid_h + edge + attr_h + int(cell * LEGEND_TOP_OFFSET_RATIO)
         for e in legend:
             if x + entry_w > max_x and x > outer_pad + pad:
                 x = outer_pad + pad

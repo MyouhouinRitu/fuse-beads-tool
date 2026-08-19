@@ -34,6 +34,30 @@ import {
   console.log('[OK] 常见问题说明与帮助：下拉菜单与文档弹窗');
 }
 
+// ---------------- 20b. 联系作者 / 关于 ----------------
+{
+  elsMap['app-version'].textContent = 'v0.7.0';
+  elsMap['fix-menu'].classList.add('hidden');
+  elsMap['btn-fix-menu'].emit('click');
+  elsMap['fix-item-contact'].emit('click');
+  await new Promise((r) => setTimeout(r, 10));
+  assert.ok(!elsMap['doc-dialog'].classList.contains('hidden'), '点击「联系作者」应打开文档弹窗');
+  assert.ok(elsMap['doc-content'].innerHTML.includes('联系作者'), '联系作者文档应渲染');
+  elsMap['doc-close'].emit('click');
+
+  elsMap['btn-fix-menu'].emit('click');
+  elsMap['fix-item-about'].emit('click');
+  await new Promise((r) => setTimeout(r, 10));
+  assert.ok(elsMap['doc-content'].innerHTML.includes('关于拼豆工具'), '关于文档应渲染');
+  assert.ok(elsMap['doc-content'].innerHTML.includes('v0.7.0'), '版本占位符应替换为当前版本');
+  assert.ok(!elsMap['doc-content'].innerHTML.includes('{{APP_VERSION}}'), '版本占位符不应残留');
+  assert.ok(elsMap['doc-content'].innerHTML.includes('<table>'), '关于文档的表格应渲染为 <table>');
+  assert.ok(elsMap['doc-content'].innerHTML.includes('<td>'), '表格应包含单元格 <td>');
+  assert.ok(elsMap['doc-content'].innerHTML.includes('<th>'), '表格应包含表头 <th>');
+  elsMap['doc-close'].emit('click');
+  console.log('[OK] 常见问题说明与帮助：联系作者与关于文档');
+}
+
 // ---------------- 21. 日间 / 夜间模式切换 ----------------
 {
   const rootEl = globalThis.document.documentElement;

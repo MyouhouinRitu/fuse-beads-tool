@@ -124,6 +124,14 @@ export function bindToolbar() {
     menu.closeMenu(els.btnFixMenu, els.fixMenu);
     markdown.openFixDoc('shortcuts');
   });
+  els.fixItemContact.addEventListener('click', () => {
+    menu.closeMenu(els.btnFixMenu, els.fixMenu);
+    markdown.openFixDoc('contact');
+  });
+  els.fixItemAbout.addEventListener('click', () => {
+    menu.closeMenu(els.btnFixMenu, els.fixMenu);
+    markdown.openFixDoc('about');
+  });
   els.docClose.addEventListener('click', markdown.closeFixDoc);
   els.docDialog.addEventListener('click', (e) => {
     if (e.target === els.docDialog) markdown.closeFixDoc();

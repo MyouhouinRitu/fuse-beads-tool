@@ -7,6 +7,7 @@ import * as canvas from './canvas.js';
 import * as colorList from './color-list.js';
 import * as C from './colors.js';
 import * as compare from './compare.js';
+import { APP_VERSION } from './constants.js';
 import { refreshCropMagnifier } from './crop-magnifier.js';
 import { assertElements, els } from './els.js';
 import * as highlight from './highlight.js';
@@ -93,6 +94,7 @@ view.setAfterZoomHook(() => {
 
 async function init() {
   assertElements();
+  els.appVersion.textContent = `v${APP_VERSION}`;
   panel.applyPanelPrefs();
   theme.applyTheme(theme.currentTheme());
   bindEvents();

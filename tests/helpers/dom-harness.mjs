@@ -428,6 +428,21 @@ globalThis.fetch = async (url, options = {}) => {
         '## 问题现象\n- 画线不拖拽\n\n## 问题原因\nEdge 鼠标手势。\n\n## 问题修复方案\n1. 添加 http://127.0.0.1',
     };
   }
+  if (u.includes('/static/docs/contact.md')) {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => '## 联系作者\n- 反馈问题请到 GitHub Issues\n- 邮箱待补充',
+    };
+  }
+  if (u.includes('/static/docs/about.md')) {
+    return {
+      ok: true,
+      status: 200,
+      text: async () =>
+        '## 关于拼豆工具\n- 版本：v{{APP_VERSION}}\n- 第三方致谢\n\n| 内容 | 路径 |\n| --- | --- |\n| 色板配置 | `data/configs/*.csv` |',
+    };
+  }
   return json({ ok: true });
 };
 

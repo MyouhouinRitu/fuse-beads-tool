@@ -165,6 +165,12 @@ export const els = {
   fixItemGesture: $('fix-item-gesture'),
   /** @type {HTMLButtonElement} */
   fixItemShortcuts: $('fix-item-shortcuts'),
+  /** @type {HTMLButtonElement} */
+  fixItemContact: $('fix-item-contact'),
+  /** @type {HTMLButtonElement} */
+  fixItemAbout: $('fix-item-about'),
+  /** @type {HTMLElement} */
+  appVersion: $('app-version'),
   docDialog: $('doc-dialog'),
   docContent: $('doc-content'),
   /** @type {HTMLButtonElement} */

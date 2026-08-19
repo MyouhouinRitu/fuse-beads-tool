@@ -10,10 +10,13 @@ from PIL import Image, ImageDraw
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
 
+from bead import metadata as md
+from bead import watermark as wm
 from bead.export import (
     LEGEND_FONT_RATIO,
     _font,
     _legend_total_needs_extra_row,
+    attribution_height,
     build_palette_map,
     legend_height,
     render_pattern,
@@ -131,8 +134,9 @@ def _fits(
             and _legend_total_needs_extra_row(legend, grid_w, cell, legend_font)
         )
         legend_h = legend_height(len(legend), grid_w, cell, extra_row=extra_row)
+    attr_h = attribution_height(cell)  # 底部署名始终显示，计入自适应缩放
     total_w = grid_w + 2 * edge + 2 * margin
-    total_h = grid_h + 2 * edge + 2 * margin + legend_h
+    total_h = grid_h + 2 * edge + 2 * margin + attr_h + legend_h
     return total_w <= page_w and total_h <= page_h
 
 
@@ -329,11 +333,15 @@ def export_pdf(
     legend: list[dict],
     codes: list[str] | None,
     options: dict,
+    metadata: dict | None = None,
 ) -> bytes:
     pages = build_pdf_pages(mode, width, height, grid, palette, legend, codes, options, dpi=DPI)
-    images = [img for _label, img, _paper in pages]
+    # 每页栅格叠加隐写水印（提取工具：python -m bead.watermark extract）
+    images = [wm.embed(img) for _label, img, _paper in pages]
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf)
+    if metadata:
+        md.apply_pdf_docinfo(c, metadata)
     for img in images:
         page_w_pt = img.width / DPI * 72
         page_h_pt = img.height / DPI * 72

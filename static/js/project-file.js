@@ -9,7 +9,8 @@ import { downloadUrl, fileNameStem, toast } from './utils.js';
 
 export function updateProjectNameLabel() {
   const name = App.projectName || (App.originalName ? fileNameStem(App.originalName) : '');
-  els.projectNameLabel.textContent = name ? `· ${name}` : '';
+  // 不显示「·」分隔符：与品牌之间已有 8px 间距（.brand-sub margin-left）
+  els.projectNameLabel.textContent = name || '';
 }
 
 export async function saveProjectFile() {

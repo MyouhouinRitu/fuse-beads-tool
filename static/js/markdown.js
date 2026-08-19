@@ -6,7 +6,16 @@ import { hideDialog, showDialog } from './focus.js';
 const FIX_DOCS = {
   'right-drag-gesture-fix': '/static/docs/right-drag-gesture-fix.md',
   shortcuts: '/static/docs/shortcuts.md',
+  contact: '/static/docs/contact.md',
+  about: '/static/docs/about.md',
 };
+
+// 文档里的 {{APP_VERSION}} 占位符替换为顶栏显示的当前版本（v0.7.0 等）
+function interpolateVersion(text) {
+  const el = els.appVersion;
+  const version = el?.textContent ? el.textContent.trim() : '';
+  return version ? String(text).replaceAll('{{APP_VERSION}}', version) : text;
+}
 
 // 极简 Markdown 渲染：仅覆盖文档用到的标题/列表/引用/加粗/行内代码/代码块
 function renderMarkdown(md) {
@@ -14,11 +23,42 @@ function renderMarkdown(md) {
   const inline = (s) =>
     esc(s)
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(
+        /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+      );
   let html = '';
   let list = null;
   let inCode = false;
+  let tableBuf = null;
   const codeBuf = [];
+  // 表格：连续以 | 开头的行 → <table>；第二行全为 --- 分隔符时作为表头行
+  const flushTable = () => {
+    if (!tableBuf) return;
+    const rows = tableBuf.map((r) =>
+      r
+        .trim()
+        .replace(/^\|/, '')
+        .replace(/\|$/, '')
+        .split('|')
+        .map((c) => c.trim()),
+    );
+    const isSep = (cells) => cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
+    const hasHead = rows.length >= 2 && isSep(rows[1]);
+    const head = hasHead ? rows[0] : rows[0] || [];
+    const body = hasHead ? rows.slice(2) : rows.slice(1);
+    html += '<table><thead><tr>';
+    for (const c of head) html += `<th>${inline(c)}</th>`;
+    html += '</tr></thead><tbody>';
+    for (const cells of body) {
+      html += '<tr>';
+      for (const c of cells) html += `<td>${inline(c)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    tableBuf = null;
+  };
   const closeList = () => {
     if (list) {
       html += `</${list}>`;
@@ -38,6 +78,14 @@ function renderMarkdown(md) {
       codeBuf.push(raw);
       continue;
     }
+    // 表格行：先收集，遇到非表格行或结束符时统一输出
+    if (/^\s*\|/.test(raw)) {
+      closeList();
+      if (!tableBuf) tableBuf = [];
+      tableBuf.push(raw);
+      continue;
+    }
+    flushTable();
     const h = raw.match(/^(#{1,4})\s+(.*)/);
     if (h) {
       closeList();
@@ -76,6 +124,7 @@ function renderMarkdown(md) {
     html += `<p>${inline(raw)}</p>`;
   }
   if (inCode) html += `<pre><code>${esc(codeBuf.join('\n'))}</code></pre>`;
+  flushTable();
   closeList();
   return html;
 }
@@ -93,7 +142,7 @@ export async function openFixDoc(key) {
     showDialog(els.docDialog);
     return;
   }
-  els.docContent.innerHTML = renderMarkdown(text);
+  els.docContent.innerHTML = renderMarkdown(interpolateVersion(text));
   showDialog(els.docDialog);
 }
 

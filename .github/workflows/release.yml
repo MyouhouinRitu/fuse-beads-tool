@@ -1,0 +1,53 @@
+name: Release
+
+# 打 v* tag 时自动构建 Windows EXE 并发布到 GitHub Releases（附带 SHA256 与 LICENSE）。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 校验版本与 tag 一致
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          PY=$(python -c "import re; print(re.search(r'APP_VERSION = \"([^\"]+)\"', open('bead/version.py', encoding='utf-8').read()).group(1))")
+          echo "tag=$TAG pkg=$PKG py=$PY"
+          [ "$TAG" = "$PKG" ] && [ "$PKG" = "$PY" ] || { echo "版本号与 tag 不一致，拒绝发布"; exit 1; }
+
+      - name: 安装依赖与 PyInstaller
+        run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: 生成图标并打包 EXE
+        run: |
+          python packaging/make_icon.py
+          python -m PyInstaller packaging/fuse_beads.spec --noconfirm --clean --distpath dist --workpath build
+
+      - name: 计算 SHA256
+        shell: powershell
+        run: |
+          (Get-FileHash dist\fuse-beads-tool.exe -Algorithm SHA256).Hash + "  fuse-beads-tool.exe" | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          Get-Content dist\SHA256SUMS.txt
+
+      - name: 发布到 GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            dist/fuse-beads-tool.exe `
+            dist/SHA256SUMS.txt `
+            LICENSE `
+            --title "拼豆工具 ${{ github.ref_name }}" `
+            --notes "由 CI 自动构建的 Windows 单文件版（${{ github.ref_name }}）。SHA256 见附件 SHA256SUMS.txt。"

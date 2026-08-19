@@ -282,6 +282,60 @@ def test_legend_total_and_vertical_center():
     assert abs(center - 4) <= 0.5, center
     print("[OK] 图例总豆量：额外行判定 / 高度 / 垂直居中")
 
+def test_export_metadata_and_watermark():
+    """导出元数据（JPG EXIF / PNG tEXt / PDF docinfo）与隐写水印检测。"""
+    from bead import watermark as wm
+    from bead.meta import APP_VERSION
+
+    width, height = 20, 16
+    grid = [0] * (width * height)
+    palette = [{"index": 0, "hex": "#E23B3B"}, {"index": 1, "hex": "#3B7AE2"}]
+    legend = [
+        {"hex": "#E23B3B", "code": "A", "count": 160},
+        {"hex": "#3B7AE2", "code": "B", "count": 160},
+    ]
+    base = {"width": width, "height": height, "grid": grid, "palette": palette, "legend": legend}
+
+    # JPG：EXIF（Copyright / Artist / ImageDescription / Software）+ 隐写水印
+    s, raw = req(
+        "POST", "/api/export",
+        {**base, "options": {"format": "jpg", "cellSize": 8, "legend": True, "edgeNumbers": False}},
+        raw=True,
+    )
+    assert s == 200 and raw[:3] == b"\xff\xd8\xff"
+    # EXIF 文本字段以 UTF-8 字节写入：直接断言文件字节包含版权 / 作者 / 说明 / 软件
+    assert "© 2026 解音知弦 (SoulString)".encode() in raw, "JPG EXIF 应包含 Copyright"
+    assert "解音知弦 (SoulString)".encode() in raw, "JPG EXIF 应包含 Artist"
+    assert "拼豆工具".encode() in raw, "JPG EXIF 应包含 ImageDescription"
+    assert f"fuse-beads-tool v{APP_VERSION}".encode() in raw, "JPG EXIF 应包含 Software"
+    assert wm.extract(Image.open(io.BytesIO(raw)))["detected"], "JPG 应能检测到隐写水印"
+
+    # PNG：tEXt 文本块 + 隐写水印
+    s, raw = req(
+        "POST", "/api/export",
+        {**base, "options": {"format": "png", "cellSize": 8, "legend": True}},
+        raw=True,
+    )
+    assert s == 200 and raw[:8] == b"\x89PNG\r\n\x1a\n"
+    png = Image.open(io.BytesIO(raw))
+    info = png.info
+    assert info.get("Copyright", "").startswith("© 2026 解音知弦"), info.get("Copyright")
+    assert info.get("Author") == "解音知弦 (SoulString)", info.get("Author")
+    assert "拼豆工具" in info.get("Description", ""), info.get("Description")
+    assert info.get("Software") == f"fuse-beads-tool v{APP_VERSION}", info.get("Software")
+    assert wm.extract(png)["detected"], "PNG 应能检测到隐写水印"
+
+    # PDF：文档信息（Creator / Author 等 ASCII 字段出现在文件字节中）
+    s, raw = req(
+        "POST", "/api/export",
+        {**base, "options": {"format": "pdf-a4", "cellSize": 8, "legend": True}},
+        raw=True,
+    )
+    assert s == 200 and raw[:4] == b"%PDF"
+    assert f"fuse-beads-tool v{APP_VERSION}".encode() in raw, "PDF 应包含 Creator 元数据"
+    print("[OK] 导出元数据与隐写水印（JPG EXIF / PNG tEXt / PDF docinfo / 署名）")
+
+
 def make_transparent_image(path):
     img = Image.new("RGBA", (800, 600), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -315,7 +369,8 @@ def main():
 
         s, page = req("GET", "/", raw=True)
         assert s == 200 and b"<title>" in page, "首页模板应可渲染"
-        print("[OK] 首页模板可渲染（GET /）")
+        assert b'id="app-version"' in page, "首页应包含版本号元素（内容由前端常量填充）"
+        print("[OK] 首页模板可渲染（GET /，含版本号元素）")
 
         test_filename_helpers()
         test_project_file_guards()
@@ -324,6 +379,7 @@ def main():
         test_originals_gc()
         test_auth_gate_with_token()
         test_legend_total_and_vertical_center()
+        test_export_metadata_and_watermark()
 
         s, j = req("GET", "/api/configs")
         assert s == 200 and j["configs"], "配置列表为空"

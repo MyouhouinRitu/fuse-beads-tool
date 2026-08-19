@@ -107,6 +107,13 @@
 :root[data-theme="dark"] .doc-content code {
   background: #14181d;
 }
+:root[data-theme="dark"] .doc-content table th,
+:root[data-theme="dark"] .doc-content table td {
+  border-color: var(--border);
+}
+:root[data-theme="dark"] .doc-content th {
+  background: var(--surface);
+}
 :root[data-theme="dark"] .doc-content blockquote {
   background: rgba(91, 147, 247, 0.12);
 }
@@ -238,6 +245,13 @@ textarea:focus-visible {
 .toolbar .brand {
   font-size: 17px;
   font-weight: 700;
+}
+.toolbar .brand-version {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 6px;
+  vertical-align: 2px;
 }
 .brand-sub {
   font-size: 12px;
@@ -1310,6 +1324,22 @@ select {
   border-left: 3px solid var(--primary);
   background: rgba(59, 130, 246, 0.06);
   border-radius: var(--radius-xs);
+}
+.doc-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.doc-content th,
+.doc-content td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+}
+.doc-content th {
+  background: var(--surface);
+  font-weight: 600;
 }
 .dlg-preview-wrap {
   width: 300px;

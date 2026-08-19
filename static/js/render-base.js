@@ -1,5 +1,11 @@
 import { hex6, isLightColor, rgbFromPacked } from './colors.js';
 import {
+  ATTRIBUTION_BOTTOM_GAP_RATIO,
+  ATTRIBUTION_FONT_MIN,
+  ATTRIBUTION_FONT_RATIO,
+  ATTRIBUTION_TEXT,
+  ATTRIBUTION_TEXT_COLOR,
+  ATTRIBUTION_TOP_GAP_RATIO,
   CELL,
   CODE_FONT_MIN,
   CODE_FONT_RATIO,
@@ -64,6 +70,14 @@ function legendTotalNeedsExtraRow(ctx, legend, gridW, cell, outerPad) {
   return x + ctx.measureText(`总豆量：${total}`).width > maxX;
 }
 
+// 导出底部署名行高（像素）：顶部间距 + 字号 + 底部间距（与 PIL 侧 attribution_height 一致）
+export function attributionHeight(cell = CELL) {
+  const font = Math.max(ATTRIBUTION_FONT_MIN, Math.floor(cell * ATTRIBUTION_FONT_RATIO));
+  const top = Math.floor(cell * ATTRIBUTION_TOP_GAP_RATIO);
+  const bottom = Math.floor(cell * ATTRIBUTION_BOTTOM_GAP_RATIO);
+  return top + font + bottom;
+}
+
 export function canvasMetrics(
   width,
   height,
@@ -72,6 +86,7 @@ export function canvasMetrics(
   outerPad = OUTER_PAD,
   edge = 0,
   legendExtraRow = false,
+  attrH = 0,
 ) {
   // edge：四周行列号条的像素宽度（工作区为 1 格，导出为 0）
   const gridW = width * cell;
@@ -85,7 +100,7 @@ export function canvasMetrics(
     : 0;
   return {
     w: gridW + 2 * edge + 2 * outerPad,
-    h: gridH + 2 * edge + 2 * outerPad + legendH,
+    h: gridH + 2 * edge + 2 * outerPad + attrH + legendH,
     gridW,
     gridH,
     originX: outerPad + edge,
@@ -373,6 +388,17 @@ export function drawCodes(
   ctx.textBaseline = 'alphabetic';
 }
 
+// 导出底部署名：图案与图例之间、右侧对齐（右缘与图例一致，弱化小字）
+function drawAttribution(ctx, cell, gridW, baseY, attrH, outerPad) {
+  const font = Math.max(ATTRIBUTION_FONT_MIN, Math.floor(cell * ATTRIBUTION_FONT_RATIO));
+  ctx.font = `${font}px "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = ATTRIBUTION_TEXT_COLOR;
+  const maxX = outerPad + gridW - cell * LEGEND_PAD_RATIO;
+  ctx.fillText(ATTRIBUTION_TEXT, maxX, baseY + attrH / 2);
+}
+
 function drawLegend(ctx, legend, cell, gridW, baseY, outerPad = OUTER_PAD) {
   if (!legend?.length) return;
   const pad = cell * LEGEND_PAD_RATIO;
@@ -528,13 +554,24 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   }
   let vw, vh, ox, oy;
   let metrics = null;
+  // 导出 / 预览渲染底部署名（工作区与视口不显示）
+  const attrH = opts.attribution && !viewport ? attributionHeight(cell) : 0;
   if (viewport) {
     vw = (viewport.x1 - viewport.x0 + 1) * cell;
     vh = (viewport.y1 - viewport.y0 + 1) * cell;
     ox = -viewport.x0 * cell;
     oy = -viewport.y0 * cell;
   } else {
-    metrics = canvasMetrics(width, height, cell, legend.length, outerPad, edge, legendExtraRow);
+    metrics = canvasMetrics(
+      width,
+      height,
+      cell,
+      legend.length,
+      outerPad,
+      edge,
+      legendExtraRow,
+      attrH,
+    );
     vw = metrics.w;
     vh = metrics.h;
     ox = metrics.originX;
@@ -594,8 +631,20 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
     );
   }
 
+  if (opts.attribution && !viewport) {
+    // 底部署名放在图案与图例之间
+    drawAttribution(ctx, cell, metrics.gridW, oy + metrics.gridH + metrics.edge, attrH, outerPad);
+  }
+
   if (legend.length && opts.showLegend !== false && !viewport) {
     // 图例放在图案与底部行列号条之下
-    drawLegend(ctx, legend, cell, metrics.gridW, oy + metrics.gridH + metrics.edge, outerPad);
+    drawLegend(
+      ctx,
+      legend,
+      cell,
+      metrics.gridW,
+      oy + metrics.gridH + metrics.edge + attrH,
+      outerPad,
+    );
   }
 }

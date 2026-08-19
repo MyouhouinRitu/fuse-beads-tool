@@ -15,7 +15,9 @@ from collections import OrderedDict
 from flask import Blueprint, jsonify, request, send_file
 
 from bead import export as ex
+from bead import metadata as md
 from bead import pdf_export as pdfx
+from bead import watermark as wm
 from bead.web.common import err, opt_bool, opt_int
 
 SUPPORTED_EXPORT_FORMATS = {"png", "jpg", "pdf-a4", "pdf-multi-a4", "pdf-a3-a4"}
@@ -85,6 +87,8 @@ def api_export():
         return err("不支持的导出格式，仅支持 png / jpg / PDF")
 
     try:
+        total_count = sum(int(e.get("count", 0)) for e in data.get("legend", []))
+        meta_values = md.metadata_values(width, height, total_count)
         if fmt.startswith("pdf-"):
             pdf_bytes = pdfx.export_pdf(
                 fmt,
@@ -95,6 +99,7 @@ def api_export():
                 data.get("legend", []),
                 data.get("codes") or None,
                 opts,
+                metadata=meta_values,
             )
             return send_file(
                 io.BytesIO(pdf_bytes),
@@ -119,11 +124,18 @@ def api_export():
             show_legend=opt_bool(opts.get("legend"), True),
             edge_numbers=opt_bool(opts.get("edgeNumbers"), False),
         )
+        # 导出图片叠加隐写水印（肉眼不可见，JPG 亦可提取）
+        img = wm.embed(img)
         buf = io.BytesIO()
         if fmt == "png":
-            img.save(buf, "PNG")
+            img.save(buf, "PNG", pnginfo=md.png_text(meta_values))
         else:
-            img.save(buf, "JPEG", quality=opt_int(opts.get("quality"), ex.DEFAULT_QUALITY))
+            img.save(
+                buf,
+                "JPEG",
+                quality=opt_int(opts.get("quality"), ex.DEFAULT_QUALITY),
+                exif=md.jpeg_exif(meta_values),
+            )
         buf.seek(0)
         mime = "image/png" if fmt == "png" else "image/jpeg"
         ext = "png" if fmt == "png" else "jpg"

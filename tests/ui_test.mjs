@@ -15,7 +15,7 @@ import { chromium } from './helpers/playwright-loader.mjs';
 const ROOT = path.dirname(
   path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
 );
-const PORT = 5100 + Math.floor(Math.random() * 300); // 随机端口，避免与残留服务冲突
+const PORT = 6100 + Math.floor(Math.random() * 200); // 随机端口（避开系统保留端口段与其它测试）
 const BASE = `http://127.0.0.1:${PORT}`;
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fuse_ui_'));
 const IMG = path.join(TMP, 'ui_test.png');
@@ -190,6 +190,14 @@ async function main() {
   await near(await px(page, ox - CELL / 2, oy + 5 * CELL), [154, 154, 154], 20); // 左条每 5 格粗灰线
   console.log('[OK] 行列号条网格线：外圈端帽无线，条内细灰 / 每 5 格粗灰');
   console.log('[OK] 导入并显示像素网格');
+
+  // 1.1b 版本号展示：标题右侧小字与 package.json 一致
+  {
+    const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+    const versionText = await page.textContent('#app-version');
+    assert.equal(versionText, `v${pkgVersion}`, '标题右侧应显示当前版本号');
+    console.log(`[OK] 版本号展示：${versionText}`);
+  }
 
   // 1.2 工具栏与右侧面板布局：无描边；显示色号/透明色在画布工具栏；记录+自动保存位于导出左侧；事务历史带未保存提示
   const layout = await page.evaluate(() => {
@@ -1535,6 +1543,10 @@ img.save(${JSON.stringify(projImg)})
     assert.ok(
       (await page.textContent('#project-name-label')).includes('proj_test'),
       '打开后项目名应保留原图名',
+    );
+    assert.ok(
+      !(await page.textContent('#project-name-label')).trimStart().startsWith('·'),
+      '项目名前不应有「·」分隔符',
     );
 
     await page.click('#btn-recompress');

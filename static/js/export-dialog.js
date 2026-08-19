@@ -124,6 +124,7 @@ export async function renderExportPreview() {
     codes: buildCodes(),
     legend: showLegend ? legend : [],
     showLegend,
+    attribution: true, // 导出预览与导出产物一致：图案下方、图例上方显示底部署名
     background: '#ffffff', // 导出预览以白底呈现（图例/外白边区域不透明）
   });
   const pv = els.dlgPreview;

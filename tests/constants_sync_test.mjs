@@ -117,6 +117,11 @@ const SHARED = {
   LEGEND_TEXT_GAP: 'LEGEND_TEXT_GAP',
   LEGEND_SWATCH_BORDER: 'LEGEND_SWATCH_BORDER',
   LEGEND_TEXT_COLOR: 'LEGEND_TEXT_COLOR',
+  ATTRIBUTION_FONT_RATIO: 'ATTRIBUTION_FONT_RATIO',
+  ATTRIBUTION_FONT_MIN: 'ATTRIBUTION_FONT_MIN',
+  ATTRIBUTION_TOP_GAP_RATIO: 'ATTRIBUTION_TOP_GAP_RATIO',
+  ATTRIBUTION_BOTTOM_GAP_RATIO: 'ATTRIBUTION_BOTTOM_GAP_RATIO',
+  ATTRIBUTION_TEXT_COLOR: 'ATTRIBUTION_TEXT_COLOR',
   GRID_LINE_THIN_RATIO: 'GRID_LINE_THIN_RATIO',
   GRID_LINE_THICK_RATIO: 'GRID_LINE_THICK_RATIO',
   GRID_DASH_RATIO: 'GRID_DASH_RATIO',
@@ -138,6 +143,18 @@ for (const [jsName, pyName] of Object.entries(SHARED)) {
     jsVal,
     pyVal,
     `${jsName}（前端 constants.js）应与 ${pyName}（后端 export.py）保持一致`,
+  );
+}
+
+// 导出署名文案：前端与后端共用（后端定义于 bead/meta.py，经 export.py 引用）
+{
+  const metaText = read('bead/meta.py');
+  const pyAttr = pyConst(metaText, 'ATTRIBUTION_TEXT');
+  assert.ok(pyAttr !== undefined, 'bead/meta.py 应包含 ATTRIBUTION_TEXT');
+  assert.equal(
+    K.ATTRIBUTION_TEXT,
+    pyAttr,
+    'ATTRIBUTION_TEXT（前端 constants.js）应与 bead/meta.py 保持一致',
   );
 }
 
@@ -243,7 +260,12 @@ console.log(
   const m = versionText.match(/^APP_VERSION\s*=\s*"([^"]+)"/m);
   assert.ok(m, 'bead/version.py 应包含 APP_VERSION');
   assert.equal(m[1], pkg.version, 'bead/version.py APP_VERSION 应与 package.json version 保持一致');
-  console.log('[OK] 版本号单一来源：package.json 与 bead/version.py 一致');
+  assert.equal(
+    K.APP_VERSION,
+    pkg.version,
+    'constants.js APP_VERSION 应与 package.json version 保持一致',
+  );
+  console.log('[OK] 版本号单一来源：package.json / bead/version.py / constants.js 一致');
 }
 
 // ---------------- 颜色数学（colors.py ↔ colors.js）----------------
