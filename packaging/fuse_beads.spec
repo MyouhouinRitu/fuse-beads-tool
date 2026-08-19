@@ -61,7 +61,6 @@ a = Analysis(
         (os.path.join(ROOT, "bead"), "bead"),
         (os.path.join(ROOT, "assets"), "assets"),
         (os.path.join(ROOT, "LICENSE"), "."),
-        (os.path.join(ROOT, "data", "configs"), "data/configs"),
     ],
     hiddenimports=["waitress"],
     hookspath=[],

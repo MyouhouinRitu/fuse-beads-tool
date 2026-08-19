@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import os
-import shutil
 
 from flask import Blueprint, jsonify, request, send_file
 
 from bead import palette as pal
 from bead.web.common import (
     DEFAULT_CONFIG_NAME,
-    RESOURCE_DIR,
     BeadConfig,
     cfg,
     config_path,
@@ -76,19 +74,14 @@ def _invalidate_configs_cache(config: BeadConfig | None = None) -> None:
 
 
 def ensure_default_config(config: BeadConfig) -> None:
+    """首次启动生成内置色板：模板的权威定义在 bead/palette.py（代码），不依赖仓库文件。"""
     names = [c["name"] for c in list_configs(config)]
     if not names:
-        bundled = os.path.join(RESOURCE_DIR, "data", "configs")
-        if os.path.isdir(bundled) and any(f.endswith(".csv") for f in os.listdir(bundled)):
-            for fn in os.listdir(bundled):
-                if fn.lower().endswith(".csv"):
-                    shutil.copy2(os.path.join(bundled, fn), os.path.join(config.config_dir, fn))
-        else:
-            pal.write_csv(os.path.join(config.config_dir, "default_48.csv"), pal.DEFAULT_PALETTE)
-            pal.write_csv(
-                os.path.join(config.config_dir, f"{DEFAULT_CONFIG_NAME}.csv"),
-                pal.read_csv_text(pal.MARD_221_PALETTE_CSV),
-            )
+        pal.write_csv(os.path.join(config.config_dir, "default_48.csv"), pal.DEFAULT_PALETTE)
+        pal.write_csv(
+            os.path.join(config.config_dir, f"{DEFAULT_CONFIG_NAME}.csv"),
+            pal.read_csv_text(pal.MARD_221_PALETTE_CSV),
+        )
         _invalidate_configs_cache(config)
     elif DEFAULT_CONFIG_NAME not in names:
         pal.write_csv(

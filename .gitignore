@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 data/state.json
+data/configs/
 data/state.json.tmp
 data/originals/
 data/project_path.txt
