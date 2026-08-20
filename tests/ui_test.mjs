@@ -195,7 +195,7 @@ async function main() {
   {
     const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
     const versionText = await page.textContent('#app-version');
-    assert.equal(versionText, `v${pkgVersion}`, '标题右侧应显示当前版本号');
+    assert.equal(versionText, pkgVersion, '标题右侧应显示当前版本号');
     console.log(`[OK] 版本号展示：${versionText}`);
   }
 

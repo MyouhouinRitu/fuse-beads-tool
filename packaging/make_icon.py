@@ -1,8 +1,9 @@
 """应用图标生成脚本（打包前自动执行）。
 
-图标源文件：assets/app-icon.png（替换自己的图标时改这个文件即可）。
-脚本会把它归一化为 256x256 并生成多尺寸 packaging/app-icon.ico（PyInstaller 打包用）。
-若 assets/app-icon.png 不存在，则先生成一个默认的拼豆图案图标。
+图标设计源：static/favicon.svg（浏览器标签页图标）。此处用 PIL 复刻同一套
+「蓝底圆角方块 + 2x2 拼豆格 + 内描边」图形，生成 assets/app-icon.png 与
+packaging/app-icon.ico，保证浏览器 / EXE 文件 / 系统托盘三处图标一致。
+若 assets/app-icon.png 不存在，也用同一套设计兜底生成，避免三处图标漂移。
 """
 
 import os
@@ -14,55 +15,50 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 SRC = os.path.join(ROOT, "assets", "app-icon.png")
 DST = os.path.join(ROOT, "packaging", "app-icon.ico")
 
-BEAD_COLORS = [
-    "#ef4444", "#f97316", "#facc15", "#22c55e",
-    "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899",
-    "#ef4444", "#f97316", "#facc15", "#22c55e",
-    "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899",
-]
+# 与 static/favicon.svg 保持一致（viewBox 32，按 size/32 等比缩放）
+FAVICON_BG = "#3b82f6"  # 蓝底
+FAVICON_BEADS = ["#ffffff", "#ffd400", "#ff7043", "#43a047"]  # 白 / 黄 / 橙 / 绿
 
 
-def draw_default_icon(size=256):
-    """默认图标：渐变圆角底 + 4x4 拼豆格。"""
+def draw_icon(size=256):
+    """复刻浏览器 favicon：蓝底圆角方块 + 2x2 拼豆格 + 白色半透明内描边。"""
+    s = size / 32
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    radius = round(size * 0.2)
-    # 竖直渐变底（深蓝 -> 蓝）
-    for y in range(size):
-        t = y / size
-        r = round(79 + (37 - 79) * t)
-        g = round(70 + (99 - 70) * t)
-        b = round(229 + (235 - 229) * t)
-        draw.line([(0, y), (size, y)], fill=(r, g, b, 255))
-    # 圆角遮罩
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(
-        [(4, 4), (size - 4, size - 4)], radius=radius, fill=255
+    # 蓝底圆角方块
+    draw.rounded_rectangle(
+        [0, 0, size - 1, size - 1], radius=round(6 * s), fill=FAVICON_BG
     )
-    img.putalpha(mask)
-    # 4x4 拼豆
-    margin = round(size * 0.16)
-    cell = (size - 2 * margin) / 4
-    bead_r = round(cell * 0.42)
-    hl_r = max(2, round(bead_r * 0.22))
-    for i, color in enumerate(BEAD_COLORS):
-        row, col = divmod(i, 4)
-        cx = margin + col * cell + cell / 2
-        cy = margin + row * cell + cell / 2
-        draw.ellipse([cx - bead_r, cy - bead_r, cx + bead_r, cy + bead_r], fill=color)
-        # 高光点
-        draw.ellipse(
-            [cx - bead_r * 0.45 - hl_r, cy - bead_r * 0.45 - hl_r,
-             cx - bead_r * 0.45 + hl_r, cy - bead_r * 0.45 + hl_r],
-            fill=(255, 255, 255, 200),
+    # 2x2 拼豆格（左上白 / 右上黄 / 左下橙 / 右下绿）
+    for i, color in enumerate(FAVICON_BEADS):
+        # 行=商、列=余数，与 SVG 的四角布局一致
+        row, col = divmod(i, 2)
+        x = round((4 + col * 14) * s)
+        y = round((4 + row * 14) * s)
+        draw.rounded_rectangle(
+            [x, y, x + round(10 * s), y + round(10 * s)],
+            radius=round(3 * s),
+            fill=color,
         )
+    # 内描边（白 45% 透明度，线宽 1/32）
+    draw.rounded_rectangle(
+        [
+            round(3.5 * s),
+            round(3.5 * s),
+            size - round(3.5 * s),
+            size - round(3.5 * s),
+        ],
+        radius=round(5 * s),
+        outline=(255, 255, 255, 115),
+        width=max(1, round(1 * s)),
+    )
     return img
 
 
 def ensure_source():
     if not os.path.exists(SRC):
         os.makedirs(os.path.dirname(SRC), exist_ok=True)
-        draw_default_icon().save(SRC)
+        draw_icon().save(SRC)
         print(f"已生成默认图标源文件：{SRC}")
 
 

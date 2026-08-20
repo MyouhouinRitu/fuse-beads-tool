@@ -94,7 +94,7 @@ view.setAfterZoomHook(() => {
 
 async function init() {
   assertElements();
-  els.appVersion.textContent = `v${APP_VERSION}`;
+  els.appVersion.textContent = APP_VERSION;
   panel.applyPanelPrefs();
   theme.applyTheme(theme.currentTheme());
   bindEvents();

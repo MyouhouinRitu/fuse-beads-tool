@@ -10,7 +10,7 @@ const FIX_DOCS = {
   about: '/static/docs/about.md',
 };
 
-// 文档里的 {{APP_VERSION}} 占位符替换为顶栏显示的当前版本（v0.7.0 等）
+// 文档里的 {{APP_VERSION}} 占位符替换为顶栏显示的当前版本（0.8.0-beta 等）
 /** @param {string} text @returns {string} */
 function interpolateVersion(text) {
   const el = els.appVersion;

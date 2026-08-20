@@ -22,8 +22,8 @@ const fail = (msg) => {
 if (typeof pkg.name !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(pkg.name)) {
   fail('name 必须是小写字母/数字/连字符：' + JSON.stringify(pkg.name));
 }
-if (typeof pkg.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(pkg.version)) {
-  fail('version 必须符合 x.y.z：' + JSON.stringify(pkg.version));
+if (typeof pkg.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pkg.version)) {
+  fail('version 必须符合 x.y.z（可带 -beta 等预发布后缀）：' + JSON.stringify(pkg.version));
 }
 if (typeof pkg.description !== 'string' || pkg.description.trim() === '') {
   fail('description 必须是非空字符串');

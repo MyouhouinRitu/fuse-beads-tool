@@ -1,7 +1,7 @@
 ## 关于拼豆工具
 
 - **产品**：拼豆工具（fuse-beads-tool）
-- **版本**：v{{APP_VERSION}}
+- **版本**：{{APP_VERSION}}
 - **作者**：解音知弦（SoulString）
 - **主页**：[SoulString-Dev/fuse-beads-tool](https://github.com/SoulString-Dev/fuse-beads-tool)
 
@@ -23,7 +23,7 @@
 
 ### 许可协议
 
-本项目以 MIT 协议开源，详见 [LICENSE](https://github.com/SoulString-Dev/fuse-beads-tool/blob/main/LICENSE)。
+本项目以 MIT 协议开源，详见 [LICENSE](https://github.com/SoulString-Dev/fuse-beads-tool/blob/master/LICENSE)。
 
 ### 第三方致谢
 
@@ -38,5 +38,5 @@
 
 ### 生成内容版权
 
-- 导出图片 / PDF 会自动写入版权与作者元数据（JPG EXIF / PNG tEXt / PDF 文档信息），并叠加肉眼不可见的隐写水印，用于标注生成来源。
+- 导出图片 / PDF 会自动写入版权与作者元数据（JPG EXIF / PNG tEXt / PDF 文档信息），用于标注生成来源；导出文件包含用于归属校验的标识（不影响图案内容）。
 - 图案本身由使用者创作，版权归使用者所有；工具仅标注生成渠道，不主张对图案内容的权利。

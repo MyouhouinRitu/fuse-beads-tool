@@ -5,7 +5,7 @@
 // - 修改任一侧后需运行该测试确认未漂移。
 
 // ---------- 画布 / 渲染 ----------
-export const APP_VERSION = '0.7.0'; // 应用版本号（与 package.json / bead/version.py 同步，见 constants_sync_test）
+export const APP_VERSION = '0.8.0-beta'; // 应用版本号（与 package.json / bead/version.py 同步，见 constants_sync_test）
 export const CELL = 28; // 每格拼豆在画布上的像素尺寸
 export const CANVAS_EDGE_CELLS = 1; // 画布四周行列号条的格数（图案外侧 1 格）
 export const OUTER_PAD = 20; // 导出时图案外侧纯白边距（像素）

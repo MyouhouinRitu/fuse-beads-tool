@@ -36,7 +36,7 @@ import {
 
 // ---------------- 20b. 联系作者 / 关于 ----------------
 {
-  elsMap['app-version'].textContent = 'v0.7.0';
+  elsMap['app-version'].textContent = '0.8.0-beta';
   elsMap['fix-menu'].classList.add('hidden');
   elsMap['btn-fix-menu'].emit('click');
   elsMap['fix-item-contact'].emit('click');
@@ -49,7 +49,7 @@ import {
   elsMap['fix-item-about'].emit('click');
   await new Promise((r) => setTimeout(r, 10));
   assert.ok(elsMap['doc-content'].innerHTML.includes('关于拼豆工具'), '关于文档应渲染');
-  assert.ok(elsMap['doc-content'].innerHTML.includes('v0.7.0'), '版本占位符应替换为当前版本');
+  assert.ok(elsMap['doc-content'].innerHTML.includes('0.8.0-beta'), '版本占位符应替换为当前版本');
   assert.ok(!elsMap['doc-content'].innerHTML.includes('{{APP_VERSION}}'), '版本占位符不应残留');
   assert.ok(elsMap['doc-content'].innerHTML.includes('<table>'), '关于文档的表格应渲染为 <table>');
   assert.ok(elsMap['doc-content'].innerHTML.includes('<td>'), '表格应包含单元格 <td>');
