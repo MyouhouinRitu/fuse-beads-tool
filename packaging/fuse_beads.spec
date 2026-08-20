@@ -11,7 +11,9 @@ _ver_match = re.search(
     open(os.path.join(ROOT, "bead", "version.py"), encoding="utf-8").read(),
 )
 APP_VERSION = _ver_match.group(1) if _ver_match else "0.0.0"
-_ver_parts = [int(x) for x in APP_VERSION.split(".")] + [0, 0, 0, 0]
+# 版本号可能是 "0.8.0-beta" 这类预发布格式：取前三个数字段作为文件版本号（x.y.z.build）
+_digits = re.search(r"(\d+)\.(\d+)\.(\d+)", APP_VERSION)
+_ver_parts = ([int(_digits.group(i)) for i in range(1, 4)] if _digits else [0, 0, 0]) + [0, 0, 0, 0]
 _filevers = tuple(_ver_parts[:4])
 
 VERSION_INFO = os.path.join(ROOT, "build", "version_info.txt")
