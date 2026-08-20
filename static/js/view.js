@@ -6,9 +6,11 @@ import { els } from './els.js';
 import { App } from './state.js';
 import { fitToViewport, zoomAroundPoint } from './utils.js';
 
+/** @type {(() => void) | null} */
 let afterZoomHook = null;
 
 // 缩放结束后的联动钩子（由 main.js 注册：重绘 overlay、裁剪放大镜、对比镜像）
+/** @param {() => void} fn */
 export function setAfterZoomHook(fn) {
   afterZoomHook = fn;
 }
@@ -36,12 +38,14 @@ export function applyOriginalTransform() {
 // ---------- 坐标换算（事件 → 画布 → 格） ----------
 
 // 画布当前显示缩放（CSS transform 缩放后画布元素宽度 / 位图宽度）
+/** @param {DOMRect | null | undefined} [rect] @returns {number} */
 export function canvasScale(rect) {
   const r = rect || els.canvas.getBoundingClientRect();
   return r.width / els.canvas.width;
 }
 
 // 事件坐标 → 画布内像素坐标（考虑 CSS transform 缩放）
+/** @param {{ clientX: number, clientY: number }} e @param {DOMRect | null | undefined} rect @returns {{ x: number, y: number }} */
 export function eventToCanvasPos(e, rect) {
   const r = rect || els.canvas.getBoundingClientRect();
   const scale = r.width / els.canvas.width;
@@ -52,6 +56,7 @@ export function eventToCanvasPos(e, rect) {
 }
 
 // 画布像素坐标 → 格坐标（含四周 1 格行列号偏移；可能落在图案外）
+/** @param {number} px @param {number} py @returns {{ x: number, y: number }} */
 export function canvasPosToCell(px, py) {
   const cell = App.screenCell;
   return {
@@ -61,12 +66,14 @@ export function canvasPosToCell(px, py) {
 }
 
 // 事件坐标 → 格坐标（含行列号偏移；可能落在图案外）
+/** @param {{ clientX: number, clientY: number }} e @param {DOMRect | null | undefined} rect @returns {{ x: number, y: number }} */
 export function eventToCell(e, rect) {
   const p = eventToCanvasPos(e, rect);
   return canvasPosToCell(p.x, p.y);
 }
 
 // 格中心 → 屏幕坐标（用于定位九宫格弹窗等浮层）
+/** @param {FusePoint} cell @returns {{ x: number, y: number, scale: number }} */
 export function cellCenterToScreen(cell) {
   const scale = canvasScale();
   const sc = App.screenCell;
@@ -104,6 +111,7 @@ export function origFromBead() {
   };
 }
 
+/** @param {FusePoint} pan @param {number} zoom @returns {{ pan: FusePoint, zoom: number }} */
 export function beadFromOrig(pan, zoom) {
   const cell = beadCellPx();
   const beadZoom = zoom / (cell * origZoomRatio());
@@ -141,6 +149,7 @@ export function fitOriginal() {
   applyOriginalTransform();
 }
 
+/** @param {number} clientX @param {number} clientY @param {number} factor */
 export function zoomAtOriginal(clientX, clientY, factor) {
   const cv = els.canvasOriginal;
   const rect = cv.getBoundingClientRect();
@@ -187,19 +196,22 @@ export function fitViewportToCanvas() {
 }
 
 // 沿 offsetParent 链累加元素相对目标容器的静态布局偏移（不受 transform 影响）
+/** @param {HTMLElement} target @param {HTMLElement} el @returns {{ x: number, y: number }} */
 function staticOffsetTo(target, el) {
   let x = 0;
   let y = 0;
-  let node = el;
+  /** @type {HTMLElement | null} */
+  let node = /** @type {HTMLElement | null} */ (el);
   while (node && node !== target) {
     x += node.offsetLeft;
     y += node.offsetTop;
-    node = node.offsetParent;
+    node = /** @type {HTMLElement | null} */ (node.offsetParent);
   }
   return { x, y };
 }
 
 // 围绕鼠标位置缩放工作区（缩放后由钩子触发 overlay 重绘与联动）
+/** @param {number} clientX @param {number} clientY @param {number} factor */
 export function zoomAtCore(clientX, clientY, factor) {
   if (!App.project) return;
   const rect = els.canvas.getBoundingClientRect();

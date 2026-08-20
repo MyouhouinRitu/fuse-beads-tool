@@ -13,6 +13,7 @@ import { App, setProjectDirty } from './state.js';
 import { applyOriginalTransform, applyTransform } from './view.js';
 
 // 面板 DOM 集中引用：与 els.js 一致，避免散落的 document.getElementById
+/** @type {{ [id: string]: { panel: HTMLElement, toggle: HTMLElement | null, head: HTMLElement, body: HTMLElement, expand: HTMLElement } }} */
 const PANEL_DOM = {
   'left-panel': {
     panel: els.leftPanel,
@@ -45,6 +46,7 @@ function readPanelPrefs() {
   }
 }
 
+/** @param {Record<string, any>} prefs */
 function writePanelPrefs(prefs) {
   try {
     localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify(prefs));
@@ -53,6 +55,7 @@ function writePanelPrefs(prefs) {
   }
 }
 
+/** @param {keyof typeof PANEL_FULL_WIDTH} id @param {boolean} collapsed */
 export function setPanelCollapsed(id, collapsed) {
   const panel = PANEL_DOM[id]?.panel;
   if (!panel) return;
@@ -84,6 +87,7 @@ export function setPanelCollapsed(id, collapsed) {
 }
 
 // 与侧边栏宽度过渡同步地平移画布，保证画面在屏幕上保持绝对位置
+/** @param {number} delta */
 function animatePanCompensation(delta) {
   const panTo = App.pan.x + delta;
   const origTo = App.originalImage ? App.origPan.x + delta : null;
@@ -99,12 +103,14 @@ function animatePanCompensation(delta) {
   const origFrom = App.originalImage ? App.origPan.x : null;
   const start = performance.now();
   const dur = PANEL_ANIMATION_MS;
+  /** @type {(t: number) => number} */
   const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+  /** @type {(now: number) => void} */
   const step = (now) => {
     const t = Math.min(1, (now - start) / dur);
     const k = ease(t);
     App.pan.x = panFrom + (panTo - panFrom) * k;
-    if (origFrom != null) App.origPan.x = origFrom + (origTo - origFrom) * k;
+    if (origFrom != null && origTo != null) App.origPan.x = origFrom + (origTo - origFrom) * k;
     applyTransform();
     applyOriginalTransform();
     if (t < 1) requestAnimationFrame(step);
@@ -112,6 +118,7 @@ function animatePanCompensation(delta) {
   requestAnimationFrame(step);
 }
 
+/** @param {keyof typeof PANEL_FULL_WIDTH} id */
 function togglePanel(id) {
   const dom = PANEL_DOM[id];
   if (!dom) return;

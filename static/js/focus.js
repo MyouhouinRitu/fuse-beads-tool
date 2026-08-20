@@ -3,15 +3,22 @@
 const FOCUSABLE_SELECTOR =
   'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
 
+/** @type {HTMLElement | null} */
 let activeDialog = null;
+/** @type {HTMLElement | null} */
 let restoreFocusEl = null;
 let scrollLockCount = 0;
 
+/** @param {HTMLElement} dialog @returns {HTMLElement[]} */
 function focusableOf(dialog) {
   if (typeof dialog.querySelectorAll !== 'function') return [];
-  return Array.from(dialog.querySelectorAll(FOCUSABLE_SELECTOR)).filter((el) => !el.disabled);
+  const items = /** @type {HTMLElement[]} */ (
+    Array.from(dialog.querySelectorAll(FOCUSABLE_SELECTOR))
+  );
+  return items.filter((el) => !el.disabled);
 }
 
+/** @param {KeyboardEvent} e */
 function trapKeydown(e) {
   if (e.key !== 'Tab' || !activeDialog) return;
   const items = focusableOf(activeDialog);
@@ -30,11 +37,12 @@ function trapKeydown(e) {
   }
 }
 
+/** @param {HTMLElement} dialog */
 export function openDialog(dialog) {
   if (!dialog || activeDialog === dialog) return;
   closeDialog();
   activeDialog = dialog;
-  restoreFocusEl = document.activeElement;
+  restoreFocusEl = /** @type {HTMLElement | null} */ (document.activeElement);
   focusableOf(dialog)[0]?.focus();
   document.addEventListener('keydown', trapKeydown, true);
   scrollLockCount += 1;
@@ -52,12 +60,14 @@ export function closeDialog() {
 }
 
 // 弹窗显隐 + 焦点管理的统一入口：所有对话框都走这里，避免各弹窗重复样板。
+/** @param {HTMLElement} dialog */
 export function showDialog(dialog) {
   if (!dialog) return;
   dialog.classList.remove('hidden');
   openDialog(dialog);
 }
 
+/** @param {HTMLElement} dialog */
 export function hideDialog(dialog) {
   if (!dialog) return;
   closeDialog();

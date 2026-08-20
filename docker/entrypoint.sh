@@ -12,11 +12,6 @@ if [ -d data/state.json ]; then
   rm -rf data/state.json
 fi
 
-# 首次启动且配置目录为空时，从镜像内置配置补齐
-if [ -z "$(ls -A data/configs 2>/dev/null)" ]; then
-  cp bundled-configs/*.csv data/configs/
-fi
-
 # 确保数据目录可写（NAS 挂载场景）
 chmod -R a+rwX data
 

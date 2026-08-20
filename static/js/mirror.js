@@ -12,9 +12,11 @@ import { App, setDirty } from './state.js';
 import { toast } from './utils.js';
 
 // 进入镜像模式时的快照：用于预览回滚与「应用」时的撤销记录（before）
+/** @type {{ grid: Int16Array, baseGrid: Int16Array | null, mirror: { horizontal: boolean, vertical: boolean } } | null} */
 let entry = null; // { grid, baseGrid, mirror }
 
 // 水平翻转网格（原地）：把每行左右对调
+/** @param {Int16Array} grid @param {number} width @param {number} height */
 function flipHorizontal(grid, width, height) {
   const half = width >> 1;
   for (let y = 0; y < height; y++) {
@@ -30,6 +32,7 @@ function flipHorizontal(grid, width, height) {
 }
 
 // 垂直翻转网格（原地）：把每列上下对调
+/** @param {Int16Array} grid @param {number} width @param {number} height */
 function flipVertical(grid, width, height) {
   const half = height >> 1;
   for (let y = 0; y < half; y++) {
@@ -45,6 +48,7 @@ function flipVertical(grid, width, height) {
   }
 }
 
+/** @param {Int16Array | null | undefined} a @param {Int16Array | null | undefined} b @returns {boolean} */
 function gridsEqual(a, b) {
   if (!a || !b || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -79,6 +83,7 @@ export function enterMirror() {
 }
 
 // 勾选 / 取消勾选：即时翻转拼豆图与对比原图显示（仅预览，不写撤销记录）
+/** @param {'horizontal' | 'vertical'} axis */
 export function toggleMirror(axis) {
   if (!App.project || !entry) return;
   const { width, height } = App.project;
@@ -107,13 +112,13 @@ export function applyMirror() {
       width: App.project.width,
       height: App.project.height,
       grid: entry.grid,
-      baseGrid: entry.baseGrid,
+      baseGrid: entry.baseGrid ?? undefined,
     };
     const after = {
       width: App.project.width,
       height: App.project.height,
       grid: App.project.grid.slice(),
-      baseGrid: App.baseGrid ? App.baseGrid.slice() : null,
+      baseGrid: App.baseGrid ? App.baseGrid.slice() : undefined,
     };
     recordMirrorStep(App.undoStack, App.redoStack, before, after, entry.mirror, {
       horizontal: App.originalMirror.horizontal,

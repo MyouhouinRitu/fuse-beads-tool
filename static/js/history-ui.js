@@ -49,6 +49,7 @@ export function saveTransaction() {
   scheduleAutosave();
 }
 
+/** @param {number} id */
 export async function switchHistoryItem(id) {
   const node = findTransaction(App.history, id);
   if (!node) return;
@@ -104,6 +105,7 @@ export async function switchHistoryItem(id) {
   scheduleAutosave();
 }
 
+/** @param {number} id */
 export async function deleteHistoryItem(id) {
   const node = findTransaction(App.history, id);
   if (!node) return;
@@ -154,18 +156,19 @@ export function renderHistoryUI() {
 // 历史列表事件委托：容器上只绑定一个 click（节点切换 / 删除按钮）
 export function bindHistoryList() {
   els.historyList.addEventListener('click', async (e) => {
-    const del = e.target.closest('.hi-del');
+    const del = /** @type {HTMLElement | null} */ (e.target?.closest?.('.hi-del'));
     if (del) {
       await deleteHistoryItem(Number(del.dataset.id));
       return;
     }
-    const node = e.target.closest('.history-item');
+    const node = /** @type {HTMLElement | null} */ (e.target?.closest?.('.history-item'));
     if (!node) return;
     const id = Number(node.dataset.id);
     if (App.history.currentId !== id) switchHistoryItem(id);
   });
 }
 
+/** @param {FuseHistoryItem} item */
 function renderHistoryItem(item) {
   const { id } = item;
   const div = document.createElement('div');

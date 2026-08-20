@@ -200,7 +200,7 @@ node tests/constants_sync_test.mjs      # 前端 / 后端 / CSS 布局与渲染�
 
 ## 前端工具链
 
-前端使用 Biome（格式化 / lint）与 TypeScript `checkJs`（类型检查），通过 npm 脚本统一入口（需要 Node.js 在 PATH 中）；Playwright 已作为 devDependency 引入，首次运行前执行 `npx playwright install chromium`（CI 会自动安装）：
+前端使用 Biome（格式化 / lint）与 TypeScript `checkJs`（类型检查），通过 npm 脚本统一入口（需要 Node.js 在 PATH 中）；后端工具（ruff / pyright / 后端测试）与跨语言同步测试需要 Python：默认取 PATH 中的 `python`，也可用环境变量 `PYTHON` 覆盖为任意解释器路径（例如 Windows 下 `PYTHON=C:\路径\python.exe`），`lint:backend` / `typecheck:backend` / `test:backend` 与相关测试统一经 `scripts/run-python.mjs` 取该变量；pyright 首次运行需要 Node.js，若 PATH 中没有 node 会尝试联网下载，建议把 node 加入 PATH。Playwright 已作为 devDependency 引入，首次运行前执行 `npx playwright install chromium`（CI 会自动安装）：
 
 ```bash
 npm run format        # Biome 格式化并写入
@@ -213,6 +213,7 @@ npm run test:ui       # Playwright 完整界面回归
 npm run test:render   # Playwright 前后端渲染一致性
 npm run test:auth     # Playwright Token 认证端到端
 npm run test:playwright # Playwright 全部（UI + 渲染一致性 + Token 认证）
+npm run test:coverage    # 覆盖率统计（前端 c8 + 后端 coverage.py，仅报告不设门槛）
 npm run test:backend  # 后端接口冒烟
 npm run test:all      # 全部测试（Node + Playwright）
 npm run check         # lint + typecheck + test 一键检查

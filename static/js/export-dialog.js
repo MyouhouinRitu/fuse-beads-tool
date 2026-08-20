@@ -20,19 +20,22 @@ import { drawPattern } from './render.js';
 import { App } from './state.js';
 import { clampInt, codeOf, downloadBlob, toast } from './utils.js';
 
+/** @type {any[]} */
 let pdfPreviewPages = [];
 let pdfPreviewIndex = 0;
+/** @type {ReturnType<typeof setTimeout> | null} */
 let pdfPreviewTimer = null;
 let pdfPreviewSeq = 0;
 
 function buildExportData() {
-  const n = App.project.width * App.project.height;
+  const project = /** @type {FuseProject} */ (App.project);
+  const n = project.width * project.height;
   const gridOut = new Int16Array(n);
   const codesOut = new Array(n).fill('');
   const hexMap = new Map();
   const paletteOut = []; // { index, hex, code, count }：导出专用紧凑调色板，图例与之共用索引
   for (let p = 0; p < n; p++) {
-    const v = App.project.grid[p];
+    const v = project.grid[p];
     if (v < 0) {
       gridOut[p] = -1;
       continue;
@@ -60,7 +63,7 @@ export function openExportDialog() {
     return;
   }
   pdfPreviewSeq++;
-  clearTimeout(pdfPreviewTimer);
+  clearTimeout(pdfPreviewTimer ?? undefined);
   pdfPreviewPages = [];
   pdfPreviewIndex = 0;
   els.dlgBusy.classList.add('hidden');
@@ -75,7 +78,7 @@ export function openExportDialog() {
 // 关闭导出弹窗并重置全部弹窗状态，避免下次打开残留进度 / 页码 / 状态文案
 export function closeExportDialog() {
   pdfPreviewSeq++;
-  clearTimeout(pdfPreviewTimer);
+  clearTimeout(pdfPreviewTimer ?? undefined);
   pdfPreviewPages = [];
   pdfPreviewIndex = 0;
   els.dlgBusy.classList.add('hidden');
@@ -89,7 +92,7 @@ export function closeExportDialog() {
 export async function renderExportPreview() {
   if (!App.project) return;
   pdfPreviewSeq++;
-  clearTimeout(pdfPreviewTimer);
+  clearTimeout(pdfPreviewTimer ?? undefined);
   const fmt = els.dlgFormat.value;
   if (fmt.startsWith('pdf-')) {
     pdfPreviewTimer = setTimeout(() => renderPdfPreview(), 120);
@@ -112,7 +115,7 @@ export async function renderExportPreview() {
   const previewCell = EXPORT_PREVIEW_CELL;
   const previewPad = Math.round((pad * previewCell) / cellSize);
   const off = document.createElement('canvas');
-  const octx = off.getContext('2d');
+  const octx = /** @type {CanvasRenderingContext2D} */ (off.getContext('2d'));
   drawPattern(octx, App.project.width, App.project.height, display.idx, display.rgb, {
     cell: previewCell,
     outerPad: previewPad,
@@ -131,11 +134,12 @@ export async function renderExportPreview() {
   const scale = Math.min(EXPORT_PREVIEW_MAX_W / off.width, EXPORT_PREVIEW_MAX_H / off.height, 1);
   pv.width = Math.max(1, Math.round(off.width * scale));
   pv.height = Math.max(1, Math.round(off.height * scale));
-  const pctx = pv.getContext('2d');
+  const pctx = /** @type {CanvasRenderingContext2D} */ (pv.getContext('2d'));
   pctx.clearRect(0, 0, pv.width, pv.height);
   pctx.drawImage(off, 0, 0, pv.width, pv.height);
 }
 
+/** @param {string} fmt @returns {any} */
 function buildExportOptions(fmt) {
   return {
     cellSize: clampInt(els.dlgCell.value, EXPORT_CELL_MIN, EXPORT_CELL_MAX, EXPORT_CELL_DEFAULT),
@@ -212,7 +216,7 @@ function drawPdfPreviewPage() {
     const scale = Math.min(EXPORT_PREVIEW_MAX_W / img.width, EXPORT_PREVIEW_MAX_H / img.height, 1);
     pv.width = Math.max(1, Math.round(img.width * scale));
     pv.height = Math.max(1, Math.round(img.height * scale));
-    const pctx = pv.getContext('2d');
+    const pctx = /** @type {CanvasRenderingContext2D} */ (pv.getContext('2d'));
     pctx.fillStyle = '#e8eaee';
     pctx.fillRect(0, 0, pv.width, pv.height);
     pctx.drawImage(img, 0, 0, pv.width, pv.height);

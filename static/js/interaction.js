@@ -2,6 +2,7 @@
 // App 只保留可持久化领域状态与计时器句柄，画布拖拽之外的瞬态字段统一放这里，
 // 拖拽过程本身的中间标记仍由 state.js 的 dragState 负责。
 
+/** @type {FuseInteractionState} */
 export const interactionState = {
   painting: false, // 画笔 / 橡皮是否正在连续涂色
   lastCell: null, // 画笔 / 橡皮上一次涂到的格子

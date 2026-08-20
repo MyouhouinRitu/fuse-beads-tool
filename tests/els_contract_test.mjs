@@ -48,9 +48,28 @@ for (const f of jsFiles) {
 }
 assert.deepEqual(offenders, [], 'static/js 中除 els.js 外禁止使用 document.getElementById');
 
+// 有意不注册的 id（纯结构容器 / 纯展示元素，JS 无需操作）；新增 JS 操作时需移出此表并在 els.js 注册
+const INTENTIONAL_UNREGISTERED = [
+  'fix-dropdown',
+  'canvas-area',
+  'canvas-toolbar',
+  'compare-wrap',
+  'doc-title',
+  'export-title',
+  'login-title',
+  'palette-dialog-title',
+];
+
 // ---- 未注册 id 仅作提示（纯样式/纯展示 id 可忽略）----
 const referenced = new Set(idsUsed);
 const unreferenced = htmlIds.filter((id) => !referenced.has(id));
+// 有意清单里的 id 必须仍然未注册；一旦需要 JS 操作，应移出此表并在 els.js 注册
+for (const id of INTENTIONAL_UNREGISTERED) {
+  assert.ok(
+    unreferenced.includes(id),
+    `${id} 已从有意未注册清单中消失：要么已在 els.js 注册（请从清单移除），要么 id 已从 HTML 删除（请更新清单）`,
+  );
+}
 console.log(
   '[OK] els.js 注册 ' +
     elsEntries.length +

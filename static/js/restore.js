@@ -59,6 +59,7 @@ function applySettingsToControls() {
 }
 
 // 恢复项目快照（画布、基副本、色板配置与已应用色板）
+/** @param {any} st */
 async function restoreProjectState(st) {
   if (!st.project) return;
   const projectError = validateProjectPayload(st.project);
@@ -85,11 +86,12 @@ async function restoreProjectState(st) {
   App.editedSinceSlider = !!st.project.editedSinceSlider;
   App.configName = st.project.paletteName || App.configName;
   // 已应用色板 = 上次保存/导入时画布所用的色板，画布与编辑工具按其显示
-  App.appliedPalette = st.project.palette?.length
-    ? st.project.palette.map((c) => ({ ...c }))
-    : App.appliedPalette.map((c) => ({ ...c }));
   // 色板配置（可编辑）以磁盘上的配置为准；快照与配置不一致时自动创建恢复配置
+  /** @type {FusePaletteColor[] | null} */
   const snapPalette = st.project.palette?.length ? st.project.palette : null;
+  App.appliedPalette = snapPalette
+    ? snapPalette.map((c) => ({ ...c }))
+    : App.appliedPalette.map((c) => ({ ...c }));
   if (snapPalette) {
     const preferred = App.configName || '恢复色板';
     const { name, created } = await palette.ensurePaletteConfig(snapPalette, preferred);
@@ -124,6 +126,7 @@ const RESTORABLE_TOOLS = new Set([
   TOOLS.WAND,
 ]);
 
+/** @param {any} raw @param {FuseProject | null | undefined} project @returns {Set<number>} */
 function restoreSelection(raw, project) {
   if (!project || !Array.isArray(raw)) return new Set();
   const n = project.width * project.height;
@@ -135,6 +138,7 @@ function restoreSelection(raw, project) {
   return sel;
 }
 
+/** @param {any} vp @returns {boolean} */
 function applySavedOriginalViewport(vp) {
   const oz = Number(vp?.origZoom);
   const op = vp?.origPan;
@@ -153,6 +157,7 @@ function applySavedOriginalViewport(vp) {
   return true;
 }
 
+/** @param {any} vp @returns {boolean} */
 function restoreViewport(vp) {
   const zoom = Number(vp?.zoom);
   const pan = vp?.pan;
@@ -173,11 +178,13 @@ function restoreViewport(vp) {
 }
 
 // 对比原图显示的镜像状态：随状态 / 项目文档持久化，保证原图与拼豆图方向一致
+/** @param {any} raw */
 function restoreOriginalMirror(raw) {
   App.originalMirror.horizontal = !!raw?.horizontal;
   App.originalMirror.vertical = !!raw?.vertical;
 }
 
+/** @param {any} original */
 function restoreOriginalMeta(original) {
   App.originalId = original?.id ? String(original.id) : null;
   App.originalName = original?.name ? String(original.name) : null;
@@ -187,6 +194,7 @@ function restoreOriginalMeta(original) {
 }
 
 // 恢复原图：preferCache 时先试浏览器缓存，缺失再回退后端保存的原图
+/** @param {boolean} preferCache @returns {Promise<boolean>} */
 async function restoreOriginalImage(preferCache) {
   let restored = preferCache ? await compare.restoreOriginalFromCache() : false;
   if (!restored && App.originalId) {
@@ -201,6 +209,7 @@ async function restoreOriginalImage(preferCache) {
 }
 
 // 原图就绪后按偏好开启对比原图；否则关闭对比 / 同步勾选
+/** @param {any} vp */
 function enableCompareIfReady(vp) {
   if (App.settings.compare && App.project && App.originalImage) {
     compare.setCompareEnabled(true, { silent: true });
@@ -279,6 +288,7 @@ export async function restoreState() {
   enableCompareIfReady(st.viewport);
 }
 
+/** @param {any} doc @param {string | null} [path] */
 export async function applyProjectDocument(doc, path = null) {
   if (!doc?.project) {
     toast('项目文件缺少画布数据');

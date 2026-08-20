@@ -24,8 +24,9 @@ export function clearSelection() {
 }
 
 // 同色连通块：返回包含 (x,y) 的四方向同色像素组（复用 render.js 的连通分组）；空位视为只有自身一格
+/** @param {number} x @param {number} y @returns {Set<number>} */
 function connectedColorCells(x, y) {
-  const { grid, width, height } = App.project;
+  const { grid, width, height } = /** @type {FuseProject} */ (App.project);
   const p0 = y * width + x;
   const v = grid[p0];
   if (v < 0) return new Set([p0]);
@@ -51,8 +52,9 @@ function wandDistanceThreshold() {
   return WAND_DIST2_AT_MAX * ratio;
 }
 
+/** @param {number} x @param {number} y @returns {Set<number>} */
 function similarColorCells(x, y) {
-  const { grid, width } = App.project;
+  const { grid, width } = /** @type {FuseProject} */ (App.project);
   const p0 = y * width + x;
   const seed = grid[p0];
   if (seed < 0) return new Set([p0]);
@@ -66,12 +68,15 @@ function similarColorCells(x, y) {
   const threshold = wandDistanceThreshold();
   const visited = new Uint8Array(grid.length);
   const cells = new Set([p0]);
+  /** @type {number[]} */
   const stack = [p0];
   visited[p0] = 1;
 
   while (stack.length) {
     const p = stack.pop();
+    if (p == null) break;
     const px = p % width;
+    /** @type {number[]} */
     const neighbors = [];
     if (px > 0) neighbors.push(p - 1);
     if (px < width - 1) neighbors.push(p + 1);
@@ -90,19 +95,22 @@ function similarColorCells(x, y) {
   return cells;
 }
 
+/** @param {Set<number> | number[]} cells */
 function addToSelection(cells) {
   const next = new Set(App.selection);
   for (const p of cells) next.add(p);
   App.selection = next;
 }
 
+/** @param {Set<number> | number[]} cells */
 function replaceSelection(cells) {
   App.selection = new Set(cells);
 }
 
 // 单击选择：同色选区勾选时选连通块，否则选单格；Shift 追加并集，非 Shift 替换；Ctrl 反选当前格
+/** @param {FusePoint} cell @param {boolean} shift @param {boolean} [ctrl] */
 export function selectClick(cell, shift, ctrl = false) {
-  const p = cell.y * App.project.width + cell.x;
+  const p = cell.y * /** @type {FuseProject} */ (App.project).width + cell.x;
   if (ctrl) {
     const next = new Set(App.selection);
     if (next.has(p)) next.delete(p);
@@ -111,6 +119,7 @@ export function selectClick(cell, shift, ctrl = false) {
     scheduleCanvasRender();
     return;
   }
+  /** @type {Set<number>} */
   let cells;
   if (App.settings.sameColorSelect) {
     cells = connectedColorCells(cell.x, cell.y);
@@ -122,6 +131,7 @@ export function selectClick(cell, shift, ctrl = false) {
   scheduleCanvasRender();
 }
 
+/** @param {Set<number> | number[]} cells */
 export function toggleSelectionCells(cells) {
   const next = new Set(App.selection);
   for (const p of cells) {
@@ -132,6 +142,7 @@ export function toggleSelectionCells(cells) {
 }
 
 // 魔棒单击：按当前容差选择四向连通的相似色；Shift 追加并集，非 Shift 替换
+/** @param {FusePoint} cell @param {boolean} shift */
 export function selectWand(cell, shift) {
   const cells = similarColorCells(cell.x, cell.y);
   if (shift) addToSelection(cells);
@@ -140,6 +151,7 @@ export function selectWand(cell, shift) {
   scheduleCanvasRender();
 }
 
+/** @param {FuseCropRect} rect @param {boolean} shift */
 export function selectRect(rect, shift) {
   const cells = rectCells(rect);
   if (shift) addToSelection(cells);
@@ -151,6 +163,7 @@ export function selectRect(rect, shift) {
 export function fillSelectionWithBrush() {
   if (!App.project || !App.selection.size || App.brushColor == null) return;
   const { width } = App.project;
+  /** @type {Array<{ x: number, y: number, to: number }>} */
   const changes = [];
   for (const p of App.selection) {
     changes.push({ x: p % width, y: (p / width) | 0, to: App.brushColor });
@@ -166,6 +179,7 @@ export function fillSelectionWithBrush() {
 export function clearSelectionToEmpty() {
   if (!App.project || !App.selection.size) return;
   const { grid, width } = App.project;
+  /** @type {Array<{ x: number, y: number, to: number }>} */
   const changes = [];
   for (const p of App.selection) {
     if (grid[p] < 0) continue; // 已是空位

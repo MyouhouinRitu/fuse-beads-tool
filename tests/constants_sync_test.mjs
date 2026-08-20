@@ -67,6 +67,17 @@ assert.equal(
   assert.equal(Number(m[2]), K.QUICK_PICKER_CELL, '九宫格格宽应与 QUICK_PICKER_CELL 一致');
 }
 
+// 提示条淡出时长：JS 常量（utils.js 的 toast 队列）与 CSS #toast 过渡保持一致
+{
+  const m = cssText.match(/transition:\s*opacity\s+([\d.]+)s/);
+  assert.ok(m, 'style.css 应包含 #toast 的 transition: opacity 0.25s');
+  assert.equal(
+    Math.round(parseFloat(m[1]) * 1000),
+    K.TOAST_FADE_MS,
+    '#toast 淡出过渡时长应与 TOAST_FADE_MS 一致',
+  );
+}
+
 console.log('[OK] CSS 布局参数与 constants.js 一致（面板宽度 / 折叠宽度 / 动画时长 / 九宫格）');
 
 // 裁剪蒙版：JS 常量与 CSS 变量保持同一份 40% 黑
@@ -246,6 +257,39 @@ for (const e of EXCEPTIONS) {
     String(K.DEFAULT_TARGET_PIXELS),
     'index.html #target-pixels value 应与 DEFAULT_TARGET_PIXELS 保持一致',
   );
+
+  // 画笔 / 魔棒滑块范围：与 constants.js 保持一致
+  const rangeAttr = (id, name) => {
+    const html = read('templates/index.html');
+    const m = html.match(new RegExp(`<input type="range" id="${id}"[^>]*>`));
+    assert.ok(m, `index.html 应包含 #${id} 滑块`);
+    return m[0].match(new RegExp(`${name}="([^"]*)"`))?.[1];
+  };
+  assert.equal(
+    rangeAttr('brush-size', 'min'),
+    String(K.BRUSH_SIZE_MIN),
+    '#brush-size min 应与 BRUSH_SIZE_MIN 一致',
+  );
+  assert.equal(
+    rangeAttr('brush-size', 'max'),
+    String(K.BRUSH_SIZE_MAX),
+    '#brush-size max 应与 BRUSH_SIZE_MAX 一致',
+  );
+  assert.equal(
+    rangeAttr('wand-sensitivity', 'min'),
+    String(K.WAND_SENSITIVITY_MIN),
+    '#wand-sensitivity min 应与 WAND_SENSITIVITY_MIN 一致',
+  );
+  assert.equal(
+    rangeAttr('wand-sensitivity', 'max'),
+    String(K.WAND_SENSITIVITY_MAX),
+    '#wand-sensitivity max 应与 WAND_SENSITIVITY_MAX 一致',
+  );
+  assert.equal(
+    rangeAttr('wand-sensitivity', 'value'),
+    String(K.WAND_SENSITIVITY_DEFAULT),
+    '#wand-sensitivity value 应与 WAND_SENSITIVITY_DEFAULT 一致',
+  );
 }
 
 console.log('[OK] 渲染参数与 bead/export.py 一致（图例 / 网格线 / 色号 / 空位样式 / 导出默认值）');
@@ -288,6 +332,8 @@ function runPython(script, input = '') {
     'bead/colors.py LUMINANCE_THRESHOLD 应与 constants.js 保持一致',
   );
 
+  // 采样集：固定边界/关键样本 + 确定性伪随机样本（种子固定，结果可复现）。
+  // 用大规模采样把颜色数学的两端一致性从「抽查 10 个点」压到「边界 + 数百随机点」。
   const samples = [
     [0, 0, 0],
     [255, 255, 255],
@@ -299,14 +345,31 @@ function runPython(script, input = '') {
     [10, 200, 30],
     [18, 52, 86],
     [200, 30, 10],
+    // 边界与极端值
+    [1, 1, 1],
+    [254, 254, 254],
+    [255, 255, 0],
+    [0, 255, 255],
+    [255, 0, 255],
+    [100, 0, 0],
+    [0, 100, 0],
+    [0, 0, 100],
+    [200, 200, 200],
+    [55, 55, 55],
   ];
-  const pairs = [
-    [0, 1],
-    [2, 3],
-    [4, 7],
-    [5, 6],
-    [8, 9],
-  ];
+  // 确定性 LCG：避免测试结果随运行环境漂移
+  let _seed = 0x5eed1234;
+  const rand = () => {
+    _seed = (Math.imul(_seed, 1664525) + 1013904223) >>> 0;
+    return _seed / 0x100000000;
+  };
+  for (let i = 0; i < 300; i++) {
+    samples.push([Math.floor(rand() * 256), Math.floor(rand() * 256), Math.floor(rand() * 256)]);
+  }
+  const pairs = [];
+  for (let i = 0; i < 10; i++) pairs.push([i, (i + 1) % 10]); // 固定样本环
+  pairs.push([10, 12], [13, 15], [17, 19]); // 边界对
+  for (let i = 0; i + 1 < samples.length; i += 7) pairs.push([i, i + 1]); // 随机相邻对
   const script = `
 import json
 from bead.colors import is_light_color, lab_distance, rgb_distance, rgb_to_lab

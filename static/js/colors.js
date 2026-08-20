@@ -2,6 +2,7 @@
 
 import { LUMINANCE_THRESHOLD } from './constants.js';
 
+/** @param {string} hex @returns {[number, number, number]} */
 export function hexToRgb(hex) {
   let h = String(hex || '').replace('#', '');
   if (h.length === 3)
@@ -15,10 +16,12 @@ export function hexToRgb(hex) {
 }
 
 // 打包 / 解包 0xRRGGBB：画布显示数据用整数存储像素色
+/** @param {number[]} rgb @returns {number} */
 export function packRgb(rgb) {
   return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
 }
 
+/** @param {number} packed @returns {string} */
 export function hex6(packed) {
   return (
     ((packed >>> 16) & 255).toString(16).padStart(2, '0') +
@@ -27,24 +30,29 @@ export function hex6(packed) {
   );
 }
 
+/** @param {number} v @returns {[number, number, number]} */
 export function rgbFromPacked(v) {
   return [(v >>> 16) & 255, (v >>> 8) & 255, v & 255];
 }
 
 // 感知亮度判断：≥ 阈值视为亮色（用于文字、描边等对比色选择）
+/** @param {number[]} rgb @returns {boolean} */
 export function isLightColor(rgb) {
   return luminance(rgb) >= LUMINANCE_THRESHOLD;
 }
 
+/** @param {number[]} rgb @returns {number} */
 export function luminance(rgb) {
   return (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
 }
 
+/** @param {number} v @returns {number} */
 function srgbToLinear(v) {
   v = Math.max(0, Math.min(1, v / 255));
   return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 }
 
+/** @param {number} r @param {number} g @param {number} b @returns {[number, number, number]} */
 export function rgbToLab(r, g, b) {
   const rl = srgbToLinear(r),
     gl = srgbToLinear(g),
@@ -61,6 +69,7 @@ export function rgbToLab(r, g, b) {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 }
 
+/** @param {number[]} rgb1 @param {number[]} rgb2 @param {boolean} useLab @returns {number} */
 export function colorDist2(rgb1, rgb2, useLab) {
   if (useLab) {
     const a = rgbToLab(rgb1[0], rgb1[1], rgb1[2]);
@@ -77,17 +86,20 @@ export function colorDist2(rgb1, rgb2, useLab) {
   return (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
 }
 
+/** @param {number} r @param {number} g @param {number} b @param {Array<number[]>} palRgb @param {Array<number[]> | null} palLab @param {boolean} useLab @returns {number[]} */
 function nearestIndices(r, g, b, palRgb, palLab, useLab) {
   let minD = Infinity;
+  /** @type {number[]} */
   let list = [];
   const lab = useLab ? rgbToLab(r, g, b) : null;
   for (let i = 0; i < palRgb.length; i++) {
     let d;
     if (useLab) {
-      const p = palLab[i];
-      const dl = lab[0] - p[0],
-        da = lab[1] - p[1],
-        db = lab[2] - p[2];
+      const p = /** @type {Array<number[]>} */ (palLab)[i];
+      const labVal = /** @type {number[]} */ (lab);
+      const dl = labVal[0] - p[0],
+        da = labVal[1] - p[1],
+        db = labVal[2] - p[2];
       d = dl * dl + da * da + db * db;
     } else {
       const p = palRgb[i];
@@ -111,14 +123,18 @@ function nearestIndices(r, g, b, palRgb, palLab, useLab) {
 const TRANSPARENT_ALPHA = 128;
 
 // 功能三第 1~4 步：计算最相近色并处理平局
+/** @param {Uint8ClampedArray | Uint8Array} rgba @param {number} width @param {number} height @param {Array<{ hex: string }>} palette @param {boolean} useLab @returns {{ grid: Int16Array, counts: number[] }} */
 export function computeInitialMapping(rgba, width, height, palette, useLab) {
   const palRgb = palette.map((p) => hexToRgb(p.hex));
   const palLab = useLab ? palRgb.map((c) => rgbToLab(c[0], c[1], c[2])) : null;
   const n = width * height;
   const grid = new Int16Array(n);
   grid.fill(-1);
+  /** @type {number[]} */
   const counts = new Array(palette.length).fill(0);
+  /** @type {Map<number, number[]>} */
   const cache = new Map();
+  /** @type {Array<{ p: number, list: number[] }>} */
   const unassigned = [];
 
   for (let y = 0; y < height; y++) {
@@ -163,6 +179,7 @@ export function computeInitialMapping(rgba, width, height, palette, useLab) {
   return { grid, counts };
 }
 
+/** @param {Array<{ p: number, list: number[] }>} items @param {number[]} counts @param {Int16Array} grid @param {boolean} positional @returns {Array<{ p: number, list: number[] }>} */
 function tieBreakPass(items, counts, grid, positional) {
   const remain = [];
   for (const u of items) {
@@ -187,7 +204,9 @@ function tieBreakPass(items, counts, grid, positional) {
   return remain;
 }
 
+/** @param {Int16Array | number[]} grid @param {number} width @param {number} height @returns {number[]} */
 export function computeUsedCounts(grid, width, height) {
+  /** @type {number[]} */
   const counts = [];
   for (let p = 0; p < width * height; p++) {
     const v = grid[p];
@@ -199,6 +218,7 @@ export function computeUsedCounts(grid, width, height) {
 }
 
 // 当前使用中的颜色种数（按格子色号去重统计）
+/** @param {Int16Array | number[]} grid @param {number} width @param {number} height @returns {number} */
 export function countUsedColors(grid, width, height) {
   const seen = new Set();
   for (let p = 0; p < width * height; p++) {
@@ -208,10 +228,13 @@ export function countUsedColors(grid, width, height) {
   return seen.size;
 }
 
+/** @typedef {{ d: number, a: number, b: number, va: number, vb: number }} MinHeapEntry */
 class MinHeap {
   constructor() {
+    /** @type {MinHeapEntry[]} */
     this.a = [];
   }
+  /** @param {MinHeapEntry} x */
   push(x) {
     const a = this.a;
     a.push(x);
@@ -223,13 +246,14 @@ class MinHeap {
       i = p;
     }
   }
+  /** @returns {MinHeapEntry | null} */
   pop() {
     const a = this.a;
     if (!a.length) return null;
     const top = a[0];
     const last = a.pop();
     if (a.length) {
-      a[0] = last;
+      a[0] = /** @type {MinHeapEntry} */ (last);
       let i = 0;
       for (;;) {
         const l = i * 2 + 1,
@@ -247,9 +271,13 @@ class MinHeap {
 }
 
 // 贪心合并：每次合并距离最近的两簇颜色（按像素数加权），直到簇数 <= targetN
+/** @param {number[]} counts @param {Array<{ hex: string }>} palette @param {boolean} useLab @param {number} targetN @returns {{ rep: Map<number, number>, color: Map<number, number[]> }} */
 export function buildMergeMap(counts, palette, useLab, targetN) {
+  /** @type {Map<number, number>} */
   const rep = new Map();
+  /** @type {Map<number, number[]>} */
   const color = new Map();
+  /** @type {number[]} */
   const present = [];
   for (let i = 0; i < counts.length; i++) if (counts[i] > 0) present.push(i);
   const total = present.length;
@@ -266,6 +294,7 @@ export function buildMergeMap(counts, palette, useLab, targetN) {
   const ver = new Int32Array(total);
   const cnt = new Float64Array(total);
   const idx = new Int32Array(total);
+  /** @type {number[][]} */
   const rgb = new Array(total);
   const parent = present.map((_, i) => i);
   for (let i = 0; i < total; i++) {
@@ -274,6 +303,7 @@ export function buildMergeMap(counts, palette, useLab, targetN) {
     idx[i] = present[i];
     rgb[i] = hexToRgb(palette[present[i]].hex);
   }
+  /** @param {number} x */
   const find = (x) => {
     while (parent[x] !== x) {
       parent[x] = parent[parent[x]];

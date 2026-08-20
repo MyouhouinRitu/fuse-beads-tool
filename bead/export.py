@@ -12,7 +12,8 @@ from bead.colors import is_light_color
 from bead.meta import ATTRIBUTION_TEXT
 
 # ---------------- 渲染常量 ----------------
-# 与 static/js/constants.js 及前端 render.js 对应，改动时需同步。
+# 与 static/js/constants.js 及前端 render.js 对应，改动时需同步；
+# 改任一侧后必须运行 tests/constants_sync_test.mjs 与 tests/render_consistency_test.mjs。
 DEFAULT_CELL = 28                    # EXPORT_CELL_DEFAULT：默认每格像素
 DEFAULT_QUALITY = 95                 # 导出 JPG 默认质量
 

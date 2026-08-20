@@ -39,6 +39,7 @@ export function updateBrush() {
 }
 
 // 调色板中最暗的颜色索引（按感知亮度），画笔未选色时用作默认颜色
+/** @param {Array<any>} palette @returns {number | null} */
 function darkestPaletteIndex(palette) {
   if (!palette.length) return null;
   let best = 0;
@@ -70,6 +71,7 @@ export function ensureBrushColor() {
 }
 
 // 快捷键/按钮共用：切换到指定工具（画笔未选色时先取最暗色）
+/** @param {string} tool */
 export function switchToolShortcut(tool) {
   if (tool === TOOLS.BRUSH && !ensureBrushColor()) return;
   setTool(tool);
@@ -79,7 +81,7 @@ export function switchToolShortcut(tool) {
 // 事件委托：容器上只绑定一个 click，避免整表重建时反复创建监听器
 export function bindColorList() {
   els.colorList.addEventListener('click', (e) => {
-    const item = e.target.closest('.color-item');
+    const item = /** @type {HTMLElement | null} */ (e.target?.closest?.('.color-item'));
     if (!item) return;
     const i = Number(item.dataset.index);
     if (!Number.isInteger(i)) return;
@@ -96,6 +98,7 @@ export function bindColorList() {
   });
 }
 
+/** @param {Array<number> | null | undefined} [counts] */
 export function renderColorList(counts) {
   if (!counts && App.project) {
     counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
@@ -132,8 +135,10 @@ export function renderColorList(counts) {
 }
 
 // 取色工具：把目标格的颜色设为画笔色；有选区时立即填充选区，否则切回画笔模式
+/** @param {{ x: number, y: number }} cell */
 export function applyPickerColor(cell) {
-  const v = App.project.grid[cell.y * App.project.width + cell.x];
+  const project = /** @type {FuseProject} */ (App.project);
+  const v = project.grid[cell.y * project.width + cell.x];
   if (v < 0) {
     toast('该位置是空位，无法取色');
     return;

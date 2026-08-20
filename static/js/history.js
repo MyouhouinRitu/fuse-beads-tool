@@ -10,6 +10,7 @@ export const SNAPSHOT_BUDGET_BYTES = 4 * 1024 * 1024; // 历史区序列化体�
 const SNAPSHOT_BYTES_PER_CELL = (2 * 4) / 3; // 每格 Int16 2 字节 + base64 膨胀 4/3
 
 // 按网格规模收缩快照上限：大网格少存快照，使历史区体积始终落在预算内
+/** @param {number} cells @returns {number} */
 function snapshotLimit(cells) {
   const byBudget = Math.floor(
     SNAPSHOT_BUDGET_BYTES / (Math.max(1, cells) * SNAPSHOT_BYTES_PER_CELL),
@@ -17,6 +18,7 @@ function snapshotLimit(cells) {
   return Math.max(1, Math.min(MAX_SNAPSHOTS, byBudget));
 }
 
+/** @param {number} width @param {number} height @returns {number} */
 export function maxSnapshotsFor(width, height) {
   return snapshotLimit(Math.floor(Number(width) * Number(height)));
 }
@@ -69,6 +71,7 @@ export function sanitizeHistory(h) {
   };
 }
 
+/** @param {any} s @returns {FuseSnapshot | null} */
 function sanitizeSnapshot(s) {
   if (!s || typeof s !== 'object') return null;
   const width = Number(s.width);
@@ -86,6 +89,7 @@ function sanitizeSnapshot(s) {
     return null;
   }
   if (rawGrid.length !== width * height) return null;
+  /** @param {any[]} arr */
   const norm = (arr) =>
     arr.map((v) => {
       const n = Number(v);
@@ -108,6 +112,7 @@ function sanitizeSnapshot(s) {
 /** @param {unknown} raw @returns {FuseStep[]} */
 export function sanitizeUndoStack(raw) {
   if (!Array.isArray(raw)) return [];
+  /** @type {FuseStep[]} */
   const out = [];
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
@@ -116,6 +121,7 @@ export function sanitizeUndoStack(raw) {
       const after = sanitizeSnapshot(item.after);
       if (!before || !after) continue;
       const type = String(item.type || 'crop');
+      /** @type {{ structural: true, type: string, before: FuseSnapshot, after: FuseSnapshot, mirrorBefore?: { horizontal: boolean, vertical: boolean }, mirrorAfter?: { horizontal: boolean, vertical: boolean } }} */
       const step = { structural: true, type, before, after };
       if (type === 'mirror') {
         // 镜像步骤额外携带对比原图显示状态，撤销/重做时同步还原
@@ -174,6 +180,7 @@ export function createTransaction(history, snapshot) {
 
 // 只删除该事务节点本身（无子树）。
 // 若删除的是当前节点，切到相邻节点（优先后一个，其次前一个）；没有剩余节点时 currentId 置空。
+/** @param {FuseHistory} history @param {number} id @returns {{ ok: boolean, newCurrent: number | null }} */
 export function deleteTransaction(history, id) {
   const idx = history.items.findIndex((it) => it.id === id);
   if (idx < 0) return { ok: false, newCurrent: history.currentId };
@@ -189,12 +196,14 @@ export function deleteTransaction(history, id) {
 
 // ---------------- 单步撤销/重做 ----------------
 
+/** @param {FuseStep[]} stack */
 function cap(stack) {
   while (stack.length > MAX_UNDO_STEPS) stack.shift();
 }
 
 // 记录一步（一次 D 键选色，或一次画笔/橡皮按下到放开的整段修改）。
 // 入栈后清空重做栈；超出 20 步时丢弃最旧的一步。
+/** @param {FuseStep[]} undoStack @param {FuseStep[]} redoStack @param {FuseStepChange[]} changes @returns {FuseStep | null} */
 export function recordStep(undoStack, redoStack, changes) {
   if (!changes?.length) return null;
   const step = { changes };
@@ -204,6 +213,7 @@ export function recordStep(undoStack, redoStack, changes) {
   return step;
 }
 
+/** @param {FuseStep[]} undoStack @param {FuseStep[]} redoStack @returns {FuseStep | null} */
 export function undoStep(undoStack, redoStack) {
   const step = undoStack.pop();
   if (!step) return null;
@@ -212,6 +222,7 @@ export function undoStep(undoStack, redoStack) {
   return step;
 }
 
+/** @param {FuseStep[]} undoStack @param {FuseStep[]} redoStack @returns {FuseStep | null} */
 export function redoStep(undoStack, redoStack) {
   const step = redoStack.pop();
   if (!step) return null;
@@ -221,6 +232,7 @@ export function redoStep(undoStack, redoStack) {
 }
 
 // mode: 'undo' 还原为修改前色号；'redo' 重新应用修改后色号
+/** @param {Int16Array} grid @param {number} width @param {FuseStepChange[]} changes @param {'undo' | 'redo'} mode */
 export function applyStepToGrid(grid, width, changes, mode) {
   for (const ch of changes) {
     if (!ch || !Number.isInteger(ch.x) || !Number.isInteger(ch.y)) continue;
@@ -245,7 +257,9 @@ function snapshotOf(projectLike) {
 
 // 记录一步结构型操作（如裁剪）：尺寸变化后旧的坐标增量步骤全部失效，
 // 因此清空撤销/重做栈后仅保留本步骤；之后新的增量步骤再叠加在本步骤之上。
+/** @param {FuseStep[]} undoStack @param {FuseStep[]} redoStack @param {{ width: number, height: number, grid: Int16Array, baseGrid?: Int16Array }} before @param {{ width: number, height: number, grid: Int16Array, baseGrid?: Int16Array }} after @param {string} [type] @returns {FuseStep} */
 export function recordStructuralStep(undoStack, redoStack, before, after, type = 'crop') {
+  /** @type {FuseStep} */
   const step = { structural: true, type, before: snapshotOf(before), after: snapshotOf(after) };
   undoStack.length = 0;
   redoStack.length = 0;
@@ -255,7 +269,9 @@ export function recordStructuralStep(undoStack, redoStack, before, after, type =
 
 // 记录一步镜像操作：尺寸不变，旧坐标增量步骤仍然有效，因此不清空撤销栈；
 // 附带对比原图显示的镜像状态（撤销/重做时同步还原原图显示方向）。
+/** @param {FuseStep[]} undoStack @param {FuseStep[]} redoStack @param {{ width: number, height: number, grid: Int16Array, baseGrid?: Int16Array }} before @param {{ width: number, height: number, grid: Int16Array, baseGrid?: Int16Array }} after @param {{ horizontal: boolean, vertical: boolean }} mirrorBefore @param {{ horizontal: boolean, vertical: boolean }} mirrorAfter @returns {FuseStep} */
 export function recordMirrorStep(undoStack, redoStack, before, after, mirrorBefore, mirrorAfter) {
+  /** @type {FuseStep} */
   const step = {
     structural: true,
     type: 'mirror',
@@ -271,7 +287,10 @@ export function recordMirrorStep(undoStack, redoStack, before, after, mirrorBefo
 }
 
 // 把结构型步骤应用到目标对象（{ width, height, grid, baseGrid }）；mode: 'undo' | 'redo'
+/** @param {{ width: number, height: number, grid: Int16Array | null, baseGrid: Int16Array | null }} target @param {FuseStep} step @param {'undo' | 'redo'} mode */
 export function applyStructuralStep(target, step, mode) {
+  // 本函数只处理结构型步骤（裁剪 / 镜像）；非结构型步骤直接忽略
+  if (!('structural' in step)) return;
   const snap = mode === 'undo' ? step.before : step.after;
   target.width = snap.width;
   target.height = snap.height;

@@ -15,15 +15,33 @@
     "test:render": "node tests/render_consistency_test.mjs",
     "test:auth": "node tests/auth_test.mjs",
     "test:playwright": "npm run test:ui && npm run test:render && npm run test:auth",
-    "test:backend": "python tests/smoke_test.py && python tests/watermark_test.py",
+    "test:coverage:backend": "node scripts/run-python.mjs -m coverage run --source=app,bead tests/smoke_test.py && node scripts/run-python.mjs -m coverage run -a --source=app,bead tests/watermark_test.py && node scripts/run-python.mjs -m coverage report -m",
+    "test:coverage:frontend": "c8 npm test",
+    "test:coverage": "npm run test:coverage:frontend && npm run test:coverage:backend",
+    "test:backend": "node scripts/run-python.mjs tests/smoke_test.py && node scripts/run-python.mjs tests/watermark_test.py",
     "test:all": "npm test && npm run test:backend && npm run test:playwright",
     "check": "npm run lint && npm run typecheck && npm run lint:backend && npm run typecheck:backend && npm test",
-    "lint:backend": "python -m ruff check .",
-    "typecheck:backend": "python -m pyright",
+    "lint:backend": "node scripts/run-python.mjs -m ruff check .",
+    "typecheck:backend": "node scripts/run-python.mjs -m pyright",
     "check:meta": "node scripts/check-meta.mjs"
+  },
+  "c8": {
+    "reporter": [
+      "text",
+      "lcov"
+    ],
+    "include": [
+      "static/js/**"
+    ],
+    "exclude": [
+      "tests/**",
+      "scripts/**",
+      "node_modules/**"
+    ]
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
+    "c8": "^12.0.0",
     "playwright": "^1.62.1",
     "typescript": "^7.0.2"
   }

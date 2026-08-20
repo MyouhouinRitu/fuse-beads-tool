@@ -17,9 +17,13 @@ import { drawPatternBase, strokeCropEdges, strokeCropPreview } from './render.js
 import { App, dragState } from './state.js';
 import { hideCropMagnifier } from './utils.js';
 
+/** @type {{ clientX: number, clientY: number } | null} */
 let cropLastMouse = null; // 裁剪模式最近一次鼠标位置（缩放后重绘放大镜用）
+/** @type {HTMLCanvasElement | null} */
 let magnifierOffCanvas = null; // 复用离屏画布，避免 mousemove 每帧新建
+/** @type {{ idx: Int16Array, rgb: Uint32Array } | null} */
 let magnifierLastDisplay = null;
+/** @type {string | null} */
 let magnifierDrawKey = null;
 
 // 放大镜：低缩放下显示鼠标悬停位置 11×11 的放大视图。
@@ -32,9 +36,10 @@ function drawCropMagnifier() {
     CROP_MAGNIFIER_MIN_CELL,
     Math.round(App.screenCell * App.zoom * CROP_MAGNIFIER_SCALE),
   );
-  const { width, height } = App.project;
-  const hx = interactionState.hoverCell.x;
-  const hy = interactionState.hoverCell.y;
+  const { width, height } = /** @type {FuseProject} */ (App.project);
+  const hover = /** @type {FusePoint} */ (interactionState.hoverCell);
+  const hx = hover.x;
+  const hy = hover.y;
   const dark = document.documentElement.dataset.theme === 'dark';
   const outsideColor = dark ? CROP_MAGNIFIER_OUTSIDE.dark : CROP_MAGNIFIER_OUTSIDE.light;
   // 始终以鼠标悬停格为中心（不夹紧到图案边界），边缘处可看到行列号条与外部区域
@@ -61,7 +66,7 @@ function drawCropMagnifier() {
   magnifierDrawKey = drawKey;
 
   if (!magnifierOffCanvas) magnifierOffCanvas = document.createElement('canvas');
-  const octx = magnifierOffCanvas.getContext('2d');
+  const octx = /** @type {CanvasRenderingContext2D} */ (magnifierOffCanvas.getContext('2d'));
   drawPatternBase(octx, width, height, display.idx, display.rgb, {
     cell,
     outerPad: 0,
@@ -74,7 +79,7 @@ function drawCropMagnifier() {
   });
   canvas.width = n * cell;
   canvas.height = n * cell;
-  const ctx2 = canvas.getContext('2d');
+  const ctx2 = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
   // 图案之外（含四角）：夜间用 UI 灰色，日间用浅灰
   ctx2.fillStyle = outsideColor;
   ctx2.fillRect(0, 0, canvas.width, canvas.height);
@@ -93,6 +98,7 @@ function drawCropMagnifier() {
   }
 }
 
+/** @param {{ clientX: number, clientY: number }} e */
 function positionCropMagnifier(e) {
   const el = els.cropMagnifier;
   const w = el.offsetWidth || 300;
@@ -107,6 +113,7 @@ function positionCropMagnifier(e) {
   el.style.top = `${top}px`;
 }
 
+/** @param {{ clientX: number, clientY: number }} e */
 export function updateCropMagnifier(e) {
   const el = els.cropMagnifier;
   if (
@@ -129,6 +136,7 @@ export function refreshCropMagnifier() {
   else hideCropMagnifier();
 }
 
+/** @param {{ clientX: number, clientY: number }} e */
 export function rememberCropMouse(e) {
   cropLastMouse = { clientX: e.clientX, clientY: e.clientY };
 }

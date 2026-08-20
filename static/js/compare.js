@@ -30,6 +30,7 @@ function openOriginalDB() {
   });
 }
 
+/** @param {Blob} blob */
 async function saveOriginalCache(blob) {
   try {
     const db = await openOriginalDB();
@@ -68,6 +69,7 @@ export async function restoreOriginalFromCache() {
   return loadOriginalImage(blob);
 }
 
+/** @param {File | Blob | null} file */
 export function loadOriginalImage(file) {
   return new Promise((resolve) => {
     if (!file) {
@@ -120,7 +122,7 @@ function drawOriginalImage() {
   const h = Math.max(1, Math.round(img.naturalHeight * scale));
   if (cv.width !== w) cv.width = w;
   if (cv.height !== h) cv.height = h;
-  const ctx = cv.getContext('2d');
+  const ctx = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
   ctx.clearRect(0, 0, w, h);
   const mh = App.originalMirror.horizontal;
   const mv = App.originalMirror.vertical;
@@ -141,6 +143,7 @@ export function redrawOriginalImage() {
   drawOriginalImage();
 }
 
+/** @param {boolean} on @param {{ silent?: boolean }} [opts] */
 export function setCompareEnabled(on, { silent = false } = {}) {
   if (on && !App.project) {
     App.settings.compare = false;
@@ -172,6 +175,7 @@ export function setCompareEnabled(on, { silent = false } = {}) {
   return true;
 }
 
+/** @param {boolean} on */
 export function setSyncPan(on) {
   if (on && !(App.settings.compare && App.project && App.originalImage)) {
     const ok = setCompareEnabled(true);

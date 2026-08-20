@@ -15,17 +15,20 @@ import { clampInt, hideCropMagnifier, toast } from './utils.js';
 import { canvasScale, eventToCanvasPos, fitViewportToCanvas } from './view.js';
 
 // 裁剪等结构性操作的统一记录入口：旧增量步骤因坐标失效会被清空
+/** @param {{ width: number, height: number, grid: Int16Array, baseGrid?: Int16Array }} before @param {{ width: number, height: number, grid: Int16Array, baseGrid?: Int16Array }} after */
 export function recordCropStep(before, after) {
   return recordStructuralStep(App.undoStack, App.redoStack, before, after, 'crop');
 }
 
 // 事件坐标 → 画布内连续格坐标（horizontal=true 取横向 x，否则取纵向 y）
+/** @param {PointerEvent} e @param {boolean} horizontal @param {DOMRect | null} rect @returns {number} */
 function cropPosFromEvent(e, horizontal, rect) {
   const p = eventToCanvasPos(e, rect);
   return (horizontal ? p.x : p.y) / App.screenCell - CANVAS_EDGE_CELLS;
 }
 
 // 命中检测：鼠标是否靠近某条边（屏幕像素阈值内）
+/** @param {PointerEvent} e @param {DOMRect | null} rect @returns {string | null} */
 function cropEdgeAt(e, rect) {
   if (!App.project || !interactionState.crop) return null;
   const scale = canvasScale(rect);
@@ -38,6 +41,7 @@ function cropEdgeAt(e, rect) {
   const rx1 = ox + (c.x1 + 1) * cell;
   const ry1 = ox + (c.y1 + 1) * cell;
   const t = CROP_EDGE_HIT_PX / scale;
+  /** @type {Array<[string, number]>} */
   const cands = [];
   if (py >= ry0 - t && py <= ry1 + t) {
     cands.push(['left', Math.abs(px - rx0)], ['right', Math.abs(px - rx1)]);
@@ -57,6 +61,7 @@ function cropEdgeAt(e, rect) {
 }
 
 // 移动一条边到指定格线位置（自动裁剪到图片边界，且保证最小 1 格）
+/** @param {string} edge @param {number} pos */
 export function moveCropEdgeTo(edge, pos) {
   if (!App.project || !interactionState.crop) return;
   const c = interactionState.crop;
@@ -71,6 +76,7 @@ export function moveCropEdgeTo(edge, pos) {
 }
 
 // 已选中一条边时，把点击位置换算成与之平行的格线索引
+/** @param {PointerEvent} e @param {DOMRect | null} rect @returns {number | null} */
 function cropLineFromEvent(e, rect) {
   if (!interactionState.cropActiveEdge) return null;
   const horizontal =
@@ -79,6 +85,7 @@ function cropLineFromEvent(e, rect) {
 }
 
 // 是否在图案 + 行列号条区域内（此范围内可选中/拖拽红边；再往外才算「图片之外」）
+/** @param {PointerEvent} e @param {DOMRect | null} rect @returns {boolean} */
 function isInCropArea(e, rect) {
   if (!App.project) return false;
   const { x: px, y: py } = eventToCanvasPos(e, rect);
@@ -88,6 +95,7 @@ function isInCropArea(e, rect) {
   return px >= -2 && py >= -2 && px <= totalW + 2 && py <= totalH + 2;
 }
 
+/** @param {PointerEvent} e @param {DOMRect | null} rect */
 export function handleCropMouseDown(e, rect) {
   if (!App.project || !interactionState.crop) return;
   if (!isInCropArea(e, rect)) {
@@ -118,6 +126,7 @@ export function handleCropMouseDown(e, rect) {
 }
 
 // 拖拽移动选中的边
+/** @param {PointerEvent} e @param {DOMRect | null} rect */
 export function updateCropEdgeDrag(e, rect) {
   const edge = dragState.cropEdge;
   if (!edge || !interactionState.crop) return;
@@ -126,6 +135,7 @@ export function updateCropEdgeDrag(e, rect) {
 }
 
 // 裁剪模式鼠标：边命中或已选中边时显示调整光标（上下/左右双箭头）
+/** @param {PointerEvent} e @param {DOMRect | null} rect */
 export function updateCropCursor(e, rect) {
   if (App.tool !== TOOLS.CROP || !App.project || !interactionState.crop) {
     els.canvas.style.cursor = '';
@@ -145,6 +155,7 @@ export function updateCropCursor(e, rect) {
 }
 
 // 裁剪预览：选中边且鼠标在图案内时，记录该边将移动到的平行格线（红虚线预览）
+/** @param {PointerEvent} e @param {DOMRect | null} rect */
 export function updateCropPreview(e, rect) {
   const active =
     App.tool === TOOLS.CROP &&
@@ -157,7 +168,8 @@ export function updateCropPreview(e, rect) {
   const horizontal =
     interactionState.cropActiveEdge === 'left' || interactionState.cropActiveEdge === 'right';
   const pos = Math.round(cropPosFromEvent(e, horizontal, rect));
-  const maxPos = horizontal ? App.project.width : App.project.height;
+  const project = /** @type {FuseProject} */ (App.project);
+  const maxPos = horizontal ? project.width : project.height;
   const clamped = clampInt(pos, 0, maxPos);
   if (
     !interactionState.cropPreview ||
@@ -214,7 +226,7 @@ export function applyCrop() {
     width: App.project.width,
     height: App.project.height,
     grid: App.project.grid.slice(),
-    baseGrid: App.baseGrid.slice(),
+    baseGrid: /** @type {Int16Array} */ (App.baseGrid).slice(),
   };
   const newGrid = new Int16Array(w * h);
   const newBase = new Int16Array(w * h);
@@ -223,7 +235,7 @@ export function applyCrop() {
     for (let x = 0; x < w; x++) {
       const sp = (y0 + y) * srcW + (x0 + x);
       newGrid[y * w + x] = App.project.grid[sp];
-      newBase[y * w + x] = App.baseGrid[sp];
+      newBase[y * w + x] = /** @type {Int16Array} */ (App.baseGrid)[sp];
     }
   }
   const after = { width: w, height: h, grid: newGrid, baseGrid: newBase };

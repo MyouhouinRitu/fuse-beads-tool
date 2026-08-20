@@ -32,11 +32,13 @@ const QUICK_PICKER_NEIGHBORS = [
   [1, 1],
 ];
 
+/** @type {HTMLElement | null} */
 let restoreFocusEl = null;
 
 // 构建九宫格候选色：周围 8 格的颜色优先，不足 9 个时用最相近颜色补齐
+/** @param {FusePoint} cell @returns {Array<{ i: number }>} */
 export function buildQuickCandidates(cell) {
-  const { grid, width, height } = App.project;
+  const { grid, width, height } = /** @type {FuseProject} */ (App.project);
   const p = cell.y * width + cell.x;
   interactionState.pickerCell = { x: cell.x, y: cell.y, p, original: grid[p] };
   interactionState.pickerPreviewIndex = null;
@@ -77,20 +79,21 @@ export function buildQuickCandidates(cell) {
 export function bindQuickPicker() {
   const box = els.quickPicker;
   box.addEventListener('click', (e) => {
-    if (e.target.closest('.qp-cancel')) {
+    if (e.target?.closest?.('.qp-cancel')) {
       closeQuickPicker();
       return;
     }
-    const btn = e.target.closest('.qp-btn');
+    const btn = /** @type {HTMLElement | null} */ (e.target?.closest?.('.qp-btn'));
     if (btn) applyQuickColor(Number(btn.dataset.index));
   });
   box.addEventListener('mouseover', (e) => {
-    const btn = e.target.closest('.qp-btn');
+    const btn = /** @type {HTMLElement | null} */ (e.target?.closest?.('.qp-btn'));
     if (btn) previewQuickColor(Number(btn.dataset.index));
   });
 }
 
 // 渲染九宫格弹窗内容（候选按钮 + 取消）
+/** @param {Array<{ i: number }>} scored */
 export function renderQuickPicker(scored) {
   const box = els.quickPicker;
   box.innerHTML = '';
@@ -99,7 +102,8 @@ export function renderQuickPicker(scored) {
   title.className = 'qp-title';
   title.textContent = '相近颜色（按 1-9 选择）';
   frag.appendChild(title);
-  const usedCounts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
+  const project = /** @type {FuseProject} */ (App.project);
+  const usedCounts = C.computeUsedCounts(project.grid, project.width, project.height);
   for (let k = 0; k < scored.length; k++) {
     const c = App.appliedPalette[scored[k].i];
     const btn = document.createElement('button');
@@ -133,6 +137,7 @@ export function renderQuickPicker(scored) {
 }
 
 // 把九宫格弹窗定位到目标格下方（空间不足时移到上方，并限制在窗口内）
+/** @param {FusePoint} cell */
 export function positionQuickPicker(cell) {
   const box = els.quickPicker;
   const { x: cx, y: cy, scale } = cellCenterToScreen(cell);
@@ -152,14 +157,16 @@ export function positionQuickPicker(cell) {
   box.style.top = `${top}px`;
 }
 
+/** @param {FusePoint} cell */
 export function openQuickPicker(cell) {
   if (!App.appliedPalette.length) return;
-  restoreFocusEl = document.activeElement;
+  restoreFocusEl = /** @type {HTMLElement | null} */ (document.activeElement);
   const scored = buildQuickCandidates(cell);
   renderQuickPicker(scored);
   positionQuickPicker(cell);
 }
 
+/** @param {number} k */
 export function applyQuickColor(k) {
   const cand = interactionState.pickerCandidates?.[k];
   if (!cand) return;
@@ -179,6 +186,7 @@ export function applyQuickColor(k) {
 }
 
 // 悬停预览：把目标格临时显示为候选颜色（不进撤销栈，移出弹窗/取消时还原）
+/** @param {number} k */
 export function previewQuickColor(k) {
   const pc = interactionState.pickerCell;
   const cand = interactionState.pickerCandidates?.[k];

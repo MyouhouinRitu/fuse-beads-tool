@@ -12,6 +12,7 @@ export function currentTheme() {
   return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 }
 
+/** @param {'light' | 'dark'} theme */
 export function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   els.btnTheme.textContent = theme === 'dark' ? '☀ 日间模式' : '🌙 夜间模式';

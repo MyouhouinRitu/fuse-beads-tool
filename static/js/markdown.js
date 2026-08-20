@@ -11,6 +11,7 @@ const FIX_DOCS = {
 };
 
 // 文档里的 {{APP_VERSION}} 占位符替换为顶栏显示的当前版本（v0.7.0 等）
+/** @param {string} text @returns {string} */
 function interpolateVersion(text) {
   const el = els.appVersion;
   const version = el?.textContent ? el.textContent.trim() : '';
@@ -18,8 +19,11 @@ function interpolateVersion(text) {
 }
 
 // 极简 Markdown 渲染：仅覆盖文档用到的标题/列表/引用/加粗/行内代码/代码块
+/** @param {string} md @returns {string} */
 function renderMarkdown(md) {
+  /** @type {(s: string) => string} */
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  /** @type {(s: string) => string} */
   const inline = (s) =>
     esc(s)
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -29,8 +33,10 @@ function renderMarkdown(md) {
         '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
       );
   let html = '';
+  /** @type {string | null} */
   let list = null;
   let inCode = false;
+  /** @type {string[] | null} */
   let tableBuf = null;
   const codeBuf = [];
   // 表格：连续以 | 开头的行 → <table>；第二行全为 --- 分隔符时作为表头行
@@ -44,6 +50,7 @@ function renderMarkdown(md) {
         .split('|')
         .map((c) => c.trim()),
     );
+    /** @type {(cells: string[]) => boolean} */
     const isSep = (cells) => cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
     const hasHead = rows.length >= 2 && isSep(rows[1]);
     const head = hasHead ? rows[0] : rows[0] || [];
@@ -129,6 +136,7 @@ function renderMarkdown(md) {
   return html;
 }
 
+/** @param {keyof typeof FIX_DOCS} key */
 export async function openFixDoc(key) {
   const url = FIX_DOCS[key];
   if (!url) return;

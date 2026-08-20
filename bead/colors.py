@@ -1,5 +1,8 @@
 """Color conversion and distance helpers (sRGB <-> CIELAB, D65)."""
 
+# 与 static/js/colors.js 双端重复实现；改任一侧后必须运行
+# tests/constants_sync_test.mjs（npm test）确认颜色数学未漂移。
+
 from __future__ import annotations
 
 import numpy as np

@@ -8,6 +8,8 @@
     "checkJs": true,
     "noEmit": true,
     "strict": false,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
     "noImplicitThis": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

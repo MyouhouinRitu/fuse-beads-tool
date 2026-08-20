@@ -3,6 +3,7 @@
 
 const CHUNK = 0x8000;
 
+/** @param {Uint8Array} bytes @returns {string} */
 function bytesToBase64(bytes) {
   let bin = '';
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -11,6 +12,7 @@ function bytesToBase64(bytes) {
   return btoa(bin);
 }
 
+/** @param {string} b64 @returns {Uint8Array} */
 function base64ToBytes(b64) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -19,12 +21,14 @@ function base64ToBytes(b64) {
 }
 
 // 小端 Int16Array -> base64（含负数，如空位 -1）
+/** @param {Int16Array | number[]} grid @returns {string} */
 export function encodeInt16Grid(grid) {
   const i16 = grid instanceof Int16Array ? grid : Int16Array.from(grid);
   return bytesToBase64(new Uint8Array(i16.buffer, i16.byteOffset, i16.byteLength));
 }
 
 // base64 -> Int16Array；输入损坏或长度为奇数时返回 null，由调用方决定降级策略
+/** @param {string} b64 @returns {Int16Array | null} */
 export function decodeInt16Grid(b64) {
   try {
     const bytes = base64ToBytes(String(b64 || ''));

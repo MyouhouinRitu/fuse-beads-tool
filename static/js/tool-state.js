@@ -9,6 +9,7 @@ import { App } from './state.js';
 import { hideCropMagnifier, toast } from './utils.js';
 
 // 工具 → UI 的映射（按钮 / 画布模式类 / 模式标签），避免 setTool 里逐行手写
+/** @type {Array<{ tool: string, btn: keyof typeof els, modeClass: string, label: string }>} */
 const TOOL_UI = [
   { tool: TOOLS.BRUSH, btn: 'toolBrush', modeClass: 'mode-brush', label: '画笔模式' },
   { tool: TOOLS.PICKER, btn: 'toolPicker', modeClass: 'mode-picker', label: '取色模式' },
@@ -51,6 +52,7 @@ function initCropRect() {
   interactionState.cropPreview = null;
 }
 
+/** @param {string} t */
 export function setTool(t) {
   if (App.tool === t) return;
   if (t === TOOLS.CROP && !App.project) {

@@ -16,6 +16,7 @@ import * as toolState from './tool-state.js';
 const SLIDER_CONFIRM_MESSAGE =
   '调整滑块将清空全部快照与撤销记录，并丢弃滑块调整后的编辑，按新的颜色数量重新生成图案。是否继续？';
 
+/** @type {ReturnType<typeof setTimeout> | null} */
 let sliderTimer = null;
 let sliderApplying = false;
 let confirmPending = false; // 确认框已弹出，等待用户结果（期间忽略新的 input）
@@ -25,13 +26,15 @@ let sliderCanceled = false; // 本次交互已取消，不再弹窗 / 应用
 // 当前已应用的颜色数量（用于取消确认后回退滑块显示）
 function currentSliderValue() {
   if (!App.project) return 2;
+  const project = /** @type {FuseProject} */ (App.project);
   const baseUsed = App.baseGrid
-    ? C.countUsedColors(App.baseGrid, App.project.width, App.project.height)
+    ? C.countUsedColors(App.baseGrid, project.width, project.height)
     : 0;
   return App.sliderN ?? Math.max(2, baseUsed);
 }
 
 // 从基副本按颜色数量 N 生成工作副本（有确认提示；已由 scheduleSliderApply 提前确认时跳过）
+/** @param {number} n */
 export async function applySlider(n) {
   if (!App.project) return;
   const hasHistory = hasPendingRecords();
@@ -45,13 +48,19 @@ export async function applySlider(n) {
   sliderConfirmed = false; // 本次确认已消费，下次拖动重新判定
   App.project.grid =
     (await mergeGridAsync(
-      App.baseGrid,
+      /** @type {Int16Array} */ (App.baseGrid),
       App.project.width,
       App.project.height,
       App.appliedPalette,
       App.settings.useLab,
       n,
-    )) ?? canvas.mergeGrid(App.baseGrid, App.appliedPalette, App.settings.useLab, n);
+    )) ??
+    canvas.mergeGrid(
+      /** @type {Int16Array} */ (App.baseGrid),
+      App.appliedPalette,
+      App.settings.useLab,
+      n,
+    );
   if (hasHistory || App.editedSinceSlider) {
     // 合并完成后再清空，避免历史已清但画布仍是旧状态的不一致窗口
     clearHistoryRecords();
@@ -73,7 +82,7 @@ export function resetSliderSession() {
 
 // 完整重置滑块会话 / 确认状态（测试与异常恢复用）
 export function resetSliderState() {
-  clearTimeout(sliderTimer);
+  clearTimeout(sliderTimer ?? undefined);
   sliderTimer = null;
   sliderApplying = false;
   confirmPending = false;
@@ -103,7 +112,7 @@ export function scheduleSliderApply() {
     return;
   }
   if (sliderCanceled) return;
-  clearTimeout(sliderTimer);
+  clearTimeout(sliderTimer ?? undefined);
   sliderTimer = setTimeout(() => {
     sliderTimer = null;
     sliderApplying = true;

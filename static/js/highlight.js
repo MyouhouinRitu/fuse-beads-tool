@@ -13,7 +13,7 @@ import { codeOf, countBadge, titleOf } from './utils.js';
 // 事件委托：容器上只绑定一个 click
 export function bindHighlightList() {
   els.highlightColorList.addEventListener('click', (e) => {
-    const item = e.target.closest('.hc-item');
+    const item = /** @type {HTMLElement | null} */ (e.target?.closest?.('.hc-item'));
     if (!item) return;
     const i = Number(item.dataset.index);
     // 单选：再次点击取消，选择其它色号则替换
@@ -25,6 +25,7 @@ export function bindHighlightList() {
   });
 }
 
+/** @param {Array<number> | null | undefined} [counts] */
 export function renderHighlightColorList(counts) {
   const list = els.highlightColorList;
   list.innerHTML = '';
@@ -32,6 +33,7 @@ export function renderHighlightColorList(counts) {
   if (!counts && App.project) {
     counts = C.computeUsedCounts(App.project.grid, App.project.width, App.project.height);
   }
+  /** @type {Array<{ c: FusePaletteColor, i: number, count: number }>} */
   const entries = [];
   App.appliedPalette.forEach((c, i) => {
     if (counts?.[i]) entries.push({ c, i, count: counts[i] });

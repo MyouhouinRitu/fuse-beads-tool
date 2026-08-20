@@ -1,5 +1,12 @@
 // DOM 桩行为测试：加载真实 main.js，验证色板即时更新、扁平事务、撤销/重做、滑块清空。
 // 运行：node tests/dom_state_test.mjs 等 DOM 桩测试（见 package.json 的 test 脚本）
+//
+// 设计决策：这是「最小可用的自定义 DOM 桩」，不是 jsdom / happy-dom 的替代品——
+// 它有目的地简化了真实 DOM（classList / dataset / innerHTML / 事件冒泡 / getBoundingClientRect 等），
+// 换取零依赖、毫秒级启动与稳定可预测的行为，供纯 Node 快测使用。
+// 已知简化与边界：不实现布局引擎、样式计算、焦点语义、表单原生行为等；
+// 需要真实浏览器行为时由 tests/ui_test.mjs / render_consistency_test.mjs / auth_test.mjs
+// （Playwright + Chromium）端到端兜底，新增 DOM 行为断言时请评估应落在哪一层。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';

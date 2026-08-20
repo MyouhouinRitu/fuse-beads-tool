@@ -16,7 +16,10 @@ import {
   TOOLS,
 } from './constants.js';
 
+/** @typedef {{ hover?: FusePoint | null, tool?: string | null, brushRgb?: number[] | null, brushSize?: number, width: number, height: number, displayIdx: Int16Array, displayRgb: Uint32Array, originX: number, originY: number, cell: number, zoom: number }} HoverState */
+
 // 右下角投影（L 形细线），用于 3D 凸起 / 画笔悬停
+/** @param {CanvasRenderingContext2D} ctx @param {number} bx0 @param {number} by0 @param {number} bw @param {number} bh */
 function drawDropShadow(ctx, bx0, by0, bw, bh) {
   ctx.strokeStyle = `rgba(0, 0, 0, ${RAISED_SHADOW_ALPHA})`;
   ctx.beginPath();
@@ -27,6 +30,7 @@ function drawDropShadow(ctx, bx0, by0, bw, bh) {
 }
 
 // 3D 凸起矩形：右下投影 + 上左高光斜面 + 下右暗斜面 + 左上高光点（取色 / 画笔共用）
+/** @param {CanvasRenderingContext2D} ctx @param {number} bx0 @param {number} by0 @param {number} bw @param {number} bh @param {number} hlw @param {boolean} gloss */
 export function drawRaisedRect(ctx, bx0, by0, bw, bh, hlw, gloss) {
   ctx.save();
   ctx.lineWidth = hlw;
@@ -64,6 +68,7 @@ export function drawRaisedRect(ctx, bx0, by0, bw, bh, hlw, gloss) {
 // - picker：3D 凸起（把格子“吸起来”）
 // - eraser：亮度自适应边框 + 对角 X，按尺寸显示矩形区域
 // 画笔/橡皮悬停矩形的几何：边长 = 2×size−1 格，以目标格为中心
+/** @param {number} originX @param {number} originY @param {number} cell @param {FusePoint} hover @param {number} size @returns {{ bx0: number, by0: number, bw: number, bh: number, r: number }} */
 function brushRect(originX, originY, cell, hover, size) {
   const r = size - 1;
   const bx0 = originX + (hover.x - r) * cell;
@@ -73,6 +78,7 @@ function brushRect(originX, originY, cell, hover, size) {
 }
 
 // 只渲染在图案区域内，不覆盖四周行列号条
+/** @param {CanvasRenderingContext2D} ctx @param {number} originX @param {number} originY @param {number} width @param {number} height @param {number} cell */
 function clipToPattern(ctx, originX, originY, width, height, cell) {
   ctx.save();
   ctx.beginPath();
@@ -80,6 +86,7 @@ function clipToPattern(ctx, originX, originY, width, height, cell) {
   ctx.clip();
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {HoverState} state */
 export function drawHover(ctx, state) {
   const {
     hover,
@@ -142,8 +149,9 @@ export function drawHover(ctx, state) {
     ctx.lineWidth = hlw;
     drawDropShadow(ctx, bx0, by0, bw, bh);
     // 每一格边缘涂上画笔颜色
+    const rgb = /** @type {number[]} */ (brushRgb);
     ctx.lineWidth = brushHlw;
-    ctx.strokeStyle = `rgb(${brushRgb[0]}, ${brushRgb[1]}, ${brushRgb[2]})`;
+    ctx.strokeStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
     for (let gy = 0; gy < 2 * r + 1; gy++) {
       for (let gx = 0; gx < 2 * r + 1; gx++) {
         const cx0 = bx0 + gx * cell;

@@ -8,9 +8,12 @@ import { setProjectDirty } from './state.js';
 let targetPixelsActive = -1; // 当前高亮预设（键盘 ↑↓ / Enter 应用）
 
 function targetPixelsOptions() {
-  return Array.from(els.targetPixelsMenu.querySelectorAll('[role="option"]'));
+  /** @type {HTMLElement[]} */
+  const opts = Array.from(els.targetPixelsMenu.querySelectorAll('[role="option"]'));
+  return opts;
 }
 
+/** @param {number} index @param {{ open?: boolean }} [opts] */
 function setTargetPixelsActive(index, { open = false } = {}) {
   const opts = targetPixelsOptions();
   if (!opts.length) return;
@@ -30,6 +33,7 @@ export function closeTargetPixelsMenu() {
   targetPixelsActive = -1;
 }
 
+/** @param {HTMLElement} btn */
 function applyTargetPixelPreset(btn) {
   els.targetPixels.value = String(btn.dataset.value);
   closeTargetPixelsMenu();

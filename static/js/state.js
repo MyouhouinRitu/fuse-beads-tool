@@ -14,6 +14,7 @@ import { els } from './els.js';
 import { createEmptyHistory } from './history.js';
 import { interactionState } from './interaction.js';
 
+/** @type {FuseAppState} */
 export const App = {
   configs: [],
   configName: null,
@@ -66,6 +67,7 @@ export const App = {
 };
 
 // 画布拖拽交互的共享状态
+/** @type {FuseDragState} */
 export const dragState = {
   active: false,
   cropEdge: null, // 裁剪模式当前拖拽的边
@@ -84,6 +86,7 @@ export const dragState = {
   toggleLast: null, // Ctrl 拖拽反选时上一次经过的格子
 };
 
+/** @param {boolean} d */
 export function setDirty(d) {
   App.dirty = d;
   // 一旦产生未保存修改，当前事务就不再是“当前状态”，只保留基线标记
@@ -94,6 +97,7 @@ export function setDirty(d) {
   els.dirtyIndicator.classList.toggle('hidden', !d);
 }
 
+/** @param {boolean} d */
 export function setProjectDirty(d) {
   App.projectDirty = d;
 }

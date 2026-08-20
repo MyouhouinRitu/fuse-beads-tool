@@ -1,5 +1,9 @@
 // DOM 元素引用：与 templates/index.html 中的 id 一一对应。
 // 所有模块统一从这里取元素，避免散落的 document.getElementById。
+//
+// 未注册约定：HTML 中少数 id 是纯结构容器 / 纯展示元素（如 fix-dropdown、canvas-area、
+// export-title 等），有意不在此注册；清单与校验见 tests/els_contract_test.mjs。
+// 新增需要 JS 操作的 id 时务必在这里注册。
 
 /**
  * 统一 DOM 查询入口（仅 els.js 内部使用）：默认返回 HTMLElement，

@@ -4,8 +4,10 @@ import * as api from './api.js';
 import { els } from './els.js';
 import { hideDialog, showDialog } from './focus.js';
 
+/** @type {((value: boolean) => void) | null} */
 let authResolve = null;
 
+/** @param {string} msg */
 function showLoginError(msg) {
   els.loginError.textContent = msg;
   els.loginError.classList.remove('hidden');
@@ -29,7 +31,7 @@ export async function tryLogin() {
   hideDialog(els.loginMask);
   const resolve = authResolve;
   authResolve = null;
-  if (resolve) resolve();
+  if (resolve) resolve(true);
 }
 
 export async function ensureAuth() {

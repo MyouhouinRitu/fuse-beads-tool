@@ -2,11 +2,14 @@
 // 具体渲染实现由 main.js 注册（组合根），各模块只依赖这里的队列，
 // 避免功能模块与主入口互相引用造成循环依赖。
 
+/** @type {(() => void) | null} */
 let fullRenderer = null;
+/** @type {(() => void) | null} */
 let canvasRenderer = null;
 let renderQueued = false;
 let canvasRenderQueued = false;
 
+/** @param {() => void} full @param {() => void} canvas */
 export function setRenderers(full, canvas) {
   fullRenderer = full;
   canvasRenderer = canvas;

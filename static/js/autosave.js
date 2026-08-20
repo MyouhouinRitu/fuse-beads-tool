@@ -40,18 +40,20 @@ function buildProjectPayload() {
 // 自动保存载荷专用：快照网格编码为 base64；内存态与项目文档（.ssfbp）仍保持数组。
 // 快照网格创建后只读（仅 paletteName 等元数据可变），因此按轻量指纹缓存编码结果，
 // 避免每次自动保存都把所有快照重新 base64 编码。
+/** @type {{ key: string | null, value: any }} */
 let historyEncodeCache = { key: null, value: null };
 
+/** @param {FuseHistory} history @returns {string} */
 function historyEncodeKey(history) {
   const parts = history.items.map((it) => {
-    const s = it.snapshot || {};
-    const grid = s.grid || [];
+    const snap = it.snapshot;
+    const grid = snap?.grid || [];
     return [
       it.id,
       it.label,
-      s.paletteName || '',
-      s.width,
-      s.height,
+      snap?.paletteName || '',
+      snap?.width,
+      snap?.height,
       grid.length,
       grid[0] ?? '',
       grid[grid.length - 1] ?? '',
@@ -60,6 +62,7 @@ function historyEncodeKey(history) {
   return [history.nextId, history.currentId, history.baselineId, parts.join(';')].join('#');
 }
 
+/** @param {FuseHistory} history @returns {any} */
 function encodeHistoryForState(history) {
   const key = historyEncodeKey(history);
   if (historyEncodeCache.key === key) return historyEncodeCache.value;
@@ -140,7 +143,7 @@ export function buildProjectDocument() {
 }
 
 export function scheduleAutosave() {
-  clearTimeout(App.saveTimer);
+  clearTimeout(App.saveTimer ?? undefined);
   App.saveTimer = setTimeout(saveStateNow, AUTOSAVE_DELAY_MS);
 }
 

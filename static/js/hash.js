@@ -11,10 +11,12 @@ const K = [
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+/** @param {number} x @param {number} n @returns {number} */
 function rotr(x, n) {
   return ((x >>> n) | (x << (32 - n))) >>> 0;
 }
 
+/** @param {string} text @returns {string} */
 export function sha256Hex(text) {
   const bytes = new TextEncoder().encode(text);
   const bitLen = bytes.length * 8;
@@ -87,12 +89,14 @@ export function sha256Hex(text) {
 // 色板规范化：按 index 升序，只取 index/code/name/hex，hex 统一大写。
 // index 只接受整数或整数字符串（与 bead/palette.py 的 palette_hash 约定一致），
 // 浮点、空值、布尔等一律跳过，避免两端同一输入产生不同哈希。
+/** @param {any} v @returns {number | null} */
 function toIndex(v) {
   if (typeof v === 'number' && Number.isInteger(v)) return v;
   if (typeof v === 'string' && /^-?\d+$/.test(v.trim())) return parseInt(v.trim(), 10);
   return null;
 }
 
+/** @param {Array<any> | null | undefined} colors @returns {string} */
 export function paletteHash(colors) {
   const norm = (colors || [])
     .map((c) => ({ c, index: c ? toIndex(c.index) : null }))
@@ -103,6 +107,6 @@ export function paletteHash(colors) {
       name: String(c.name ?? ''),
       hex: String(c.hex ?? '').toUpperCase(),
     }))
-    .sort((a, b) => a.index - b.index);
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
   return sha256Hex(JSON.stringify(norm));
 }

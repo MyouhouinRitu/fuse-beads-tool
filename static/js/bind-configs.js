@@ -34,7 +34,7 @@ export function bindConfigs() {
   );
   els.btnImportConfig.addEventListener('click', () => els.configFileInput.click());
   els.configFileInput.addEventListener('change', () => {
-    const f = els.configFileInput.files[0];
+    const f = els.configFileInput.files?.[0];
     els.configFileInput.value = '';
     if (!f) return;
     return withPending(els.btnImportConfig, async () => {

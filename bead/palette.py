@@ -1,5 +1,8 @@
 """Bead color palette: defaults and CSV import/export."""
 
+# 与 static/js/hash.js / palette.js 双端重复实现（paletteHash / hex 归一化 / CSV）；
+# 改任一侧后必须运行 tests/constants_sync_test.mjs 确认未漂移。
+
 from __future__ import annotations
 
 import csv

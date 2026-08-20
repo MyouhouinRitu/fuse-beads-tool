@@ -36,7 +36,7 @@ export function bindToolbar() {
     withPending(els.btnOpenProject, openProjectViaDialog),
   );
   els.projectFileInput.addEventListener('change', async () => {
-    const f = els.projectFileInput.files[0];
+    const f = els.projectFileInput.files?.[0];
     els.projectFileInput.value = '';
     if (!f) return;
     // 确认提示由 openProjectViaDialog 在打开文件对话框前统一弹出，这里不再重复
@@ -61,7 +61,7 @@ export function bindToolbar() {
     els.fileInput.click();
   });
   els.fileInput.addEventListener('change', async () => {
-    const f = els.fileInput.files[0];
+    const f = els.fileInput.files?.[0];
     if (f) {
       App.originalFile = f;
       compare.loadOriginalImage(f);
@@ -84,7 +84,8 @@ export function bindToolbar() {
   els.btnExport.addEventListener('click', exportDialog.openExportDialog);
   els.dlgCancel.addEventListener('click', exportDialog.closeExportDialog);
   els.dlgOk.addEventListener('click', () => withPending(els.dlgOk, exportDialog.doExport));
-  for (const [key, evt] of [
+  /** @type {Array<[keyof typeof els, string]>} */
+  const dlgBindings = [
     ['dlgCell', 'input'],
     ['dlgPad', 'input'],
     ['dlgGrid', 'change'],
@@ -93,7 +94,8 @@ export function bindToolbar() {
     ['dlgLegend', 'change'],
     ['dlgEmptyStyle', 'change'],
     ['dlgFormat', 'change'],
-  ]) {
+  ];
+  for (const [key, evt] of dlgBindings) {
     els[key].addEventListener(evt, exportDialog.renderExportPreview);
   }
   els.exportDialog.addEventListener('click', (e) => {

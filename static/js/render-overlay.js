@@ -23,11 +23,39 @@ import {
   drawPatternBase,
   findConnectedComponents,
 } from './render-base.js';
+/** @typedef {{ x0: number, y0: number, x1: number, y1: number, p: number }} EdgeEntry */
+/**
+ * @typedef {{
+ *   cell?: number,
+ *   outerPad?: number,
+ *   edgeNumbers?: boolean,
+ *   zoom?: number,
+ *   selected?: Set<number> | null,
+ *   highlightColor?: number | null,
+ *   highlightBlink?: boolean,
+ *   crop?: FuseCropRect | null,
+ *   cropActiveEdge?: string | null,
+ *   cropPreview?: { horizontal: boolean, pos: number } | null,
+ *   gridLines?: boolean,
+ *   hatch?: boolean,
+ *   emptyStyle?: string,
+ *   showCodes?: boolean,
+ *   codes?: Array<string>,
+ *   legend?: Array<{ hex: string, code: string, count: number }>,
+ *   showLegend?: boolean,
+ *   attribution?: boolean,
+ *   background?: string,
+ *   toolState?: { hover?: FusePoint | null, tool?: string, brushRgb?: number[] | null, brushSize?: number, pickerCell?: { x: number, y: number } | null },
+ * }} OverlayOpts
+ */
+
 import { drawHover, drawRaisedRect } from './render-hover.js';
 
 // 覆盖层连通分组缓存：选区按集合引用、高亮按显示数据引用 + 色号，
 // 避免每次 overlay 重绘都对全图重新扫描
+/** @type {{ sel: Set<number> | null, width: number, height: number, value: number[][] | null }} */
 let selectionComponentsCache = { sel: null, width: 0, height: 0, value: null };
+/** @type {{ display: Int16Array | null, color: number | null, width: number, height: number, components: number[][] | null }} */
 let highlightComponentsCache = {
   display: null,
   color: null,
@@ -37,14 +65,17 @@ let highlightComponentsCache = {
 };
 
 // 收集连通块外边界边（画布坐标 + 所属格索引），供选区虚线 / 色号高亮描边复用
+/** @param {number[] | Set<number>} comp @param {number} width @param {number} height @param {number} originX @param {number} originY @param {number} cell @returns {EdgeEntry[]} */
 function collectComponentEdges(comp, width, height, originX, originY, cell) {
   const set = new Set(comp);
+  /** @type {EdgeEntry[]} */
   const edges = [];
   for (const p of comp) {
     const x = p % width;
     const y = (p / width) | 0;
     const x0 = originX + x * cell;
     const y0 = originY + y * cell;
+    /** @type {(ex0: number, ey0: number, ex1: number, ey1: number) => void} */
     const push = (ex0, ey0, ex1, ey1) => edges.push({ x0: ex0, y0: ey0, x1: ex1, y1: ey1, p });
     if (y === 0 || !set.has(p - width)) push(x0, y0, x0 + cell, y0);
     if (y === height - 1 || !set.has(p + width)) push(x0, y0 + cell, x0 + cell, y0 + cell);
@@ -55,6 +86,7 @@ function collectComponentEdges(comp, width, height, originX, originY, cell) {
 }
 
 // 把一组边画成一条路径并 stroke（选区虚线双色各调一次）
+/** @param {CanvasRenderingContext2D} ctx @param {EdgeEntry[]} edges */
 function strokeEdges(ctx, edges) {
   ctx.beginPath();
   for (const e of edges) {
@@ -65,6 +97,7 @@ function strokeEdges(ctx, edges) {
 }
 
 // 选区显示：与鼠标悬停一致的黑白虚线，连通区域（四方向）合并为整块外轮廓
+/** @param {CanvasRenderingContext2D} ctx @param {Set<number> | null | undefined} selected @param {number} width @param {number} height @param {number} originX @param {number} originY @param {number} cell @param {number} zoom */
 function drawSelection(ctx, selected, width, height, originX, originY, cell, zoom) {
   if (!selected?.size) return;
   // 线宽与虚线段加屏幕像素下限（参考色号高亮逻辑），缩小图片时选区仍清晰可读
@@ -87,7 +120,7 @@ function drawSelection(ctx, selected, width, height, originX, originY, cell, zoo
       value: findConnectedComponents(width, height, (p) => selected.has(p)),
     };
   }
-  const components = selectionComponentsCache.value;
+  const components = /** @type {number[][]} */ (selectionComponentsCache.value);
   const edgeSets = components.map((comp) =>
     collectComponentEdges(comp, width, height, originX, originY, cell),
   );
@@ -104,6 +137,7 @@ function drawSelection(ctx, selected, width, height, originX, originY, cell, zoo
 }
 
 // 色号高亮连通块外轮廓：按所在格亮度逐边着色，只画与外界相邻的边
+/** @param {CanvasRenderingContext2D} ctx @param {number[]} comp @param {number} width @param {number} height @param {Int16Array} _displayIdx @param {Uint32Array} displayRgb @param {number} originX @param {number} originY @param {number} cell @param {number} hlw */
 function drawHighlightOutline(
   ctx,
   comp,
@@ -134,12 +168,14 @@ function drawHighlightOutline(
 }
 // 裁剪模式覆盖层：矩形外部 40% 黑色蒙版 + 纯色边框（选中/拖拽边蓝色，其余红色）+ 预览红虚线
 // 裁剪框四边：红实线 / 选中边蓝实线（工作区覆盖层与裁剪放大镜共用）
+/** @param {CanvasRenderingContext2D} ctx @param {FuseCropRect} crop @param {string | null} activeEdge @param {number} cell @param {number} ox @param {number} oy @param {number} lineWidth */
 export function strokeCropEdges(ctx, crop, activeEdge, cell, ox, oy, lineWidth) {
   const rx0 = ox + crop.x0 * cell;
   const ry0 = oy + crop.y0 * cell;
   const rx1 = ox + (crop.x1 + 1) * cell;
   const ry1 = oy + (crop.y1 + 1) * cell;
   ctx.lineWidth = lineWidth;
+  /** @type {Array<[string, number, number, number, number]>} */
   const edges = [
     ['left', rx0, ry0, rx0, ry1],
     ['right', rx1, ry0, rx1, ry1],
@@ -156,6 +192,7 @@ export function strokeCropEdges(ctx, crop, activeEdge, cell, ox, oy, lineWidth) 
 }
 
 // 裁剪预览虚线：选中边后将移动到的平行格线（工作区覆盖层与裁剪放大镜共用）
+/** @param {CanvasRenderingContext2D} ctx @param {{ horizontal: boolean, pos: number }} preview @param {number} cell @param {number} ox @param {number} oy @param {number} spanW @param {number} spanH @param {{ lineWidth: number, dash: number[] }} opts */
 export function strokeCropPreview(ctx, preview, cell, ox, oy, spanW, spanH, { lineWidth, dash }) {
   ctx.strokeStyle = CROP_EDGE_COLOR;
   ctx.setLineDash(dash);
@@ -172,6 +209,7 @@ export function strokeCropPreview(ctx, preview, cell, ox, oy, spanW, spanH, { li
   ctx.setLineDash([]);
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {FuseCropRect} crop @param {string | null} activeEdge @param {number} cell @param {number} ox @param {number} oy @param {number} zoom @param {{ horizontal: boolean, pos: number } | null} preview @param {number} width @param {number} height */
 function drawCropOverlay(ctx, crop, activeEdge, cell, ox, oy, zoom, preview, width, height) {
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
@@ -204,6 +242,7 @@ function drawCropOverlay(ctx, crop, activeEdge, cell, ox, oy, zoom, preview, wid
 }
 
 // 覆盖层：选区虚线 / 色号高亮 / 裁剪蒙版与边框 / hover 边框 / 九宫格目标格浮起（叠加在底图之上）
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height @param {Int16Array} displayIdx @param {Uint32Array} displayRgb @param {OverlayOpts} opts */
 export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, opts) {
   const cell = opts.cell || CELL;
   const outerPad = opts.outerPad ?? OUTER_PAD;
@@ -244,7 +283,7 @@ export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, o
       };
     }
     // 外轮廓：整块只描一次边界，内部不再逐格描边
-    for (const comp of highlightComponentsCache.components) {
+    for (const comp of /** @type {number[][]} */ (highlightComponentsCache.components)) {
       drawHighlightOutline(ctx, comp, width, height, displayIdx, displayRgb, ox, oy, cell, hlw);
     }
   }
@@ -298,11 +337,13 @@ export function drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, o
   }
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height @param {Int16Array} displayIdx @param {Uint32Array} displayRgb @param {OverlayOpts} opts */
 export function drawPattern(ctx, width, height, displayIdx, displayRgb, opts) {
   drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts);
   drawPatternOverlay(ctx, width, height, displayIdx, displayRgb, opts);
 }
 
+/** @param {CanvasRenderingContext2D} ctx */
 export function clearCanvas(ctx) {
   ctx.canvas.width = 0;
   ctx.canvas.height = 0;

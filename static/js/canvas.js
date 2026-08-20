@@ -30,27 +30,34 @@ import { App, dragState, setDirty } from './state.js';
 import { codeOf, rectCells } from './utils.js';
 import { applyTransform } from './view.js';
 
-const ctx = els.canvas.getContext('2d');
+const ctx = /** @type {CanvasRenderingContext2D} */ (els.canvas.getContext('2d'));
 
 // 工作区底图离屏缓存：单元格/行列号/网格线等静态内容只在内容变化时重绘，
 // hover/选区/高亮等覆盖层单独叠加，避免移动鼠标时反复重建底图
 const baseCanvas = document.createElement('canvas');
-const baseCtx = baseCanvas.getContext('2d');
+const baseCtx = /** @type {CanvasRenderingContext2D} */ (baseCanvas.getContext('2d'));
 
+/** @type {{ idx: Int16Array, rgb: Uint32Array } | null} */
 let lastDisplay = null; // 底图对应的显示数据，覆盖层复用避免每帧重建
+/** @type {number | null} */
 let baseDetailKey = null; // 底图细节层级（细线/色号、粗线是否隐藏），跨阈值时重建底图
-let screenCellCache = { key: null, value: null };
-let renderSelectionCache = { sel: null, drag: null, value: null };
+/** @type {{ key: string | null, value: number }} */
+let screenCellCache = { key: null, value: 0 };
+/** @type {{ sel: Set<number> | null, drag: FuseCropRect | null, size: number, value: Set<number> }} */
+let renderSelectionCache = { sel: null, drag: null, size: 0, value: new Set() };
+/** @type {{ grid: Int16Array | null, paletteKey: string | null, revision: number, value: { idx: Int16Array, rgb: Uint32Array } | null }} */
 let displayCache = { grid: null, paletteKey: null, revision: -1, value: null };
 
 export function clearWorkspace() {
   clearCanvas(ctx);
 }
 
+/** @param {number} width @param {number} height @returns {number} */
 export function chooseScreenCell(width, height) {
   const key = `${width}x${height}`;
   if (screenCellCache.key === key) return screenCellCache.value;
   let cell = CELL;
+  /** @type {(c: number) => boolean} */
   const ok = (c) => {
     // 工作区含四周 1 格行列号条，且无外部白边
     const { w, h } = canvasMetrics(width, height, c, 0, 0, c);
@@ -63,8 +70,9 @@ export function chooseScreenCell(width, height) {
   return cell;
 }
 
+/** @returns {{ idx: Int16Array, rgb: Uint32Array }} */
 export function buildDisplayData() {
-  const { grid, width, height } = App.project;
+  const { grid, width, height } = /** @type {FuseProject} */ (App.project);
   const n = width * height;
   const idx = new Int16Array(n);
   const rgb = new Uint32Array(n);
@@ -85,8 +93,9 @@ export function buildDisplayData() {
 
 // 显示数据缓存：网格引用 + 修订号 + 调色板引用都未变时复用，
 // 避免裁剪放大镜逐帧 mousemove / 设置变化重建底图时反复全量扫描
+/** @returns {{ idx: Int16Array, rgb: Uint32Array }} */
 export function getDisplayData() {
-  const { grid } = App.project;
+  const { grid } = /** @type {FuseProject} */ (App.project);
   const palette = App.appliedPalette;
   const paletteKey = palette.map((c) => (c ? c.hex : '')).join(',');
   if (
@@ -94,14 +103,16 @@ export function getDisplayData() {
     displayCache.paletteKey === paletteKey &&
     displayCache.revision === gridRevision
   ) {
-    return displayCache.value;
+    return /** @type {{ idx: Int16Array, rgb: Uint32Array }} */ (displayCache.value);
   }
   const value = buildDisplayData();
   displayCache = { grid, paletteKey, revision: gridRevision, value };
   return value;
 }
 
+/** @param {Array<number>} counts @returns {Array<{ hex: string, code: string, count: number }>} */
 export function buildLegend(counts) {
+  /** @type {Array<{ hex: string, code: string, count: number }>} */
   const legend = [];
   App.appliedPalette.forEach((c, i) => {
     if (counts[i]) {
@@ -112,15 +123,19 @@ export function buildLegend(counts) {
 }
 
 // 图例 / 导出共用排序：按豆数从多到少，数量相同按色号
+/** @param {Array<{ hex: string, code: string, count: number }>} entries @returns {Array<{ hex: string, code: string, count: number }>} */
 export function sortLegend(entries) {
   return entries
     .filter((e) => e.count > 0)
     .sort((a, b) => b.count - a.count || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
 }
 
+/** @returns {string[]} */
 export function buildCodes() {
-  const { grid } = App.project;
-  const codes = new Array(App.project.width * App.project.height).fill('');
+  const project = /** @type {FuseProject} */ (App.project);
+  const { grid } = project;
+  /** @type {string[]} */
+  const codes = new Array(project.width * project.height).fill('');
   for (let p = 0; p < grid.length; p++) {
     const v = grid[p];
     if (v >= 0) codes[p] = codeOf(App.appliedPalette[v]);
@@ -167,6 +182,7 @@ export function syncBaseLayerDetail() {
 
 // 笔划中的增量重绘：只更新脏格对应的显示数据与底图局部，再调度一次 overlay 合成。
 // 笔划结束时由 recordGridChanges 触发全量刷新，保证计数 / 颜色清单 / 撤销 UI 同步。
+/** @param {Array<{ x: number, y: number, to: number }>} changes */
 export function repaintBaseCells(changes) {
   const project = App.project;
   if (!project || !changes?.length || !lastDisplay) return;
@@ -205,6 +221,7 @@ export function repaintBaseCells(changes) {
   // 网格线跨整幅底图，逐格重绘会盖掉线，这里统一重画一次（O(宽+高)，成本可忽略）
   drawGridLines(baseCtx, metrics.originX, metrics.originY, width, height, cell, 1, App.zoom, null);
   if (App.settings.showCodes) {
+    /** @type {string[]} */
     const codes = [];
     for (const p of cells) {
       const v = display.idx[p];
@@ -251,6 +268,7 @@ function buildRenderSelection() {
 }
 
 // 把底图 + 覆盖层（选区/高亮/hover/九宫格目标格）合成到主画布
+/** @param {CanvasRenderingContext2D} ctx @param {number} originX @param {number} originY @param {number} cell */
 function drawPickerPreview(ctx, originX, originY, cell) {
   // 九宫格悬停预览只临时改 grid，不重建底图显示数据；
   // 这里在覆盖层之下直接补画候选色，避免整幅底图重建，移出/取消时恢复绘制底图原色
@@ -268,7 +286,8 @@ export function renderCanvas() {
   const project = App.project;
   if (!project) return;
   if (!lastDisplay) renderBaseLayer();
-  const display = lastDisplay;
+  /** @type {{ idx: Int16Array, rgb: Uint32Array }} */
+  const display = /** @type {{ idx: Int16Array, rgb: Uint32Array }} */ (lastDisplay);
   const selected = buildRenderSelection();
   const metrics = canvasMetrics(
     project.width,
@@ -322,7 +341,7 @@ export function rebuildCanvas() {
 export function syncHighlightBlink() {
   const active = interactionState.highlightColor != null && App.project;
   if (!active) {
-    clearInterval(App.highlightTimer);
+    clearInterval(App.highlightTimer ?? undefined);
     App.highlightTimer = null;
     interactionState.highlightBlink = true;
     return;
@@ -336,8 +355,13 @@ export function syncHighlightBlink() {
 }
 
 // 从基副本按颜色数量 N 生成工作副本（合并成保留色）
+/** @param {Int16Array} source @param {Array<{ hex: string }>} palette @param {boolean} useLab @param {number} n @returns {Int16Array} */
 export function mergeGrid(source, palette, useLab, n) {
-  const counts = C.computeUsedCounts(source, App.project.width, App.project.height);
+  const counts = C.computeUsedCounts(
+    source,
+    /** @type {FuseProject} */ (App.project).width,
+    /** @type {FuseProject} */ (App.project).height,
+  );
   const merge = C.buildMergeMap(counts, palette, useLab, n);
   const out = new Int16Array(source.length);
   for (let p = 0; p < source.length; p++) {

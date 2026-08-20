@@ -39,7 +39,7 @@ export async function processUpload() {
     const off = document.createElement('canvas');
     off.width = res.width;
     off.height = res.height;
-    const octx = off.getContext('2d');
+    const octx = /** @type {CanvasRenderingContext2D} */ (off.getContext('2d'));
     octx.drawImage(img, 0, 0);
     const rgba = octx.getImageData(0, 0, res.width, res.height).data;
     App.compressed = { rgba, width: res.width, height: res.height };
@@ -48,6 +48,7 @@ export async function processUpload() {
     // 后端无法得知原图文件名，保留已有名称，避免被 "blob"/占位名覆盖。
     const hadRealFile =
       !!App.originalFile &&
+      'name' in App.originalFile &&
       typeof App.originalFile.name === 'string' &&
       App.originalFile.name !== '';
     App.originalName = hadRealFile
@@ -63,7 +64,8 @@ export async function processUpload() {
     // 上传成功后才清空旧快照，避免失败时误丢历史记录
     historyUI.clearAll({ silent: true });
     setProjectDirty(true);
-    const used = C.countUsedColors(App.project.grid, App.project.width, App.project.height);
+    const project = /** @type {FuseProject} */ (App.project);
+    const used = C.countUsedColors(project.grid, project.width, project.height);
     toast(`已导入 ${res.width} × ${res.height}，共使用 ${used} 种颜色`, { type: 'success' });
   } catch (err) {
     toast(`导入失败：${err.message}`, { type: 'error' });

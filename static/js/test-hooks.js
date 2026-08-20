@@ -25,6 +25,13 @@ import * as historyActions from './undo-redo.js';
 import { getToastQueue } from './utils.js';
 import * as view from './view.js';
 
+/**
+ * @param {{
+ *   renderFull: () => void,
+ *   applySlider: (n: number) => Promise<void>,
+ *   restoreState: () => Promise<void>,
+ * }} hooks
+ */
 export function installTestHooks({ renderFull, applySlider, restoreState }) {
   const expose =
     (typeof window !== 'undefined' && window.__FUSE_TEST__ === true) ||

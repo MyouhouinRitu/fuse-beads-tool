@@ -10,10 +10,12 @@ import * as view from './view.js';
 
 export function bindCanvas() {
   // 缩放按钮：围绕工作区中心缩放
-  for (const [btnKey, factor] of [
+  /** @type {Array<[keyof typeof els, number]>} */
+  const zoomSteps = [
     ['zoomIn', ZOOM_BUTTON_FACTOR],
     ['zoomOut', 1 / ZOOM_BUTTON_FACTOR],
-  ]) {
+  ];
+  for (const [btnKey, factor] of zoomSteps) {
     els[btnKey].addEventListener('click', () => {
       const vp = els.canvasScroll;
       const r = vp.getBoundingClientRect();

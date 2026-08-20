@@ -1,9 +1,12 @@
 // 通用菜单行为：打开聚焦首项、方向键导航、Enter 执行、Esc / 点击外部关闭并还原焦点。
 
+/** @param {HTMLElement} menu @returns {HTMLElement[]} */
 export function menuItems(menu) {
-  return Array.from(menu.querySelectorAll('[role="menuitem"], [role="option"]'));
+  const nodes = menu.querySelectorAll('[role="menuitem"], [role="option"]');
+  return Array.from(nodes, (n) => /** @type {HTMLElement} */ (n));
 }
 
+/** @param {HTMLElement} trigger @param {HTMLElement} menu */
 export function openMenu(trigger, menu) {
   menu.classList.remove('hidden');
   trigger.setAttribute('aria-expanded', 'true');
@@ -14,16 +17,19 @@ export function openMenu(trigger, menu) {
   items[0]?.focus();
 }
 
+/** @param {HTMLElement} trigger @param {HTMLElement} menu @param {{ restoreFocus?: boolean }} [opts] */
 export function closeMenu(trigger, menu, { restoreFocus = true } = {}) {
   menu.classList.add('hidden');
   trigger.setAttribute('aria-expanded', 'false');
   if (restoreFocus && typeof trigger.focus === 'function') trigger.focus();
 }
 
+/** @param {KeyboardEvent} e @param {HTMLElement} trigger @param {HTMLElement} menu */
 export function handleMenuKeydown(e, trigger, menu) {
   const items = menuItems(menu);
   if (!items.length) return;
-  const idx = items.indexOf(document.activeElement);
+  // biome-ignore lint/complexity/useIndexOf: document.activeElement 是 Element | null，indexOf 需要 HTMLElement
+  const idx = items.findIndex((it) => it === document.activeElement);
   let next = -1;
   if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
   else if (e.key === 'ArrowUp')

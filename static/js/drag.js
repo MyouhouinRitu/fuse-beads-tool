@@ -30,6 +30,7 @@ import {
   zoomAtOriginal,
 } from './view.js';
 
+/** @param {PointerEvent} e @param {DOMRect | null} rect @returns {FusePoint | null} */
 function cellFromEvent(e, rect) {
   if (!App.project) return null;
   const r = rect || els.canvas.getBoundingClientRect();
@@ -45,6 +46,7 @@ function cellFromEvent(e, rect) {
 
 // 统一的拖拽初始状态（右键平移 / 左键选择、涂色、裁剪共用）
 // orig：是否拖拽「对比原图」；panning：是否平移视图；downCell：左键按下的格
+/** @param {PointerEvent} e @param {{ orig?: boolean, panning?: boolean, downCell?: FusePoint | null }} [opts] */
 function beginDrag(e, { orig = false, panning = false, downCell = null } = {}) {
   dragState.active = true;
   dragState.orig = orig;
@@ -83,6 +85,7 @@ function resetDragState() {
 }
 
 // hover 边框定位：只在工作区图案上更新，拖拽平移或指向对比原图时隐藏
+/** @param {PointerEvent} e @param {DOMRect | null} rect */
 function updateHoverCell(e, rect) {
   if (!App.project) return;
   if (e.target?.closest?.('#compare-original')) {
@@ -108,17 +111,20 @@ function updateHoverCell(e, rect) {
 }
 
 // 拖拽移动：对比原图平移 / 工作区平移 / 选择矩形预览 / 画笔橡皮连续涂色
+/** @param {PointerEvent} e @param {DOMRect | null} rect */
 function updateDragMove(e, rect) {
   if (dragState.orig) {
     const dx = e.clientX - dragState.startX;
     const dy = e.clientY - dragState.startY;
     if (!dragState.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) dragState.moved = true;
     if (dragState.moved) {
+      const panStart = /** @type {FusePoint} */ (dragState.panStart);
+      const origPanStart = /** @type {FusePoint} */ (dragState.origPanStart);
       if (App.settings.syncPan) {
-        App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
-        App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
+        App.pan = { x: panStart.x + dx, y: panStart.y + dy };
+        App.origPan = { x: origPanStart.x + dx, y: origPanStart.y + dy };
       } else {
-        App.origPan = { x: dragState.origPanStart.x + dx, y: dragState.origPanStart.y + dy };
+        App.origPan = { x: origPanStart.x + dx, y: origPanStart.y + dy };
       }
       setProjectDirty(true);
       scheduleAutosave();
@@ -133,7 +139,10 @@ function updateDragMove(e, rect) {
   const dy = e.clientY - dragState.startY;
   if (!dragState.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) dragState.moved = true;
   if (dragState.moved && dragState.panning) {
-    App.pan = { x: dragState.panStart.x + dx, y: dragState.panStart.y + dy };
+    App.pan = {
+      x: /** @type {FusePoint} */ (dragState.panStart).x + dx,
+      y: /** @type {FusePoint} */ (dragState.panStart).y + dy,
+    };
     setProjectDirty(true);
     scheduleAutosave();
     if (App.settings.syncPan && App.originalImage) {
@@ -156,7 +165,9 @@ function updateDragMove(e, rect) {
     const from = dragState.toggleLast || dragState.selectionAnchor;
     const cells = lineCells(from, cell);
     if (dragState.toggleLast) cells.shift(); // 上一段终点已反选过，避免重复反选
-    toggleSelectionCells(cells.map((c) => c.y * App.project.width + c.x));
+    toggleSelectionCells(
+      cells.map((c) => c.y * /** @type {FuseProject} */ (App.project).width + c.x),
+    );
     dragState.toggleLast = cell;
     scheduleCanvasRender();
     return;
@@ -193,6 +204,7 @@ function updateDragMove(e, rect) {
 }
 
 // 统一的 pointermove 入口：先更新 hover，再处理拖拽与裁剪联动
+/** @param {PointerEvent} e */
 export function onWindowPointerMove(e) {
   const rect = els.canvas.getBoundingClientRect();
   if (App.tool === TOOLS.CROP) rememberCropMouse(e);
@@ -241,6 +253,7 @@ export function onWindowPointerUp() {
   resetDragState();
 }
 
+/** @param {PointerEvent} e */
 export function onCanvasPointerDown(e) {
   if (!App.project) return;
   // pointer capture：即使鼠标/手指移出窗口，move/up 仍持续送达，避免拖拽卡死
@@ -311,6 +324,7 @@ export function onCanvasPointerDown(e) {
   // 取色模式：单击在 pointerup 时取色
 }
 
+/** @param {PointerEvent} e */
 export function onComparePointerDown(e) {
   if (!App.project || !App.originalImage || !App.settings.compare) return;
   if (e.button !== 2) return; // 对比原图同样改为右键拖拽
@@ -328,6 +342,7 @@ export function onCanvasScrollPointerLeave() {
   hideCropMagnifier();
 }
 
+/** @param {WheelEvent} e */
 export function onCanvasWheel(e) {
   if (!App.project) return;
   if (e.target?.closest?.('#compare-original')) return;
@@ -338,6 +353,7 @@ export function onCanvasWheel(e) {
   scheduleAutosave();
 }
 
+/** @param {WheelEvent} e */
 export function onCompareWheel(e) {
   if (!App.project || !App.originalImage || !App.settings.compare) return;
   e.preventDefault();

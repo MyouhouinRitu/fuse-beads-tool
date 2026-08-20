@@ -26,6 +26,12 @@ jobs:
       - run: npm test
         env:
           PYTHON: python
+      - run: npm run test:coverage:backend
+        env:
+          PYTHON: python
+      - run: npm run test:coverage:frontend
+        env:
+          PYTHON: python
       - run: python tests/smoke_test.py
         env:
           PYTHON: python

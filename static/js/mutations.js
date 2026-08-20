@@ -18,7 +18,7 @@ export function touchGrid() {
 /**
  * 写入一批格子变更并统一标记编辑状态。
  * @param {Array<{x: number, y: number, to: number, from?: number}>} changes
- * @param {{silent?: boolean, buffer?: Array|null}} [options]
+ * @param {{silent?: boolean, buffer?: Array<any> | null}} [options]
  *   silent：暂不调度自动保存（批量提交由调用方统一处理）；
  *   buffer：非空时把已应用变更同时追加到该数组（画笔整段累积用）。
  * @returns {Array<{x: number, y: number, from: number, to: number}>} 实际应用的变更
@@ -51,6 +51,7 @@ export function applyGridChanges(changes, { silent = false, buffer = null } = {}
 }
 
 // 把一批已应用的变更提交为一步撤销记录，并刷新画布与自动保存
+/** @param {Array<{x: number, y: number, from: number, to: number}>} changes */
 export function recordGridChanges(changes) {
   if (!changes?.length) return null;
   const step = recordStep(App.undoStack, App.redoStack, changes);
@@ -60,6 +61,7 @@ export function recordGridChanges(changes) {
 }
 
 // 临时预览写入（九宫格悬停等）：不标记 dirty / 撤销，调用方必须负责还原
+/** @param {number} p @param {number} value */
 export function setGridPreview(p, value) {
   if (!App.project || p < 0 || p >= App.project.grid.length) return;
   App.project.grid[p] = value;

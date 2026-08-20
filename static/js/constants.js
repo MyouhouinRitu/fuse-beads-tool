@@ -170,6 +170,7 @@ export const EMPTY_STYLES = {
 
 // ---------- 定时 / 节流（毫秒） ----------
 export const TOAST_DURATION_MS = 2600;
+export const TOAST_FADE_MS = 250; // 提示条淡出动画时长（与 CSS #toast transition 一致，见 constants_sync_test）
 export const HINT_THROTTLE_MS = 3000;
 export const AUTOSAVE_DELAY_MS = 800;
 export const SLIDER_APPLY_DELAY_MS = 150; // 颜色数量滑块输入防抖：拖动停顿后再重算
@@ -185,6 +186,7 @@ export const PANEL_FULL_WIDTH = {
   'color-highlight-panel': 168,
   'right-panel': 280,
 };
+/** @type {Array<keyof typeof PANEL_FULL_WIDTH>} */
 export const PANEL_IDS = ['left-panel', 'color-highlight-panel', 'right-panel'];
 export const PANEL_STORAGE_KEY = 'fuse-beads.panel-collapsed';
 

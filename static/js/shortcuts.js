@@ -20,6 +20,7 @@ import * as toolState from './tool-state.js';
 import * as undoRedo from './undo-redo.js';
 import { blurActive } from './utils.js';
 
+/** @param {KeyboardEvent} e @param {{ inField: boolean, mod: boolean }} ctx */
 function handleEscape(e, ctx) {
   if (popup.isPopupOpen()) {
     popup.cancelPopup();
@@ -84,6 +85,9 @@ function handleEscape(e, ctx) {
   return true;
 }
 
+/** @typedef {{ inField: boolean, mod: boolean }} ShortcutContext */
+/** @typedef {{ test: (e: KeyboardEvent, ctx: ShortcutContext) => boolean, run: (e: KeyboardEvent, ctx: ShortcutContext) => boolean | void }} ShortcutEntry */
+/** @type {ShortcutEntry[]} */
 const SHORTCUTS = [
   { test: (e) => e.key === 'Escape', run: handleEscape },
   // Ctrl+Shift+S 保存项目；Ctrl+S 保存快照；两者都遵循焦点守卫
@@ -204,13 +208,16 @@ const SHORTCUTS = [
       !ctx.mod &&
       e.key.toLowerCase() === 'd' &&
       App.tool === TOOLS.SELECT &&
-      App.project &&
+      !!App.project &&
       !dragState.active,
     run: (e) => {
       let target = null;
       if (App.selection.size === 1) {
         const p = App.selection.values().next().value;
-        target = { x: p % App.project.width, y: (p / App.project.width) | 0 };
+        target = {
+          x: p % /** @type {FuseProject} */ (App.project).width,
+          y: (p / /** @type {FuseProject} */ (App.project).width) | 0,
+        };
       } else if (interactionState.hoverCell) {
         target = interactionState.hoverCell;
       }
@@ -228,7 +235,7 @@ export function bindShortcuts() {
   window.addEventListener('keydown', (e) => {
     const t = e.target;
     const ctx = {
-      inField: t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'),
+      inField: !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'),
       mod: e.ctrlKey || e.metaKey,
     };
     for (const entry of SHORTCUTS) {

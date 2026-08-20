@@ -4,9 +4,13 @@
 import { els } from './els.js';
 import { hideDialog, showDialog } from './focus.js';
 
+/** @typedef {{ title: string, message: string, okText: string, cancelText: string, input: boolean, fallback?: string, resolve: (value: any) => void }} PopupRequest */
+/** @type {{ input: boolean, resolve: (value: any) => void } | null} */
 let state = null;
+/** @type {PopupRequest[]} */
 const queue = [];
 
+/** @param {PopupRequest} req */
 function showRequest({ title, message, okText, cancelText, input, fallback = '', resolve }) {
   els.popupTitle.textContent = title;
   els.popupMessage.textContent = message;
@@ -24,9 +28,11 @@ function showRequest({ title, message, okText, cancelText, input, fallback = '',
 
 function openNext() {
   if (state || !queue.length) return;
-  showRequest(queue.shift());
+  const req = queue.shift();
+  if (req) showRequest(req);
 }
 
+/** @param {any} result */
 function finish(result) {
   if (!state) return;
   const { resolve } = state;
@@ -63,6 +69,7 @@ export function cancelPopup() {
   finish(null);
 }
 
+/** @param {string} message @param {{ title?: string, okText?: string, cancelText?: string }} [options] @returns {Promise<any>} */
 export function confirmDialog(message, options = {}) {
   // 测试环境注入自动确认结果，跳过真实弹窗
   if (typeof globalThis.__popupAutoConfirm !== 'undefined') {
@@ -81,6 +88,7 @@ export function confirmDialog(message, options = {}) {
   });
 }
 
+/** @param {string} message @param {string} [fallback] @param {{ title?: string, okText?: string, cancelText?: string }} [options] @returns {Promise<any>} */
 export function promptDialog(message, fallback = '', options = {}) {
   if (typeof globalThis.__popupAutoConfirm !== 'undefined') {
     return Promise.resolve(null);

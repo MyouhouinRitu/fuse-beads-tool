@@ -36,8 +36,33 @@ import {
   OUTER_PAD,
 } from './constants.js';
 
+/** @typedef {{ idx: Int16Array, rgb: Uint32Array }} DisplayData */
+/** @typedef {{ x0: number, y0: number, x1: number, y1: number }} ViewportRect */
+/** @typedef {{ lw: number, color: string, dashed: boolean }} GridLineStyle */
+/** @typedef {{ x: number, y: number, w: number, h: number }} Rect */
+/** @typedef {{ hex: string, code: string, count: number }} LegendEntry */
+/**
+ * @typedef {{
+ *   cell?: number,
+ *   outerPad?: number,
+ *   gridLines?: boolean,
+ *   hatch?: boolean,
+ *   emptyStyle?: string,
+ *   edgeNumbers?: boolean,
+ *   showCodes?: boolean,
+ *   codes?: Array<string>,
+ *   legend?: LegendEntry[],
+ *   showLegend?: boolean,
+ *   zoom?: number,
+ *   viewport?: ViewportRect | null,
+ *   attribution?: boolean,
+ *   background?: string,
+ * }} RenderOpts
+ */
+
 const CODE_FALLBACK_RGB = [17, 17, 17]; // 空色时的文字对比底色
 
+/** @param {number} count @param {number} gridW @param {number} cell @returns {number} */
 function legendRows(count, gridW, cell) {
   if (!count) return 0;
   const pad = cell * LEGEND_PAD_RATIO;
@@ -46,6 +71,7 @@ function legendRows(count, gridW, cell) {
 }
 
 // 图例文字垂直居中：文本包围盒中心与色块中心对齐（与 PIL 侧 _legend_text_top 对应）
+/** @param {number} sw @param {CanvasRenderingContext2D} ctx @param {string} text @returns {number} */
 function legendTextTop(sw, ctx, text) {
   const m = ctx.measureText(text);
   const ascent = m.actualBoundingBoxAscent || 0;
@@ -54,6 +80,7 @@ function legendTextTop(sw, ctx, text) {
 }
 
 // 总豆量文本放不下图例最后一行时，需要额外一行（与 PIL 侧 _legend_total_needs_extra_row 对应）
+/** @param {CanvasRenderingContext2D} ctx @param {LegendEntry[]} legend @param {number} gridW @param {number} cell @param {number} outerPad @returns {boolean} */
 function legendTotalNeedsExtraRow(ctx, legend, gridW, cell, outerPad) {
   if (!legend?.length) return false;
   const font = Math.max(LEGEND_FONT_MIN, Math.round(cell * LEGEND_FONT_RATIO));
@@ -71,6 +98,7 @@ function legendTotalNeedsExtraRow(ctx, legend, gridW, cell, outerPad) {
 }
 
 // 导出底部署名行高（像素）：顶部间距 + 字号 + 底部间距（与 PIL 侧 attribution_height 一致）
+/** @param {number} [cell] @returns {number} */
 export function attributionHeight(cell = CELL) {
   const font = Math.max(ATTRIBUTION_FONT_MIN, Math.floor(cell * ATTRIBUTION_FONT_RATIO));
   const top = Math.floor(cell * ATTRIBUTION_TOP_GAP_RATIO);
@@ -78,6 +106,7 @@ export function attributionHeight(cell = CELL) {
   return top + font + bottom;
 }
 
+/** @param {number} width @param {number} height @param {number} [cell] @param {number} [legendCount] @param {number} [outerPad] @param {number} [edge] @param {boolean} [legendExtraRow] @param {number} [attrH] @returns {{ w: number, h: number, gridW: number, gridH: number, originX: number, originY: number, edge: number, legendRows: number }} */
 export function canvasMetrics(
   width,
   height,
@@ -112,6 +141,7 @@ export function canvasMetrics(
 
 // 自适应描边线宽：按格子的常用宽度与屏幕像素下限取较大者，
 // 并限制不超过半格，避免格子太小时描边几何失效
+/** @param {number} cell @param {number} zoom @param {number} ratio @param {number} minScreenStroke @returns {number} */
 export function adaptiveStrokeWidth(cell, zoom, ratio, minScreenStroke) {
   return Math.max(
     Math.round(cell * ratio),
@@ -119,12 +149,15 @@ export function adaptiveStrokeWidth(cell, zoom, ratio, minScreenStroke) {
   );
 }
 
+/** @param {number} r @param {number} g @param {number} b @returns {string} */
 function textColor(r, g, b) {
   return isLightColor([r, g, b]) ? '#111111' : '#FFFFFF';
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {number} x0 @param {number} y0 @param {number} cell @param {string} emptyStyle */
 function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
-  const s = EMPTY_STYLES[emptyStyle] || EMPTY_STYLES.default;
+  const s =
+    EMPTY_STYLES[/** @type {'default' | 'black' | 'white'} */ (emptyStyle)] || EMPTY_STYLES.default;
   ctx.fillStyle = s.bg;
   ctx.fillRect(x0, y0, cell, cell);
   ctx.strokeStyle = s.line;
@@ -140,6 +173,7 @@ function drawEmptyCell(ctx, x0, y0, cell, emptyStyle) {
 // 网格线规范：
 // - 图案边缘粗黑实线；格内细灰线；每 5 格粗灰虚线；每 10 格粗灰实线
 // - 行列号条内：通常细灰线、每 5 格粗灰实线（不用虚线）；外圈不画线
+/** @param {CanvasRenderingContext2D} ctx @param {number} originX @param {number} originY @param {number} width @param {number} height @param {number} cell @param {number} [edgeCells] @param {number} [zoom] @param {ViewportRect | null} [viewport] */
 export function drawGridLines(
   ctx,
   originX,
@@ -159,6 +193,7 @@ export function drawGridLines(
   const y0 = originY - edgeCells * cell;
   const spanW = (width + 2 * edgeCells) * cell;
   const spanH = (height + 2 * edgeCells) * cell;
+  /** @type {(kp: number, total: number) => GridLineStyle | null} */
   const patternStyle = (kp, total) => {
     if (kp === 0 || kp === total) return { lw: thick, color: GRID_BOUNDARY_COLOR, dashed: false };
     if (screenCell < GRID_THICK_MIN_SCREEN_CELL) return null;
@@ -167,6 +202,7 @@ export function drawGridLines(
     if (screenCell < GRID_FINE_MIN_SCREEN_CELL) return null;
     return { lw: thin, color: GRID_LINE_COLOR, dashed: false };
   };
+  /** @type {(kp: number, total: number) => GridLineStyle | null} */
   const edgeStyle = (kp, total) => {
     if (kp === 0 || kp === total) return { lw: thick, color: GRID_BOUNDARY_COLOR, dashed: false };
     if (screenCell < GRID_THICK_MIN_SCREEN_CELL) return null;
@@ -179,6 +215,7 @@ export function drawGridLines(
   // - 线段端点按两端含入（长度 = |端点差| + 1）；
   // - 虚线按 PIL 的逐段相位绘制（dash+1 像素实、dash-1 像素空），不用 setLineDash。
   // 这样前端工作区与后端导出的网格线落在同一批整数像素上，避免 1px 线 50% 混合。
+  /** @type {(x1: number, y1: number, x2: number, y2: number, lw: number) => Rect} */
   const rectForLine = (x1, y1, x2, y2, lw) => {
     if (y1 === y2) {
       return {
@@ -195,6 +232,7 @@ export function drawGridLines(
       h: Math.abs(y2 - y1) + 1,
     };
   };
+  /** @type {(map: Map<string, Rect[]>, rect: Rect, color: string) => void} */
   const pushRect = (map, rect, color) => {
     let group = map.get(color);
     if (!group) {
@@ -203,6 +241,7 @@ export function drawGridLines(
     }
     group.push(rect);
   };
+  /** @type {(map: Map<string, Rect[]>, x1: number, y1: number, x2: number, y2: number, s: GridLineStyle) => void} */
   const lineSeg = (map, x1, y1, x2, y2, s) => {
     if (s.dashed) {
       if (y1 === y2) {
@@ -242,13 +281,16 @@ export function drawGridLines(
     }
     pushRect(map, rectForLine(x1, y1, x2, y2, s.lw), s.color);
   };
+  /** @type {(map: Map<string, Rect[]>) => void} */
   const flushRects = (map) => {
     for (const [color, rects] of map) {
       ctx.fillStyle = color;
       for (const rect of rects) ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
   };
+  /** @type {Map<string, Rect[]>} */
   const vGroups = new Map();
+  /** @type {Map<string, Rect[]>} */
   const hGroups = new Map();
   // 视口渲染时只画窗口内的线（窗口外由 canvas 裁剪，收紧循环避免大图逐帧全画）
   const vkMin = viewport ? Math.max(0, viewport.x0 - 1 + edgeCells) : 0;
@@ -298,6 +340,7 @@ export function drawGridLines(
 }
 
 // 行列号条底色：上下左右四条（不含四角）
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height @param {number} originX @param {number} originY @param {number} cell */
 function fillEdgeStrips(ctx, width, height, originX, originY, cell) {
   ctx.fillStyle = EDGE_NUMBER_BG;
   ctx.fillRect(originX, originY - cell, width * cell, cell);
@@ -307,6 +350,7 @@ function fillEdgeStrips(ctx, width, height, originX, originY, cell) {
 }
 
 // 边缘行列号数字：浅蓝底与分隔线由 fillEdgeStrips / drawGridLines 绘制，这里只写字
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height @param {number} originX @param {number} originY @param {number} cell @param {ViewportRect | null} [viewport] */
 function drawEdgeNumbers(ctx, width, height, originX, originY, cell, viewport = null) {
   if (cell < EDGE_NUMBER_MIN_CELL) return;
   const font = Math.max(8, Math.round(cell * EDGE_NUMBER_FONT_RATIO));
@@ -333,6 +377,7 @@ function drawEdgeNumbers(ctx, width, height, originX, originY, cell, viewport = 
   ctx.textBaseline = 'alphabetic';
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height @param {Int16Array} displayIdx @param {Uint32Array} displayRgb @param {Array<string>} codes @param {number} originX @param {number} originY @param {number} cell @param {number} [zoom] @param {ViewportRect | null} [viewport] @param {Set<number> | number[] | null} [cells] */
 export function drawCodes(
   ctx,
   width,
@@ -352,6 +397,7 @@ export function drawCodes(
   ctx.font = `${font}px Consolas, "Courier New", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  /** @type {(x: number, y: number) => void} */
   const draw = (x, y) => {
     const p = y * width + x;
     if (displayIdx[p] < 0) return;
@@ -389,6 +435,7 @@ export function drawCodes(
 }
 
 // 导出底部署名：图案与图例之间、右侧对齐（右缘与图例一致，弱化小字）
+/** @param {CanvasRenderingContext2D} ctx @param {number} cell @param {number} gridW @param {number} baseY @param {number} attrH @param {number} outerPad */
 function drawAttribution(ctx, cell, gridW, baseY, attrH, outerPad) {
   const font = Math.max(ATTRIBUTION_FONT_MIN, Math.floor(cell * ATTRIBUTION_FONT_RATIO));
   ctx.font = `${font}px "Microsoft YaHei", sans-serif`;
@@ -399,6 +446,7 @@ function drawAttribution(ctx, cell, gridW, baseY, attrH, outerPad) {
   ctx.fillText(ATTRIBUTION_TEXT, maxX, baseY + attrH / 2);
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {LegendEntry[]} legend @param {number} cell @param {number} gridW @param {number} baseY @param {number} [outerPad] */
 function drawLegend(ctx, legend, cell, gridW, baseY, outerPad = OUTER_PAD) {
   if (!legend?.length) return;
   const pad = cell * LEGEND_PAD_RATIO;
@@ -436,17 +484,21 @@ function drawLegend(ctx, legend, cell, gridW, baseY, outerPad = OUTER_PAD) {
 }
 
 // 四方向（上下左右）连通分组：isMember(index) 判定索引是否属于目标集合
+/** @param {number} width @param {number} height @param {(p: number) => boolean} isMember @returns {number[][]} */
 export function findConnectedComponents(width, height, isMember) {
   const n = width * height;
   const visited = new Uint8Array(n);
+  /** @type {number[][]} */
   const components = [];
   for (let p = 0; p < n; p++) {
     if (visited[p] || !isMember(p)) continue;
     visited[p] = 1;
+    /** @type {number[]} */
     const comp = [];
     const stack = [p];
     while (stack.length) {
       const q = stack.pop();
+      if (q == null) break;
       comp.push(q);
       const x = q % width;
       if (x > 0 && !visited[q - 1] && isMember(q - 1)) {
@@ -471,6 +523,7 @@ export function findConnectedComponents(width, height, isMember) {
   return components;
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {Int16Array} displayIdx @param {Uint32Array} displayRgb @param {number} ox @param {number} oy @param {number} cell @param {boolean} hatch @param {string} emptyStyle @param {number} p */
 function drawCellAt(ctx, width, displayIdx, displayRgb, ox, oy, cell, hatch, emptyStyle, p) {
   const x = p % width;
   const y = (p / width) | 0;
@@ -490,6 +543,7 @@ function drawCellAt(ctx, width, displayIdx, displayRgb, ox, oy, cell, hatch, emp
 
 // 只画指定格（cells：格索引集合）或整幅图案（cells 为 null）。
 // 笔划中的增量重绘与全量渲染共用同一实现，保证格子外观完全一致。
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height @param {Int16Array} displayIdx @param {Uint32Array} displayRgb @param {number} ox @param {number} oy @param {number} cell @param {{ hatch?: boolean, emptyStyle?: string, viewport?: ViewportRect | null }} [opts] @param {Set<number> | number[] | null} [cells] */
 export function drawPatternCells(
   ctx,
   width,
@@ -536,6 +590,7 @@ export function drawPatternCells(
 }
 
 // 底图：单元格 + 行列号条 + 网格线 + 行列号数字 + 格内色号 + 图例（不含选区 / 高亮 / hover）
+/** @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height @param {Int16Array} displayIdx @param {Uint32Array} displayRgb @param {RenderOpts} opts */
 export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts) {
   const cell = opts.cell || CELL;
   const outerPad = opts.outerPad ?? OUTER_PAD;
@@ -552,7 +607,15 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
   if (legend.length && opts.showLegend !== false && !viewport) {
     legendExtraRow = legendTotalNeedsExtraRow(ctx, legend, width * cell, cell, outerPad);
   }
-  let vw, vh, ox, oy;
+  /** @type {number} */
+  let vw;
+  /** @type {number} */
+  let vh;
+  /** @type {number} */
+  let ox;
+  /** @type {number} */
+  let oy;
+  /** @type {{ w: number, h: number, gridW: number, gridH: number, originX: number, originY: number, edge: number, legendRows: number } | null} */
   let metrics = null;
   // 导出 / 预览渲染底部署名（工作区与视口不显示）
   const attrH = opts.attribution && !viewport ? attributionHeight(cell) : 0;
@@ -633,18 +696,19 @@ export function drawPatternBase(ctx, width, height, displayIdx, displayRgb, opts
 
   if (opts.attribution && !viewport) {
     // 底部署名放在图案与图例之间
-    drawAttribution(ctx, cell, metrics.gridW, oy + metrics.gridH + metrics.edge, attrH, outerPad);
+    const m =
+      /** @type {{ w: number, h: number, gridW: number, gridH: number, originX: number, originY: number, edge: number, legendRows: number }} */ (
+        metrics
+      );
+    drawAttribution(ctx, cell, m.gridW, oy + m.gridH + m.edge, attrH, outerPad);
   }
 
   if (legend.length && opts.showLegend !== false && !viewport) {
     // 图例放在图案与底部行列号条之下
-    drawLegend(
-      ctx,
-      legend,
-      cell,
-      metrics.gridW,
-      oy + metrics.gridH + metrics.edge + attrH,
-      outerPad,
-    );
+    const m =
+      /** @type {{ w: number, h: number, gridW: number, gridH: number, originX: number, originY: number, edge: number, legendRows: number }} */ (
+        metrics
+      );
+    drawLegend(ctx, legend, cell, m.gridW, oy + m.gridH + m.edge + attrH, outerPad);
   }
 }

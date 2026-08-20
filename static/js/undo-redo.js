@@ -12,22 +12,33 @@ import { toast } from './utils.js';
 import { fitViewportToCanvas } from './view.js';
 
 // 应用一步撤销/重做（兼容普通增量步骤与结构性步骤）
+/** @param {FuseStep} step @param {'undo' | 'redo'} mode */
 function applyUndoRedoStep(step, mode) {
-  if (step.structural && step.type === 'mirror') {
+  if ('structural' in step && step.type === 'mirror') {
     // 镜像：尺寸不变，还原网格/基副本并同步对比原图显示方向（不重置滑块状态、不重适应窗口）
+    /** @type {{ width: number, height: number, grid: Int16Array | null, baseGrid: Int16Array | null }} */
     const holder = { width: 0, height: 0, grid: null, baseGrid: null };
     applyStructuralStep(holder, step, mode);
-    App.project = { width: holder.width, height: holder.height, grid: holder.grid };
+    App.project = {
+      width: holder.width,
+      height: holder.height,
+      grid: /** @type {Int16Array} */ (holder.grid),
+    };
     App.baseGrid = holder.baseGrid;
     const ms = mode === 'undo' ? step.mirrorBefore : step.mirrorAfter;
     App.originalMirror.horizontal = !!ms?.horizontal;
     App.originalMirror.vertical = !!ms?.vertical;
     redrawOriginalImage();
     clearProjectEditingState();
-  } else if (step.structural) {
+  } else if ('structural' in step) {
+    /** @type {{ width: number, height: number, grid: Int16Array | null, baseGrid: Int16Array | null }} */
     const holder = { width: 0, height: 0, grid: null, baseGrid: null };
     applyStructuralStep(holder, step, mode);
-    App.project = { width: holder.width, height: holder.height, grid: holder.grid };
+    App.project = {
+      width: holder.width,
+      height: holder.height,
+      grid: /** @type {Int16Array} */ (holder.grid),
+    };
     App.baseGrid = holder.baseGrid;
     App.sliderN = null;
     App.editedSinceSlider = false;

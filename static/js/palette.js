@@ -14,21 +14,25 @@ function refreshIdleColorList() {
   if (!App.project) renderFullNow();
 }
 
+/** @param {string | null | undefined} [selectName] */
+/** @param {string | null | undefined} [selectName] */
 export async function loadConfigs(selectName) {
   const res = await api.getConfigs();
-  App.configs = res.configs;
+  /** @type {FuseConfigSummary[]} */
+  const configs = res.configs;
+  App.configs = configs;
   els.configSelect.innerHTML = '';
-  for (const c of res.configs) {
+  for (const c of configs) {
     const opt = document.createElement('option');
     opt.value = c.name;
     opt.textContent = `${c.name}（${c.colorCount} 色）`;
     els.configSelect.appendChild(opt);
   }
   const name =
-    selectName && res.configs.some((c) => c.name === selectName)
+    selectName && configs.some((c) => c.name === selectName)
       ? selectName
-      : res.configs[0]
-        ? res.configs[0].name
+      : configs[0]
+        ? configs[0].name
         : null;
   App.configName = name;
   els.configSelect.value = name || '';
@@ -37,6 +41,7 @@ export async function loadConfigs(selectName) {
   }
 }
 
+/** @param {string} name */
 export async function loadConfigDetail(name) {
   const res = await api.getConfig(name);
   const hadPalette = App.palette.length > 0;
@@ -55,6 +60,7 @@ export async function loadConfigDetail(name) {
   refreshIdleColorList();
 }
 
+/** @param {string} name @returns {Promise<string | null>} */
 async function configHashByName(name) {
   const cfg = App.configs.find((c) => c.name === name);
   if (!cfg) return null;
@@ -70,6 +76,7 @@ async function configHashByName(name) {
 }
 
 // 恢复色板：优先复用已有同 hash 配置；缺失/不一致时自动创建带后缀的恢复配置
+/** @param {FusePaletteColor[]} colors @param {string} preferredName @returns {Promise<{ name: string, hash: string, created: boolean }>} */
 export async function ensurePaletteConfig(colors, preferredName) {
   const hash = paletteHash(colors);
   const byHash = App.configs.find((c) => c.paletteHash === hash);
@@ -100,18 +107,20 @@ export async function ensurePaletteConfig(colors, preferredName) {
   return { name: res.name, hash, created: true };
 }
 
+/** @param {string | null} name */
 export async function selectAndLoad(name) {
   await loadConfigs(name);
   if (name) await loadConfigDetail(name);
 }
 
 function scheduleConfigSave() {
-  if (!App.configName) return;
-  clearTimeout(App.configTimer);
+  const name = App.configName;
+  if (!name) return;
+  clearTimeout(App.configTimer ?? undefined);
   App.configTimer = setTimeout(async () => {
     try {
-      await api.saveConfig(App.configName, App.palette);
-      const cfg = App.configs.find((c) => c.name === App.configName);
+      await api.saveConfig(name, App.palette);
+      const cfg = App.configs.find((c) => c.name === name);
       if (cfg) cfg.paletteHash = paletteHash(App.palette);
     } catch (err) {
       toast(`配置保存失败：${err.message}`, { type: 'error' });
@@ -130,11 +139,12 @@ function renumberPalette() {
 export function bindColorTable() {
   const tb = els.colorTable;
   tb.addEventListener('input', (e) => {
-    const row = e.target.closest('.color-row');
+    const target = /** @type {HTMLInputElement} */ (e.target);
+    const row = /** @type {HTMLElement | null} */ (target.closest('.color-row'));
     if (!row) return;
     const i = Number(row.dataset.index);
-    if (e.target.type === 'color') {
-      App.palette[i].hex = e.target.value.toUpperCase();
+    if (target.type === 'color') {
+      App.palette[i].hex = target.value.toUpperCase();
       const hexInput = row.querySelector('.c-hex');
       if (hexInput) hexInput.value = App.palette[i].hex;
       setProjectDirty(true);
@@ -144,22 +154,23 @@ export function bindColorTable() {
     }
   });
   tb.addEventListener('change', (e) => {
-    const row = e.target.closest('.color-row');
+    const target = /** @type {HTMLInputElement} */ (e.target);
+    const row = /** @type {HTMLElement | null} */ (target.closest('.color-row'));
     if (!row) return;
     const i = Number(row.dataset.index);
-    if (e.target.classList.contains('c-hex')) {
-      const h = /^#?[0-9a-fA-F]{6}$/.test(e.target.value.trim())
-        ? `#${e.target.value.trim().replace('#', '').toUpperCase()}`
+    if (target.classList.contains('c-hex')) {
+      const h = /^#?[0-9a-fA-F]{6}$/.test(target.value.trim())
+        ? `#${target.value.trim().replace('#', '').toUpperCase()}`
         : App.palette[i].hex;
       App.palette[i].hex = h;
-      e.target.value = h;
+      target.value = h;
       const colorInput = row.querySelector('input[type="color"]');
       if (colorInput) colorInput.value = h;
       setProjectDirty(true);
       scheduleConfigSave();
       hintPaletteDeferred();
       refreshIdleColorList();
-    } else if (e.target.classList.contains('c-code') || e.target.classList.contains('c-name')) {
+    } else if (target.classList.contains('c-code') || target.classList.contains('c-name')) {
       const codeInput = row.querySelector('.c-code');
       const nameInput = row.querySelector('.c-name');
       App.palette[i].code = codeInput ? codeInput.value.trim() : '';
@@ -170,9 +181,9 @@ export function bindColorTable() {
     }
   });
   tb.addEventListener('click', (e) => {
-    const del = e.target.closest('.del');
+    const del = /** @type {HTMLElement | null} */ (e.target?.closest?.('.del'));
     if (!del) return;
-    const row = del.closest('.color-row');
+    const row = /** @type {HTMLElement | null} */ (del.closest('.color-row'));
     if (!row) return;
     removeColor(Number(row.dataset.index));
   });
@@ -226,6 +237,7 @@ export function renderColorTable() {
   tb.appendChild(frag);
 }
 
+/** @param {number} i */
 function removeColor(i) {
   const oldPalette = App.palette;
   App.palette = App.palette.filter((_, k) => k !== i);

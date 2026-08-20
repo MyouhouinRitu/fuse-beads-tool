@@ -7,25 +7,27 @@ import { applyGridChanges } from './mutations.js';
 import { scheduleRender } from './render-queue.js';
 import { App } from './state.js';
 
+/** @param {number} x @param {number} y @param {{ silent?: boolean }} [opts] @returns {{ x: number, y: number, from: number, to: number } | null} */
 export function paintCell(x, y, { silent = false } = {}) {
-  const { grid, width } = App.project;
+  const { grid, width } = /** @type {FuseProject} */ (App.project);
   const p = y * width + x;
   const v = App.tool === TOOLS.ERASER ? -1 : App.brushColor != null ? App.brushColor : -2;
-  if (v === -2) return; // 未选择颜色
+  if (v === -2) return null; // 未选择颜色
   if (grid[p] === v) return null;
   const applied = applyGridChanges([{ x, y, from: grid[p], to: v }], {
     silent,
     buffer: interactionState.strokeBuffer,
   });
   if (!silent) scheduleRender();
-  return applied[0] || null;
+  return applied[0] ?? null;
 }
 
 // 按画笔/橡皮尺寸涂一个矩形（边长 = 2×brushSize−1，以目标格为中心，裁剪到图案边界）
+/** @param {FusePoint | null | undefined} cell @returns {Array<{ x: number, y: number, from: number, to: number }> | undefined} */
 export function paintStamp(cell) {
   if (!cell) return;
   const r = App.settings.brushSize - 1;
-  const { grid, width, height } = App.project;
+  const { grid, width, height } = /** @type {FuseProject} */ (App.project);
   const x0 = Math.max(0, cell.x - r);
   const y0 = Math.max(0, cell.y - r);
   const x1 = Math.min(width - 1, cell.x + r);
@@ -55,7 +57,9 @@ export function paintStamp(cell) {
   return applied;
 }
 
+/** @param {FusePoint} a @param {FusePoint} b @returns {FusePoint[]} */
 export function lineCells(a, b) {
+  /** @type {FusePoint[]} */
   const cells = [];
   let x0 = a.x,
     y0 = a.y,
@@ -82,10 +86,12 @@ export function lineCells(a, b) {
   return cells;
 }
 
+/** @param {FusePoint} a @param {FusePoint} b */
 export function strokeLine(a, b) {
   for (const c of lineCells(a, b)) paintStamp(c);
 }
 
+/** @param {FusePoint} start @param {FusePoint} current @returns {FusePoint} */
 export function axisConstrainedEnd(start, current) {
   const dx = Math.abs(current.x - start.x);
   const dy = Math.abs(current.y - start.y);

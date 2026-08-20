@@ -10,3 +10,6 @@ data/project_path.txt
 build/
 dist/
 node_modules/
+.coverage
+coverage/
+htmlcov/

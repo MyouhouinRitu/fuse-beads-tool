@@ -6,18 +6,21 @@ import {
   TARGET_PIXELS_MAX,
   TARGET_PIXELS_MIN,
   TOAST_DURATION_MS,
+  TOAST_FADE_MS,
   VIEWPORT_PADDING,
   ZOOM_MIN,
 } from './constants.js';
 import { els } from './els.js';
 import { App } from './state.js';
 
+/** @type {Array<{ text: string, important: boolean, type: string }>} */
 const toastQueue = [];
 let toastVisible = false;
 let toastImportant = false;
+/** @type {{ text: string, important: boolean, type: string } | null} */
 let pendingNormal = null;
-const TOAST_FADE_MS = 250; // 与 #toast 的 opacity transition 时长一致
 
+/** @param {string} msg @param {{ important?: boolean, type?: string }} [opts] */
 export function toast(msg, { important = false, type = 'info' } = {}) {
   const text = String(msg);
   const item = { text, important, type };
@@ -34,13 +37,14 @@ export function toast(msg, { important = false, type = 'info' } = {}) {
     pendingNormal = item;
     return;
   }
-  clearTimeout(App.toastTimer);
+  clearTimeout(App.toastTimer ?? undefined);
   showToast(text, false, type);
 }
 
 function showNextToast() {
   if (toastQueue.length) {
     const item = toastQueue.shift();
+    if (!item) return;
     showToast(item.text, true, item.type);
     return;
   }
@@ -53,6 +57,7 @@ function showNextToast() {
   toastVisible = false;
 }
 
+/** @param {string} text @param {boolean} important @param {string} [type] */
 function showToast(text, important, type = 'info') {
   els.toast.textContent = text;
   els.toast.classList.toggle('toast-success', type === 'success');
@@ -60,7 +65,7 @@ function showToast(text, important, type = 'info') {
   els.toast.classList.add('show');
   toastVisible = true;
   toastImportant = important;
-  clearTimeout(App.toastTimer);
+  clearTimeout(App.toastTimer ?? undefined);
   App.toastTimer = setTimeout(() => {
     els.toast.classList.remove('show');
     // 等淡出动画结束后再显示下一条，保证队列衔接也有完整淡入淡出
@@ -69,6 +74,7 @@ function showToast(text, important, type = 'info') {
 }
 
 // 异步操作防重复：pending 期间禁用触发器并标记 aria-busy，结束后恢复
+/** @param {HTMLElement | null} trigger @param {() => any} task @returns {Promise<any>} */
 export async function withPending(trigger, task) {
   if (!trigger) return task();
   if (trigger.disabled) return;
@@ -107,6 +113,7 @@ export function hintDistanceDeferred() {
 }
 
 // 触发浏览器下载（data URL 或普通 URL）
+/** @param {string} url @param {string} filename */
 export function downloadUrl(url, filename) {
   const a = document.createElement('a');
   a.href = url;
@@ -117,6 +124,7 @@ export function downloadUrl(url, filename) {
 }
 
 // 二进制导出下载：Blob → object URL → 触发下载，随后释放 URL
+/** @param {Blob} blob @param {string} filename */
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -129,29 +137,35 @@ export function downloadBlob(blob, filename) {
 }
 
 // 颜色条目的通用文案：色号 / 完整标题
+/** @param {FusePaletteColor | null | undefined} c @returns {string} */
 export function codeOf(c) {
   return (c && (c.code || String(c.index))) || '';
 }
 
 // 文件名去扩展名并去首尾空白（用于项目显示名）
+/** @param {string | null | undefined} name @returns {string} */
 export function fileNameStem(name) {
   return String(name || '')
     .replace(/\.[^.]+$/, '')
     .trim();
 }
 
+/** @param {FusePaletteColor | null | undefined} c @returns {string} */
 export function titleOf(c) {
+  if (!c) return '';
   return `${c.name || ''} ${c.code || ''} ${c.hex}`.trim();
 }
 
 // 数量徽标（如 ×12）：与导出图例的「色号 × 数量」格式区分，徽标省略前导空格
+/** @param {number} count @returns {string} */
 export function countBadge(count) {
   return count ? `×${count}` : '';
 }
 
 // 解析输入数值并夹取到 [min, max]；非法/为空时返回 fallback
-export function clampInt(raw, min, max, fallback) {
-  const n = parseInt(raw, 10);
+/** @param {string | number} raw @param {number} min @param {number} max @param {number} fallback @returns {number} */
+export function clampInt(raw, min, max, fallback = min) {
+  const n = parseInt(String(raw), 10);
   if (Number.isNaN(n)) return fallback;
   return Math.min(max, Math.max(min, n));
 }
@@ -165,6 +179,7 @@ export function getTargetPixels() {
 }
 
 // 计算把尺寸适配进视口的缩放与居中位移
+/** @param {number} sizeW @param {number} sizeH @param {number} vw @param {number} vh @param {number} cap @returns {{ zoom: number, pan: { x: number, y: number } }} */
 export function fitToViewport(sizeW, sizeH, vw, vh, cap) {
   const zoom = Math.max(
     ZOOM_MIN,
@@ -177,6 +192,7 @@ export function fitToViewport(sizeW, sizeH, vw, vh, cap) {
 }
 
 // 围绕画布上某点缩放：保持该点的内容位置不变，返回新的 zoom 与 pan
+/** @param {number} rectLeft @param {number} rectTop @param {number} panX @param {number} panY @param {number} oldZoom @param {number} clientX @param {number} clientY @param {number} newZoom @returns {{ zoom: number, pan: { x: number, y: number } }} */
 export function zoomAroundPoint(rectLeft, rectTop, panX, panY, oldZoom, clientX, clientY, newZoom) {
   const stageLeft = rectLeft - panX;
   const stageTop = rectTop - panY;
@@ -189,15 +205,16 @@ export function zoomAroundPoint(rectLeft, rectTop, panX, panY, oldZoom, clientX,
 }
 
 export function blurActive() {
-  const el = document.activeElement;
+  const el = /** @type {HTMLElement | null} */ (document.activeElement);
   if (el && typeof el.blur === 'function') {
     el.blur();
   }
 }
 
 // 矩形内的格索引集合（范围已裁剪到图案边界）
+/** @param {{ x0: number, y0: number, x1: number, y1: number }} rect @returns {Set<number>} */
 export function rectCells(rect) {
-  const { width } = App.project;
+  const { width } = /** @type {FuseProject} */ (App.project);
   const cells = new Set();
   for (let y = rect.y0; y <= rect.y1; y++) {
     for (let x = rect.x0; x <= rect.x1; x++) cells.add(y * width + x);

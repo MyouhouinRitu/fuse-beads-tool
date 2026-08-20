@@ -60,3 +60,109 @@ type FuseStep =
       mirrorBefore?: { horizontal: boolean; vertical: boolean };
       mirrorAfter?: { horizontal: boolean; vertical: boolean };
     };
+
+type FusePoint = { x: number; y: number };
+
+type FuseSettings = {
+  targetPixels: number;
+  useLab: boolean;
+  sharpen: boolean;
+  showCodes: boolean;
+  emptyStyle: string;
+  compare: boolean;
+  syncPan: boolean;
+  brushSize: number;
+  sameColorSelect: boolean;
+  wandSensitivity: number;
+};
+
+type FuseCompressed = {
+  rgba: Uint8ClampedArray;
+  width: number;
+  height: number;
+};
+
+type FuseConfigSummary = {
+  name: string;
+  colorCount: number;
+  updatedAt?: number;
+  paletteHash?: string | null;
+};
+
+// 应用全局单例 App 的形状（state.js 持有；测试会直接读写这些字段，改动需同步 dom_contract_test）
+type FuseAppState = {
+  configs: FuseConfigSummary[];
+  configName: string | null;
+  palette: FusePaletteColor[];
+  appliedPalette: FusePaletteColor[];
+  project: FuseProject | null;
+  compressed: FuseCompressed | null;
+  originalFile: File | Blob | null;
+  originalImage: HTMLImageElement | null;
+  originalUrl: string | null;
+  originalId: string | null;
+  originalMirror: { horizontal: boolean; vertical: boolean };
+  originalName: string | null;
+  originalSha256: string | null;
+  originalSize: number | null;
+  projectName: string | null;
+  origPan: FusePoint;
+  origZoom: number;
+  maxColors: number;
+  baseGrid: Int16Array | null;
+  sliderN: number | null;
+  editedSinceSlider: boolean;
+  brushColor: number | null;
+  tool: string;
+  selection: Set<number>;
+  pan: FusePoint;
+  history: FuseHistory;
+  undoStack: FuseStep[];
+  redoStack: FuseStep[];
+  settings: FuseSettings;
+  dirty: boolean;
+  projectDirty: boolean;
+  zoom: number;
+  screenCell: number;
+  highlightTimer: number | null;
+  toastTimer: number | null;
+  saveTimer: number | null;
+  configTimer: number | null;
+};
+
+// 画布拖拽过程标记（drag.js 持有；仅存单次拖拽的瞬态）
+type FuseDragState = {
+  active: boolean;
+  cropEdge: string | null;
+  orig: boolean;
+  moved: boolean;
+  panning: boolean;
+  startX: number;
+  startY: number;
+  panStart: FusePoint | null;
+  origPanStart: FusePoint | null;
+  downCell: FusePoint | null;
+  selectionAnchor: FusePoint | null;
+  shift: boolean;
+  ctrl: boolean;
+  straightStart: FusePoint | null;
+  toggleLast: FusePoint | null;
+};
+type FuseCropRect = { x0: number; y0: number; x1: number; y1: number };
+
+// 跨模块共享的瞬态交互状态（interaction.js 持有；不持久化，测试会直接读写）
+type FuseInteractionState = {
+  painting: boolean;
+  lastCell: FusePoint | null;
+  hoverCell: FusePoint | null;
+  dragPreview: FuseCropRect | null;
+  strokeBuffer: Array<{ x: number; y: number; from: number; to: number }> | null;
+  highlightColor: number | null;
+  highlightBlink: boolean;
+  pickerCandidates: Array<{ i: number }> | null;
+  pickerCell: { x: number; y: number; p: number; original: number } | null;
+  pickerPreviewIndex: number | null;
+  crop: FuseCropRect | null;
+  cropActiveEdge: string | null;
+  cropPreview: { horizontal: boolean; pos: number } | null;
+};

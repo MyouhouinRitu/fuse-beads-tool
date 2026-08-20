@@ -15,14 +15,16 @@ import * as toolState from './tool-state.js';
 
 export function bindTools() {
   // 模式按钮：画笔/橡皮/取色互斥切换（画笔未选色时先取调色板最暗色）
-  for (const [btnKey, tool] of [
+  /** @type {Array<[keyof typeof els, string]>} */
+  const toolBindings = [
     ['toolBrush', TOOLS.BRUSH],
     ['toolEraser', TOOLS.ERASER],
     ['toolPicker', TOOLS.PICKER],
     ['toolCrop', TOOLS.CROP],
     ['toolWand', TOOLS.WAND],
     ['toolMirror', TOOLS.MIRROR],
-  ]) {
+  ];
+  for (const [btnKey, tool] of toolBindings) {
     els[btnKey].addEventListener('click', () => {
       if (tool === TOOLS.BRUSH && !colorList.ensureBrushColor()) return;
       toolState.setTool(App.tool === tool ? TOOLS.SELECT : tool);
